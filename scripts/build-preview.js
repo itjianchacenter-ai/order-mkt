@@ -51,6 +51,7 @@ ${css}
 <div id="root"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script>
+window.PREVIEW_MODE = true;
 const PREVIEW_MENU = ${JSON.stringify(menuPublic)};
 const PREVIEW_STORES = ${JSON.stringify(stores.filter((s) => s.active !== false).map((s) => ({ id: String(s.id), brand: s.brand || 'JIAN CHA', name: s.name, map_url: s.map_url || '' })))};
 ${mock}

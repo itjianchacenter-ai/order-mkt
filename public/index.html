@@ -60,7 +60,8 @@
   const map = menuMap(menu);
   let stock = menu.stock; const getStock = () => stock;
   async function refreshStock() { try { stock = await api('/api/stock'); } catch (e) { /* keep last */ } render(); }
-  if (menu.banner) $('#hero').outerHTML = '<img class="hero" style="object-fit:cover;width:calc(100% - 80px)" src="' + esc(menu.banner) + '" alt="">';
+  renderHero($('#hero'), menu.banners && menu.banners.length ? menu.banners : [menu.banner]);
+  if (menu.campaign && menu.campaign.name) { const b = $('.brand b'); if (b) b.textContent = menu.campaign.name; document.title = menu.campaign.name + ' | Order'; }
 
   // One card per Match Set. Ticking the circle puts the set in the order; − / + change the quantity.
   const setCard = (s) => {

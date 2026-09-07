@@ -24,7 +24,7 @@
   if (!me.admin) { renderHeader('', { admin: true }); return renderLogin(); }
   const user = me.user, P = me.permissions;
   // '' = home (campaign page). Every role sees Order / Slip Issue / Store Pick-up Order; IT-Admin also Account.
-  const VIEWS = { '': true, accounts: P.accounts, orders: true, slips: true, pickup: true };
+  const VIEWS = { '': true, accounts: P.accounts, design: P.campaigns, orders: true, slips: true, pickup: true };
   if (!VIEWS[state.view]) state.view = '';
   // Marketing and Finance land on a bare campaign page: the menu appears once they open a campaign. IT-Admin keeps the menu (Account lives there).
   renderHeader(state.view, { admin: true, role: user.role, user, hideNav: state.view === '' && user.role !== 'it_admin' });
@@ -58,8 +58,9 @@
       const cards = campaigns.filter((c) => !f || c.name.toLowerCase().includes(f) || c.id.includes(f)).map((c) => `
         <div class="camp ${c.active ? '' : 'inactive'}" data-open="${esc(c.id)}">
           ${P.campaigns ? `<button type="button" class="wrench" data-edit="${esc(c.id)}" aria-label="แก้ไข">${ICONS.wrench}</button>` : ''}
+          ${c.cover ? `<img class="cover" src="${esc(c.cover)}" alt="">` : ''}
           <b>${esc(c.name)}</b>
-          <small>${c.active ? 'Active' : 'Inactive'} · ${c.stats.orders} orders${c.stock.total != null ? ` · stock ${c.stock_view.used.total}/${c.stock.total}` : ''}</small>
+          <small>${c.active ? 'Active' : 'Inactive'} · ${c.stats.orders} orders${c.stock.total != null ? ` · stock ${c.stock_view.used.total}/${c.stock.total}` : ''}${c.set_count != null ? ` · ${c.set_count} sets` : ''}</small>
         </div>`);
       if (P.campaigns) cards.push(`<div class="camp create" data-create="1"><span class="plus">+</span><b>Create</b><span>new campaign</span></div>`);
       // an order number in the search box jumps straight to that order (all campaigns)
@@ -154,6 +155,118 @@
       });
       $('#acc-form').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
+  }
+
+  /* ───────── design (IT-Admin): promote images + Match Sets shown on the customer homepage ───────── */
+  if (state.view === 'design') return renderDesign();
+  async function renderDesign() {
+    const campaigns = await api('/api/admin/campaigns');
+    if (!alive()) return;
+    const campaign = campaigns.find((c) => c.id === state.campaign) || campaigns.find((c) => c.active) || campaigns[0];
+    if (!campaign) { app.innerHTML = '<div class="empty">ยังไม่มีแคมเปญ</div>'; return; }
+    let { design } = await api('/api/admin/campaigns/' + encodeURIComponent(campaign.id) + '/design');
+    if (!alive()) return;
+    const sel = campaigns.length > 1 ? `<select class="pill" id="campaign-select" style="padding-right:28px">${campaigns.map((c) => `<option value="${esc(c.id)}" ${c.id === campaign.id ? 'selected' : ''}>${esc(c.name)}${c.active ? '' : ' (inactive)'}</option>`).join('')}</select>` : '';
+    app.innerHTML = `
+      <div class="dz-head"><span class="dz-name">${esc(campaign.name)}</span>${sel}<span class="dz-state" id="dz-state">${campaign.active ? 'แสดงบนหน้าเว็บลูกค้าอยู่ตอนนี้' : 'แคมเปญนี้ยังไม่ Active'}</span></div>
+      <div class="dz-title"><span>Promote Image <span class="dz-size">1180 × 570 px · svg / png — รูปใหญ่รวมน้ำ + ขนม (หลายรูป = สไลด์)</span></span></div>
+      <div class="dz-row" id="promos"></div>
+      <div id="sets"></div>
+      <input type="file" id="dz-file" accept="image/*" class="hidden">
+      <div class="err" id="dz-err"></div>`;
+    const sc = $('#campaign-select'); if (sc) sc.addEventListener('change', (e) => go({ view: 'design', campaign: e.target.value }));
+    const img = (src, cls) => (src ? `<img src="${esc(src)}" alt="">` : '');
+    const upBtn = (key) => `<button type="button" class="up" data-up="${key}">${ICONS.upload} Upload</button>`;
+    $('#dz-file').setAttribute('accept', 'image/png,image/jpeg,image/webp,image/svg+xml,image/gif');
+    const nextId = () => { for (let i = 0; i < 26; i++) { const id = String.fromCharCode(65 + i); if (!design.sets.some((x) => x.id === id)) return id; } return 'S' + (design.sets.length + 1); };
+    function draw() {
+      $('#promos').innerHTML = design.promote_images.map((u, i) => `<div class="dz-card wide">${img(u)}<button type="button" class="rm" data-rm-promo="${i}" aria-label="ลบ">×</button>${upBtn('promo:' + i)}</div>`).join('')
+        + `<div class="dz-card wide create" data-add-promo="1"><span class="plus">+</span><b>Create</b><span>more Promote Image</span></div>`;
+      $('#sets').innerHTML = `<div class="dz-sets">` + design.sets.map((st, i) => `
+        <div class="dz-set" data-set="${i}">
+          <div class="dz-title"><span>Set image <span class="dz-size">320 × 330 px</span></span><span class="set-tag">${esc(st.id)}</span></div>
+          <div class="dz-card big">${img(st.image)}${upBtn('set:' + i + ':image')}</div>
+          <div class="dz-size" style="margin-top:10px">รูปน้ำ / ขนมเดี่ยว 3 รูป · 115 × 105 px · svg / png</div>
+          <div class="dz-thumbs" style="margin-top:6px">${[0, 1, 2].map((k) => `<div class="dz-card sm">${img(st.images[k])}${upBtn('set:' + i + ':images:' + k)}</div>`).join('')}</div>
+          <div class="dz-form">
+            <div class="g2">
+              <label>Label<input data-f="label" value="${esc(st.label)}" placeholder="SET ${esc(st.id)}"></label>
+              <label>Price (฿)<input data-f="price" type="number" min="0" step="0.01" value="${st.price}"></label>
+              <label>Menu name (EN)<input data-f="name_en" value="${esc(st.name_en)}" placeholder="Menu Name"></label>
+              <label>ชื่อเมนู (TH)<input data-f="name_th" value="${esc(st.name_th)}" placeholder="ชื่อเมนู ภาษาไทย"></label>
+              <label>Stock ต่อ 1 ชุด (pieces)<input data-f="pieces" type="number" min="1" step="1" value="${st.pieces}"></label>
+              <label class="chk" style="margin-top:20px"><input type="checkbox" data-f="active" ${st.active ? 'checked' : ''}> <span>แสดงบนหน้าเว็บ</span></label>
+            </div>
+            <div class="items-h"><span>รายการในเซ็ต (items)</span><button type="button" data-add-item="${i}">+ เพิ่มรายการ</button></div>
+            ${st.items.map((it, k) => `<div class="g3" data-item="${k}">
+              <label>EN<input data-if="name_en" value="${esc(it.name_en)}" placeholder="Menu name"></label>
+              <label>TH<input data-if="name_th" value="${esc(it.name_th)}" placeholder="ชื่อเมนู"></label>
+              <label>ประเภท<select data-if="kind"><option value="" ${it.kind ? '' : 'selected'}>-</option><option value="drink" ${it.kind === 'drink' ? 'selected' : ''}>drink</option><option value="dessert" ${it.kind === 'dessert' ? 'selected' : ''}>dessert</option></select></label>
+            </div>`).join('') || '<div class="th" style="font-size:12px;color:var(--muted)">ยังไม่มีรายการ</div>'}
+            <button type="button" class="del" data-del-set="${i}">ลบเซ็ตนี้</button>
+          </div>
+        </div>`).join('')
+        + `<div class="dz-card create dz-create" data-add-set="1"><span class="plus">+</span><b>Create</b><span>new set</span></div></div>`;
+    }
+    // autosave: every change is written to the campaign after a short pause
+    let saveTimer, saving = false, dirty = false;
+    const setState = (t) => { const el = $('#dz-state'); if (el) el.textContent = t; };
+    async function save() {
+      if (saving) { dirty = true; return; }
+      saving = true; setState('กำลังบันทึก…');
+      try { const r = await api('/api/admin/campaigns/' + encodeURIComponent(campaign.id) + '/design', { method: 'PUT', body: design }); design = r.design; $('#dz-err').textContent = ''; setState('บันทึกแล้ว ✓ ' + (campaign.active ? '(แสดงบนหน้าเว็บลูกค้า)' : '')); }
+      catch (e) { $('#dz-err').textContent = e.message; setState('บันทึกไม่สำเร็จ'); }
+      saving = false; if (dirty) { dirty = false; save(); }
+    }
+    const queueSave = () => { clearTimeout(saveTimer); setState('มีการแก้ไข…'); saveTimer = setTimeout(save, 700); };
+    // read a set's form fields back into the design
+    function readSet(i, root) {
+      const st = design.sets[i]; if (!st) return;
+      $$('[data-f]', root).forEach((el) => { const f = el.dataset.f; st[f] = el.type === 'checkbox' ? el.checked : (el.type === 'number' ? Number(el.value) : el.value); });
+      st.items = $$('[data-item]', root).map((row) => ({ name_en: $('[data-if=name_en]', row).value, name_th: $('[data-if=name_th]', row).value, kind: $('[data-if=kind]', row).value }));
+    }
+    app.addEventListener('input', (e) => { const set = e.target.closest('[data-set]'); if (!set) return; readSet(Number(set.dataset.set), set); queueSave(); });
+    app.addEventListener('change', (e) => { const set = e.target.closest('[data-set]'); if (set && (e.target.type === 'checkbox' || e.target.tagName === 'SELECT')) { readSet(Number(set.dataset.set), set); queueSave(); } });
+    let upTarget = null;
+    app.addEventListener('click', (e) => {
+      const up = e.target.closest('[data-up]'); if (up) { upTarget = up.dataset.up; $('#dz-file').value = ''; $('#dz-file').click(); return; }
+      if (e.target.closest('[data-add-promo]')) { upTarget = 'promo:new'; $('#dz-file').value = ''; $('#dz-file').click(); return; }
+      const rmP = e.target.closest('[data-rm-promo]'); if (rmP) { design.promote_images.splice(Number(rmP.dataset.rmPromo), 1); draw(); queueSave(); return; }
+      if (e.target.closest('[data-add-set]')) { const id = nextId(); design.sets.push({ id, label: 'SET ' + id, name_en: '', name_th: '', price: 0, image: '', images: ['', '', ''], items: [], pieces: 1, active: true }); draw(); queueSave(); return; }
+      const del = e.target.closest('[data-del-set]'); if (del) { const st = design.sets[Number(del.dataset.delSet)]; if (!confirm(`ลบ ${st.label}? ออเดอร์เดิมไม่ได้รับผลกระทบ`)) return; design.sets.splice(Number(del.dataset.delSet), 1); draw(); queueSave(); return; }
+      const addI = e.target.closest('[data-add-item]'); if (addI) { const i = Number(addI.dataset.addItem); readSet(i, $(`[data-set="${i}"]`)); design.sets[i].items.push({ name_en: '', name_th: '', kind: '' }); draw(); queueSave(); }
+    });
+    $('#dz-file').addEventListener('change', async (e) => {
+      const f = e.target.files && e.target.files[0]; if (!f || !upTarget) return;
+      const key = upTarget; upTarget = null; setState('กำลังอัปโหลดรูป…');
+      try {
+        // recommended sizes: promote 1180×570 · set 320×330 · item 115×105 (kept at 2× for sharp screens; svg is left untouched)
+        const [kind0, , field0] = key.split(':'); const box = kind0 === 'promo' ? [1180, 570] : (field0 === 'image' ? [320, 330] : [115, 105]);
+        const mul = window.PREVIEW_MODE ? 1 : 2;
+        const small = await shrinkImage(f, box[0] * mul, box[1] * mul);
+        const fd = new FormData(); fd.append('image', small, small.name || 'image.jpg');
+        const { url } = await api('/api/admin/design/upload', { method: 'POST', body: fd });
+        const [kind, i, field, k] = key.split(':');
+        if (kind === 'promo') { if (i === 'new') design.promote_images.push(url); else design.promote_images[Number(i)] = url; }
+        else if (field === 'image') design.sets[Number(i)].image = url; else design.sets[Number(i)].images[Number(k)] = url;
+        draw(); queueSave();
+      } catch (err) { $('#dz-err').textContent = err.message; setState('อัปโหลดไม่สำเร็จ'); }
+    });
+    draw();
+  }
+  // downscale a picture in the browser before uploading (keeps uploads small; JPEG unless the source is PNG)
+  async function shrinkImage(file, maxW, maxH) {
+    if (file.type === 'image/svg+xml' || file.type === 'image/gif') return file;
+    try {
+      const bmp = await createImageBitmap(file);
+      const scale = Math.min(1, maxW / bmp.width, maxH / bmp.height);
+      if (scale === 1 && file.size < 600 * 1024) return file;
+      const c = document.createElement('canvas'); c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
+      c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+      const type = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+      const blob = await new Promise((res) => c.toBlob(res, type, 0.86));
+      return new File([blob], (file.name || 'image').replace(/\.[^.]+$/, '') + (type === 'image/png' ? '.png' : '.jpg'), { type });
+    } catch (e) { return file; }
   }
 
   /* ───────── shared context for Order · Slip Issue · Store Pick-up Order ───────── */

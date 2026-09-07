@@ -49,6 +49,7 @@
   $('#lbl-cart').innerHTML = ICONS.cart + ' Cart Summary';
   const [menu, stores] = await Promise.all([getMenu(), api('/api/stores')]);
   const map = menuMap(menu);
+  if (menu.campaign && menu.campaign.name) { const b = $('.brand b'); if (b) b.textContent = menu.campaign.name; }
   let stock = menu.stock; const getStock = () => stock;
   async function refreshStock() { try { stock = await api('/api/stock'); } catch (e) { /* keep last */ } render(); }
   $('#note').value = getNote();

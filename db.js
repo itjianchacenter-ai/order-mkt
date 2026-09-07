@@ -93,6 +93,11 @@ for (const [col, ddl] of [['set_id', "TEXT DEFAULT ''"], ['set_label', "TEXT DEF
 }
 db.exec("UPDATE order_lines SET pieces = (drink_id <> '') + (dessert_id <> ''), drink_pieces = (drink_id <> ''), dessert_pieces = (dessert_id <> '') WHERE pieces IS NULL");
 
+// campaigns.design_json: what the customer homepage shows for this campaign (promote images + Match Sets), edited on the IT-Admin Design page
+if (!db.prepare("SELECT 1 FROM pragma_table_info('campaigns') WHERE name = 'design_json'").get()) {
+  db.exec('ALTER TABLE campaigns ADD COLUMN design_json TEXT');
+}
+
 // orders.campaign_id (migration for databases created before campaigns existed)
 if (!db.prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name = 'campaign_id'").get()) {
   db.exec('ALTER TABLE orders ADD COLUMN campaign_id TEXT');

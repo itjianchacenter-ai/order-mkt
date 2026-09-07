@@ -16,7 +16,8 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-order-jianchatea';
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const DATA_DIR = path.join(__dirname, 'data');
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
-fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+const DESIGN_DIR = path.join(UPLOAD_DIR, 'design');   // promote / set images uploaded on the Design page (public)
+fs.mkdirSync(DESIGN_DIR, { recursive: true });
 
 if (IS_PROD && JWT_SECRET === 'dev-secret-order-jianchatea') {
   console.error('[boot] FATAL: set JWT_SECRET in .env before running in production.');
@@ -43,6 +44,39 @@ function loadStores() {
   return readJson('stores.json', []).filter((s) => s.active !== false).map((s) => ({ id: String(s.id), brand: s.brand || 'JIAN CHA', name: s.name || '', map_url: s.map_url || '' }));
 }
 
+// ─── Campaign design: promote images + Match Sets shown on the customer homepage ───
+// Stored per campaign (campaigns.design_json). A campaign without a saved design uses data/menu.json as its template.
+const isImageUrl = (u) => typeof u === 'string' && u.length <= 2000 && (/^\/uploads\/design\/[A-Za-z0-9._-]+$/.test(u) || /^\/img\//.test(u) || /^https?:\/\//.test(u) || /^data:image\//.test(u));
+const imgOr = (u) => (isImageUrl(u) ? u : '');
+function normalizeDesign(d) {
+  const src = d && typeof d === 'object' ? d : {};
+  const promote_images = (Array.isArray(src.promote_images) ? src.promote_images : []).filter(isImageUrl).slice(0, 10);
+  const seen = new Set(); const sets = [];
+  for (const x of (Array.isArray(src.sets) ? src.sets : []).slice(0, 12)) {
+    if (!x || typeof x !== 'object') continue;
+    let id = String(x.id || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 20);
+    if (!id || seen.has(id)) { let n = 1; do { id = 'S' + n++; } while (seen.has(id)); }
+    seen.add(id);
+    const items = (Array.isArray(x.items) ? x.items : []).slice(0, 8).map((i) => ({ name_en: String((i && i.name_en) || '').slice(0, 80), name_th: String((i && i.name_th) || '').slice(0, 80), kind: i && i.kind === 'drink' ? 'drink' : (i && i.kind === 'dessert' ? 'dessert' : '') })).filter((i) => i.name_en || i.name_th);
+    const pieces = Number.isInteger(Number(x.pieces)) && Number(x.pieces) > 0 ? Number(x.pieces) : 1;
+    const price = Number.isFinite(Number(x.price)) && Number(x.price) >= 0 ? Math.round(Number(x.price) * 100) / 100 : 0;
+    sets.push({ id, label: String(x.label || `SET ${id}`).slice(0, 20), name_en: String(x.name_en || '').slice(0, 80), name_th: String(x.name_th || '').slice(0, 80), price, image: imgOr(x.image),
+      images: [0, 1, 2].map((k) => imgOr((x.images || [])[k])), items, pieces, active: x.active !== false,
+      drink_pieces: items.filter((i) => i.kind === 'drink').length, dessert_pieces: items.filter((i) => i.kind === 'dessert').length });
+  }
+  return { promote_images, sets };
+}
+function defaultDesign() { const m = loadMenu(); return normalizeDesign({ promote_images: m.banner ? [m.banner] : [], sets: m.sets }); }
+function campaignDesign(c) {
+  if (c && c.design_json) { try { return normalizeDesign(JSON.parse(c.design_json)); } catch (e) { /* fall through */ } }
+  return defaultDesign();
+}
+/** What the customer site sells for a campaign: its design's active sets and promote images. */
+function menuFor(c) {
+  const d = campaignDesign(c); const m = loadMenu();
+  return { banner: d.promote_images[0] || '', banners: d.promote_images, sets: d.sets.filter((x) => x.active), drinks: m.drinks, desserts: m.desserts };
+}
+
 // First run: the three back-office accounts and the first campaign (stock / promo range seeded from menu.json)
 {
   const m = readJson('menu.json', {});
@@ -57,7 +91,9 @@ function activeCampaign() {
 }
 function getCampaign(id) { return db.prepare('SELECT * FROM campaigns WHERE id = ?').get(id); }
 function campaignView(c) {
-  return { id: c.id, name: c.name, active: Boolean(c.active), stock: { total: c.stock_total, drink: c.stock_drink, dessert: c.stock_dessert }, promo_code: { from: c.promo_from, to: c.promo_to }, created_at: c.created_at };
+  const d = campaignDesign(c);
+  return { id: c.id, name: c.name, active: Boolean(c.active), stock: { total: c.stock_total, drink: c.stock_drink, dessert: c.stock_dessert }, promo_code: { from: c.promo_from, to: c.promo_to }, created_at: c.created_at,
+    cover: d.promote_images[0] || '', set_count: d.sets.filter((x) => x.active).length, has_design: Boolean(c.design_json) };
 }
 /** Pieces committed by every non-cancelled order of a campaign (pending ones reserve stock). */
 function stockUsage(campaignId) {
@@ -151,7 +187,7 @@ app.get('/admin-page', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'admin-p
 app.use(express.static(PUBLIC_DIR, { extensions: ['html'], index: 'index.html' }));
 
 // ─── Public API ───
-app.get('/api/menu', (req, res) => { const c = activeCampaign(); res.json({ ...loadMenu(), campaign: { id: c.id, name: c.name }, stock: stockView(c) }); });
+app.get('/api/menu', (req, res) => { const c = activeCampaign(); res.json({ ...menuFor(c), campaign: { id: c.id, name: c.name }, stock: stockView(c) }); });
 app.get('/api/stock', (req, res) => res.json(stockView(activeCampaign())));
 app.get('/api/stores', (req, res) => res.json(loadStores()));
 app.get('/api/config', (req, res) => res.json({ payment_ready: qrConfigured(), slip_auto_verify: slipOkEnabled() }));
@@ -164,8 +200,8 @@ app.post('/api/orders', (req, res) => {
   const store = loadStores().find((s) => s.id === String(store_id));
   if (!store) return res.status(400).json({ error: 'กรุณาเลือกสาขาที่รับสินค้า' });
   if (!Array.isArray(lines) || lines.length === 0) return res.status(400).json({ error: 'ยังไม่มีรายการในตะกร้า' });
-  const menu = loadMenu();
   const campaign = activeCampaign();
+  const menu = menuFor(campaign);
   const drinks = Object.fromEntries(menu.drinks.map((d) => [d.id, d]));
   const desserts = Object.fromEntries(menu.desserts.map((d) => [d.id, d]));
   const sets = Object.fromEntries(menu.sets.map((s) => [s.id, s]));
@@ -307,6 +343,9 @@ app.post('/api/orders/:id/slip', upload.single('slip'), async (req, res) => {
   res.json({ ok: r.verified || r.manual, status, reason: r.reason, order: orderView(getOrder(o.id)) });
 });
 
+// Design images (promote / set pictures) are public: customers see them on the homepage
+app.use('/uploads/design', (req, res, next) => { if (/\.svg$/i.test(req.path)) res.set({ 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'", 'X-Content-Type-Options': 'nosniff' }); next(); }, express.static(DESIGN_DIR, { maxAge: '7d', index: false }));
+
 // Slip images: only the owner or a logged-in back-office user
 app.get('/uploads/:name', (req, res) => {
   const name = path.basename(req.params.name);
@@ -426,6 +465,32 @@ app.patch('/api/admin/campaigns/:id', requirePerm('campaigns'), (req, res) => {
     .run(v.name, v.stock_total, v.stock_drink, v.stock_dessert, v.promo_from, v.promo_to, c.id);
   if (req.body && req.body.active === true) setActiveCampaign(c.id);
   res.json(campaignStats(getCampaign(c.id)));
+});
+
+// Campaign design (it_admin): promote images + Match Sets shown on the customer homepage
+app.get('/api/admin/campaigns/:id/design', requirePerm('campaigns'), (req, res) => {
+  const c = getCampaign(req.params.id);
+  if (!c) return res.status(404).json({ error: 'ไม่พบแคมเปญ' });
+  res.json({ campaign: campaignView(c), design: campaignDesign(c) });
+});
+app.put('/api/admin/campaigns/:id/design', requirePerm('campaigns'), (req, res) => {
+  const c = getCampaign(req.params.id);
+  if (!c) return res.status(404).json({ error: 'ไม่พบแคมเปญ' });
+  const d = normalizeDesign(req.body || {});
+  db.prepare("UPDATE campaigns SET design_json = ?, updated_at = datetime('now','localtime') WHERE id = ?").run(JSON.stringify(d), c.id);
+  res.json({ campaign: campaignView(getCampaign(c.id)), design: d });
+});
+const designUpload = multer({
+  storage: multer.diskStorage({
+    destination: DESIGN_DIR,
+    filename: (req, file, cb) => cb(null, `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${({ 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif', 'image/svg+xml': '.svg' })[file.mimetype] || '.jpg'}`),
+  }),
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null, /^image\/(jpeg|png|webp|gif|svg\+xml)$/.test(file.mimetype)),
+});
+app.post('/api/admin/design/upload', requirePerm('campaigns'), designUpload.single('image'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'กรุณาเลือกไฟล์รูป (jpg/png/webp)' });
+  res.status(201).json({ url: `/uploads/design/${path.basename(req.file.path)}` });
 });
 
 // Orders

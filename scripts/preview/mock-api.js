@@ -1,6 +1,6 @@
 /* PREVIEW ONLY — replaces api() with an in-browser implementation of the same endpoints.
    Data lives in this browser's localStorage. The real site talks to server.js. */
-const PREVIEW_DB_KEY = 'jc_preview_db_v2';
+const PREVIEW_DB_KEY = 'jc_preview_db_v3';
 const PAGE_SIZE = 8;
 const PV_PERMS = {
   orders_view: ['it_admin', 'admin', 'finance'], slip_review: ['it_admin', 'finance'], pickup: ['it_admin', 'admin', 'finance'],
@@ -25,7 +25,7 @@ function pvSlipSvg(amount) {
   return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
 }
 function pvLoad() { try { return JSON.parse(localStorage.getItem(PREVIEW_DB_KEY)); } catch (e) { return null; } }
-function pvSave(d) { try { localStorage.setItem(PREVIEW_DB_KEY, JSON.stringify(d)); } catch (e) { /* ignore */ } }
+function pvSave(d) { try { localStorage.setItem(PREVIEW_DB_KEY, JSON.stringify(d)); return true; } catch (e) { return false; } }
 function pvReset() { try { localStorage.removeItem(PREVIEW_DB_KEY); localStorage.removeItem('jc_cart'); localStorage.removeItem('jc_store'); localStorage.removeItem('jc_note'); } catch (e) { /* ignore */ } }
 
 const PV_CAMPAIGN_ID = 'jiancha-x-navori';
@@ -72,6 +72,22 @@ function pvNextNumber(d) {
   d.counter.seq += 1; return day + String(d.counter.seq).padStart(5, '0');
 }
 function pvActiveCampaign(d) { return d.campaigns.find((c) => c.active) || d.campaigns[0]; }
+/* campaign design (promote images + sets); a campaign without one uses the bundled menu.json as its template */
+function pvNormDesign(src) {
+  src = src && typeof src === 'object' ? src : {};
+  const ok = (u) => typeof u === 'string' && u && (/^data:image\//.test(u) || /^https?:\/\//.test(u) || /^\//.test(u));
+  const seen = new Set(); const sets = [];
+  for (const x of (Array.isArray(src.sets) ? src.sets : []).slice(0, 12)) {
+    let id = String(x.id || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 20); if (!id || seen.has(id)) { let n = 1; do { id = 'S' + n++; } while (seen.has(id)); } seen.add(id);
+    const items = (x.items || []).slice(0, 8).map((i) => ({ name_en: String(i.name_en || '').slice(0, 80), name_th: String(i.name_th || '').slice(0, 80), kind: i.kind === 'drink' ? 'drink' : (i.kind === 'dessert' ? 'dessert' : '') })).filter((i) => i.name_en || i.name_th);
+    const price = Number(x.price) >= 0 ? pvMoney(x.price) : 0; const pieces = Number(x.pieces) > 0 ? Math.floor(Number(x.pieces)) : 1;
+    sets.push({ id, label: String(x.label || 'SET ' + id).slice(0, 20), name_en: String(x.name_en || '').slice(0, 80), name_th: String(x.name_th || '').slice(0, 80), price, image: ok(x.image) ? x.image : '', images: [0, 1, 2].map((k) => (ok((x.images || [])[k]) ? x.images[k] : '')), items, pieces, active: x.active !== false, drink_pieces: items.filter((i) => i.kind === 'drink').length, dessert_pieces: items.filter((i) => i.kind === 'dessert').length });
+  }
+  return { promote_images: (Array.isArray(src.promote_images) ? src.promote_images : []).filter(ok).slice(0, 10), sets };
+}
+function pvDesign(c) { return c.design ? pvNormDesign(c.design) : pvNormDesign({ promote_images: PREVIEW_MENU.banner ? [PREVIEW_MENU.banner] : [], sets: PREVIEW_MENU.sets }); }
+function pvMenuFor(c) { const dz = pvDesign(c); return { banner: dz.promote_images[0] || '', banners: dz.promote_images, sets: dz.sets.filter((x) => x.active), drinks: [], desserts: [] }; }
+function pvCampaignView(c) { const dz = pvDesign(c); return { ...c, design: undefined, cover: dz.promote_images[0] || '', set_count: dz.sets.filter((x) => x.active).length, has_design: Boolean(c.design) }; }
 function pvCampaignName(d, id) { const c = d.campaigns.find((x) => x.id === id); return c ? c.name : ''; }
 function pvView(d, o, admin) {
   const v = { id: o.id, order_number: o.order_number, campaign_id: o.campaign_id, campaign_name: pvCampaignName(d, o.campaign_id), store_id: o.store_id, store_name: o.store_name, total: o.total, status: o.status, note: o.note, created_at: o.created_at, paid_at: o.paid_at, picked_up_at: o.picked_up_at, has_slip: Boolean(o.slip_url), slip_reason: o.slip_reason, lines: o.lines, promo_code: o.promo_code || null, code_available: ['paid', 'picked_up'].includes(o.status), payable: ['pending', 'slip_rejected'].includes(o.status) };
@@ -98,7 +114,7 @@ function pvStockShortfall(d, c, want) {
 function pvCampaignStats(d, c) {
   const os = d.orders.filter((o) => o.campaign_id === c.id && o.status !== 'cancelled');
   const awaiting = os.filter((o) => o.status === 'slip_uploaded').length, onIssue = os.filter((o) => o.status === 'slip_rejected').length;
-  return { ...c, stats: { orders: os.length, paid_amount: os.filter((o) => ['paid', 'picked_up'].includes(o.status)).reduce((s, o) => s + o.total, 0), awaiting_review: awaiting, on_issue: onIssue, slip_issues: awaiting + onIssue }, stock_view: pvStockView(d, c) };
+  return { ...pvCampaignView(c), stats: { orders: os.length, paid_amount: os.filter((o) => ['paid', 'picked_up'].includes(o.status)).reduce((s, o) => s + o.total, 0), awaiting_review: awaiting, on_issue: onIssue, slip_issues: awaiting + onIssue }, stock_view: pvStockView(d, c) };
 }
 const pvLim = (v) => (v == null || v === '' ? null : (Number.isFinite(Number(v)) && Number(v) >= 0 ? Math.floor(Number(v)) : null));
 const pvSlug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'campaign';
@@ -132,14 +148,14 @@ async function api(path, opts = {}) {
   let m;
 
   /* ── public ── */
-  if (p === '/api/menu') return { ...PREVIEW_MENU, campaign: { id: active.id, name: active.name }, stock: pvStockView(d, active) };
+  if (p === '/api/menu') return { ...pvMenuFor(active), campaign: { id: active.id, name: active.name }, stock: pvStockView(d, active) };
   if (p === '/api/stock') return pvStockView(d, active);
   if (p === '/api/stores') return PREVIEW_STORES;
   if (p === '/api/config') return { payment_ready: true, slip_auto_verify: false };
   if (p === '/api/orders' && method === 'POST') {
     const store = PREVIEW_STORES.find((s) => s.id === String(body.store_id)); if (!store) pvFail('กรุณาเลือกสาขาที่รับสินค้า');
     if (!Array.isArray(body.lines) || !body.lines.length) pvFail('ยังไม่มีรายการในตะกร้า');
-    const SETS = Object.fromEntries(PREVIEW_MENU.sets.map((x) => [x.id, x]));
+    const SETS = Object.fromEntries(pvMenuFor(active).sets.map((x) => [x.id, x]));
     const lines = body.lines.map((l) => {
       const s = SETS[String(l.set_id)]; const qty = parseInt(l.quantity, 10);
       if (!s) pvFail('มีเซ็ตที่ไม่มีให้บริการแล้ว กรุณาเลือกใหม่'); if (!(qty >= 1 && qty <= 99)) pvFail('รายการสินค้าไม่ถูกต้อง');
@@ -233,6 +249,15 @@ async function api(path, opts = {}) {
     c.name = name; c.promo_code = { from, to }; if ('stock_total' in body) c.stock.total = pvLim(body.stock_total);
     if (body.active === true) { d.campaigns.forEach((x) => { x.active = false; }); c.active = true; }
     pvSave(d); return pvCampaignStats(d, c);
+  }
+  if ((m = p.match(/^\/api\/admin\/campaigns\/([^/]+)\/design$/))) {
+    need('campaigns'); const c = d.campaigns.find((x) => x.id === m[1]) || pvFail('ไม่พบแคมเปญ');
+    if (method === 'PUT') { c.design = pvNormDesign(body); if (!pvSave(d)) { delete c.design; pvFail('พื้นที่เก็บข้อมูลของเบราว์เซอร์เต็ม (โหมด preview เก็บรูปในเบราว์เซอร์) ลองใช้รูปที่เล็กลงหรือลบรูปเก่า'); } }
+    return { campaign: pvCampaignView(c), design: pvDesign(c) };
+  }
+  if (p === '/api/admin/design/upload' && method === 'POST') {
+    need('campaigns'); const f = body.get && body.get('image'); if (!f) pvFail('กรุณาเลือกไฟล์รูป (jpg/png/webp)');
+    return { url: await pvReadFile(f) };
   }
   if (p === '/api/admin/orders') {
     const s = (q.get('q') || '').toLowerCase(), date = q.get('date') || '', store = q.get('store') || '', status = (q.get('status') || '').split(',').filter(Boolean), camp = q.get('campaign') || '';

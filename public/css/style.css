@@ -32,6 +32,13 @@ svg.ic{width:18px;height:18px;flex:none;vertical-align:-3px}
 .ph{background:var(--ph);border-radius:4px}
 .hero{height:440px;margin:0 40px 40px}
 @media (max-width:900px){.hero{height:260px;margin:0 0 32px}}
+.hero.slider{position:relative;overflow:hidden;border-radius:4px;background:var(--ph);height:auto;aspect-ratio:1180/570}
+.hero.slider img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .6s}
+.hero.slider img.on{opacity:1}
+.hero.slider .dots{position:absolute;left:0;right:0;bottom:12px;display:flex;justify-content:center;gap:8px}
+.hero.slider .dots button{width:10px;height:10px;border-radius:50%;border:1px solid #fff;background:rgba(255,255,255,.4);padding:0}
+.hero.slider .dots button.on{background:#fff}
+.pill.icon{padding:8px 11px}
 
 /* menu */
 .menu-cols{display:grid;grid-template-columns:1fr 1fr;gap:32px}
@@ -55,9 +62,9 @@ svg.ic{width:18px;height:18px;flex:none;vertical-align:-3px}
 .sets{display:grid;grid-template-columns:1fr 1fr;gap:44px}
 @media (max-width:800px){.sets{grid-template-columns:1fr}}
 .set-imgs{display:grid;grid-template-columns:1fr 88px auto;gap:12px;align-items:start}
-.set-imgs .big{aspect-ratio:1/1;width:100%;object-fit:cover}
+.set-imgs .big{aspect-ratio:320/330;width:100%;object-fit:cover}
 .set-imgs .small{display:grid;gap:12px}
-.set-imgs .small .ph{aspect-ratio:1/1;width:88px;object-fit:cover}
+.set-imgs .small .ph{aspect-ratio:115/105;width:88px;object-fit:cover}
 .set-tag{background:#000;color:#fff;font-weight:700;font-size:13px;padding:6px 12px;border-radius:4px;white-space:nowrap}
 .set-meta{display:flex;gap:12px;margin-top:14px;align-items:flex-start}
 .set-meta .pick{position:relative;flex:none;margin-top:2px}
@@ -212,6 +219,7 @@ svg.ic{width:18px;height:18px;flex:none;vertical-align:-3px}
 .camp b{font-size:26px;font-weight:800;line-height:1.15}
 .camp small,.acc small{display:block;color:var(--muted);font-size:12px;margin-top:8px}
 .camp.inactive b{color:var(--muted)}
+.camp .cover{width:100%;height:110px;object-fit:cover;border-radius:10px;margin-bottom:12px}
 .camp.create{background:var(--ph);border-color:var(--ph);cursor:pointer}
 .camp.create .plus{font-size:56px;font-weight:800;line-height:1}
 .camp.create b{font-size:18px}
@@ -250,3 +258,37 @@ svg.ic{width:18px;height:18px;flex:none;vertical-align:-3px}
 .drop{display:block;border:1px dashed var(--line);border-radius:12px;padding:24px;text-align:center;background:var(--bg);cursor:pointer}
 .drop img{max-width:100%;max-height:260px;border-radius:8px}
 .hidden{display:none!important}
+
+/* back-office: Design page (promote images + set images per campaign) */
+.dz-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:22px}
+.dz-name{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:12px;background:#fff;padding:10px 20px;font-size:20px;font-weight:800}
+.dz-state{font-size:12px;color:var(--muted)}
+.dz-title{display:flex;align-items:center;justify-content:space-between;font-size:20px;font-weight:700;margin:26px 0 12px}
+.dz-title .set-tag{font-size:15px;padding:4px 10px}
+.dz-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:20px}
+.dz-card{position:relative;border:1px solid var(--line);border-radius:var(--r-card);background:#fff;overflow:hidden;min-height:220px}
+.dz-card.wide{aspect-ratio:1180/570;min-height:0}
+.dz-card.big{aspect-ratio:320/330;min-height:0}
+.dz-card.sm{min-height:0;aspect-ratio:115/105}
+.dz-size{font-size:12px;font-weight:400;color:var(--muted);font-family:"Noto Sans Thai","Montserrat",sans-serif}
+.dz-card img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.dz-card .up{position:absolute;right:12px;bottom:12px;display:inline-flex;align-items:center;gap:6px;background:#000;color:#fff;border:0;border-radius:var(--r-pill);padding:6px 12px;font-size:13px;font-weight:700}
+.dz-card.sm .up{right:8px;bottom:8px;padding:5px 10px;font-size:12px}
+.dz-card .rm{position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:50%;border:1px solid var(--line);background:#fff;font-size:16px;line-height:1;padding:0;display:flex;align-items:center;justify-content:center}
+.dz-card.create{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;cursor:pointer;background:#fff}
+.dz-card.create:hover{background:var(--panel)}
+.dz-card.create .plus{font-size:52px;font-weight:800;line-height:1}
+.dz-card.create b{font-size:18px;margin-top:6px}
+.dz-card.create span{font-size:16px}
+.dz-sets{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:24px;align-items:start}
+.dz-set .dz-title{margin-top:0}
+.dz-thumbs{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px}
+.dz-form{margin-top:14px;border:1px solid var(--line);border-radius:var(--r-card);background:#fff;padding:14px 16px}
+.dz-form label{display:block;font-size:12px;font-weight:700}
+.dz-form input,.dz-form select{display:block;width:100%;margin-top:3px;border:1px solid var(--line);border-radius:10px;padding:7px 10px;font-weight:500;background:#fff}
+.dz-form .g2{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px}
+.dz-form .g3{display:grid;grid-template-columns:1fr 1fr 110px;gap:8px 10px;align-items:end}
+.dz-form .items-h{font-size:12px;font-weight:700;margin:12px 0 4px;display:flex;justify-content:space-between;align-items:center}
+.dz-form .items-h button,.dz-form .del{border:1px solid var(--line);background:#fff;border-radius:var(--r-pill);padding:3px 10px;font-size:12px}
+.dz-form .del{margin-top:10px}
+.dz-create{min-height:320px}

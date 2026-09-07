@@ -120,6 +120,30 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     r = await call('it', 'PATCH', '/api/admin/campaigns/jiancha-x-navori', { active: true }); check('switch back', r.json.active === true);
     r = await call('it', 'GET', '/api/admin/campaigns'); check('exactly one active', r.json.filter((c) => c.active).length === 1);
 
+    // ── design (IT-Admin): promote images + sets per campaign ──
+    r = await call('fin', 'GET', '/api/admin/campaigns/jiancha-x-navori/design'); check('finance cannot open design', r.status === 403);
+    r = await call('it', 'GET', '/api/admin/campaigns/jiancha-x-navori/design'); check('design defaults to menu.json', r.status === 200 && r.json.design.sets.length === 2 && r.json.design.promote_images.length === 0 && r.json.campaign.has_design === false, r.json);
+    const imgForm = new FormData(); imgForm.append('image', new Blob([tinyPng(9)], { type: 'image/png' }), 'banner.png');
+    r = await call('it', 'POST', '/api/admin/design/upload', imgForm); check('design image uploaded', r.status === 201 && /^\/uploads\/design\/\d+-[a-f0-9]+\.png$/.test(r.json.url), r.json);
+    const bannerUrl = r.json.url;
+    r = await call('other', 'GET', bannerUrl); check('design image is public', r.status === 200);
+    r = await call('mkt', 'POST', '/api/admin/design/upload', imgForm); check('marketing cannot upload design images', r.status === 403);
+    const svgForm = new FormData(); svgForm.append('image', new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>alert(1)</script></svg>'], { type: 'image/svg+xml' }), 'set.svg');
+    r = await call('it', 'POST', '/api/admin/design/upload', svgForm); check('svg accepted', r.status === 201 && /\.svg$/.test(r.json.url), r.json);
+    { const sr = await fetch(base + r.json.url); check('svg served sandboxed', sr.status === 200 && /image\/svg/.test(sr.headers.get('content-type')) && /default-src 'none'/.test(sr.headers.get('content-security-policy') || '')); }
+    const dz = (await call('it', 'GET', '/api/admin/campaigns/jiancha-x-navori/design')).json.design;
+    dz.promote_images = [bannerUrl, 'javascript:alert(1)']; dz.sets[0].price = 300; dz.sets[0].image = bannerUrl;
+    dz.sets.push({ id: 'C', label: 'SET C', name_en: 'Third', name_th: 'สาม', price: 99, items: [{ name_en: 'Tea', kind: 'drink' }], pieces: 2 });
+    r = await call('it', 'PUT', '/api/admin/campaigns/jiancha-x-navori/design', dz); check('design saved + sanitized', r.status === 200 && r.json.design.promote_images.length === 1 && r.json.design.sets.length === 3 && r.json.design.sets[2].drink_pieces === 1 && r.json.campaign.cover === bannerUrl && r.json.campaign.set_count === 3, r.json);
+    r = await call('customer', 'GET', '/api/menu'); check('homepage follows the design', r.json.banners.length === 1 && r.json.banner === bannerUrl && r.json.sets.length === 3 && r.json.sets[0].price === 300 && r.json.sets[0].image === bannerUrl, r.json);
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, lines: [{ set_id: 'C', quantity: 1 }] }); check('order a designed set (2 pieces)', r.status === 201 && r.json.total === 99 && r.json.lines[0].pieces === 2 && r.json.lines[0].name === 'SET C · Third', r.json);
+    const orderC = r.json;
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, lines: [{ set_id: 'Z', quantity: 1 }] }); check('unknown set rejected', r.status === 400);
+    dz.sets = dz.sets.filter((x) => x.id !== 'C'); r = await call('it', 'PUT', '/api/admin/campaigns/jiancha-x-navori/design', dz);
+    r = await call('customer', 'GET', `/api/orders/${orderC.id}`); check('old order keeps its set snapshot', r.json.lines[0].name === 'SET C · Third');
+    r = await call('fin', 'POST', `/api/admin/orders/${orderC.id}/status`, { status: 'cancelled' }); check('cleanup: cancel designed-set order', r.json.status === 'cancelled');
+    r = await call('it', 'GET', '/api/admin/campaigns/jiancha-x-summer/design'); check('other campaign still on template', r.json.design.sets.length === 2 && r.json.design.promote_images.length === 0);
+
     // ── stock (campaign jiancha-x-navori: 1000 sets; 4 used above: A×2 + B×1 + B×1) ──
     r = await call('customer', 'GET', '/api/stock'); check('stock view', r.json.limits.total === 1000 && r.json.used.total === 4 && r.json.remaining.total === 996 && r.json.used.drink === 4 && r.json.used.dessert === 8, r.json);
     const big = (n) => Array.from({ length: n }, () => ({ set_id: A, quantity: 99 }));
@@ -142,7 +166,7 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     r = await fetch(base + '/cart'); check('extensionless page served', r.status === 200);
   } finally {
     server.close();
-    for (const f of fs.readdirSync(path.join(__dirname, '..', 'uploads'))) if (/^\d{13}-/.test(f) && Date.now() - Number(f.slice(0, 13)) < 60000) fs.unlinkSync(path.join(__dirname, '..', 'uploads', f));
+    for (const dir of ['uploads', 'uploads/design']) for (const f of fs.readdirSync(path.join(__dirname, '..', dir))) if (/^\d{13}-/.test(f) && Date.now() - Number(f.slice(0, 13)) < 60000) fs.unlinkSync(path.join(__dirname, '..', dir, f));
     try { fs.unlinkSync(process.env.DB_PATH); fs.unlinkSync(process.env.DB_PATH + '-wal'); fs.unlinkSync(process.env.DB_PATH + '-shm'); } catch (e) { /* ignore */ }
   }
   console.log(failed ? `\n${failed} check(s) FAILED` : '\nall checks passed');
