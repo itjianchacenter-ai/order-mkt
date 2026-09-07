@@ -12,9 +12,8 @@ const menuPublic = { banner: menu.banner || '', stock: menu.stock || {}, promo_c
 const toPreview = (js) => js
   .replace(/location\.href = /g, "location.hash = '#' + ")
   .replace(/location\.reload\(\)/g, 'route()')
-  .replace(/new URLSearchParams\(location\.search\)/g, "new URLSearchParams((location.hash.split('?')[1] || ''))")
-  .replace(/location\.search/g, "(location.hash.includes('?') ? '?' + location.hash.split('?')[1] : '')")
-  .replace(/location\.pathname/g, "('/' + location.hash.replace(/^#\\/?/, '').split('?')[0])")
+  .replace(/location\.search/g, "pvSearch()")
+  .replace(/location\.pathname/g, "pvPath()")
   .replace(/href="\//g, 'href="#/');
 // app.js without its real api(): the mock defines api() instead
 let app = read(path.join(PUB, 'js/app.js'));
@@ -53,6 +52,15 @@ ${css}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script>
 window.PREVIEW_MODE = true;
+// Static hosting serves this file for every path (404.html), so /jianchaxnavori/ and /admin-page work as real URLs;
+// in-app links then use #/... routes. The current "path"/"search" come from the hash when there is one, else the real URL.
+const PV_BASE = (window.location['pathname'].match(new RegExp('^(.*/)[^/]*[.]html$')) || [, '/'])[1];
+function pvPath() {
+  if (location.hash.length > 1) return '/' + location.hash.replace(new RegExp('^#/?'), '').split('?')[0];
+  let p = window.location['pathname']; if (p.startsWith(PV_BASE)) p = '/' + p.slice(PV_BASE.length);
+  return p.replace(new RegExp('/index[.]html$'), '/').replace(new RegExp('[.]html$'), '');
+}
+function pvSearch() { return location.hash.includes('?') ? '?' + location.hash.split('?')[1] : (location.hash.length > 1 ? '' : window.location['search']); }
 const PREVIEW_MENU = ${JSON.stringify(menuPublic)};
 const PREVIEW_STORES = ${JSON.stringify(stores.filter((s) => s.active !== false).map((s) => ({ id: String(s.id), brand: s.brand || 'JIAN CHA', name: s.name, map_url: s.map_url || '' })))};
 ${mock}
@@ -63,7 +71,7 @@ ${Object.entries(js).map(([n, code]) => `  ${n}: function () {\n${code}\n  },`).
 };
 const ROUTES = { '/': 'home', '/index': 'home', '/cart': 'cart', '/orders': 'orders', '/stores': 'stores', '/pay': 'pay', '/receipt': 'receipt', '/admin-page': 'admin' };
 function route() {
-  let h = (location.hash.replace(/^#/, '') || '/').split('?')[0].replace(new RegExp('/+$'), '') || '/';
+  let h = pvPath().split('?')[0].replace(new RegExp('/+$'), '') || '/';
   // #/<campaign-slug>/cart -> page 'cart' of that campaign (campaignSlug() reads the slug from the hash)
   const segs = h.split('/').filter(Boolean);
   if (segs.length && !ROUTES['/' + segs[0]] && segs[0] !== 'index') h = '/' + segs.slice(1).join('/');
