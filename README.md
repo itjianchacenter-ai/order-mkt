@@ -2,7 +2,10 @@
 
 เว็บสั่งสินค้าตามแคมเปญ ลูกค้าเลือกเครื่องดื่ม + ของหวาน จับคู่เป็น "Your Match" เลือกสาขาที่รับของ ชำระเงินผ่าน PromptPay QR แล้วอัปโหลดสลิป ฝ่ายหลังบ้านตรวจสอบและติดตามคำสั่งซื้อได้ที่ `/admin-page`
 
-ระบบนี้เป็นแอปแยกเดี่ยว ไม่เชื่อมกับระบบอื่น
+ระบบนี้เป็นแอปแยกเดี่ยว ไม่เชื่อมกับระบบอื่น (repo: `itjianchacenter-ai/order-mkt`)
+
+- **Preview (GitHub Pages):** https://itjianchacenter-ai.github.io/order-mkt/ → จะผูกเป็น https://order.jianchatea.com
+- Preview ถูก build อัตโนมัติจาก `.github/workflows/pages.yml` ทุกครั้งที่ push ขึ้น `main`
 
 ## หน้าเว็บ
 
@@ -49,7 +52,8 @@
 ## ติดตั้งและรัน
 
 ```bash
-cd order-site
+git clone https://github.com/itjianchacenter-ai/order-mkt.git
+cd order-mkt
 npm install
 cp .env.example .env     # แก้ค่าตามด้านล่าง
 npm start                # http://localhost:3870
@@ -98,7 +102,6 @@ npm start                # http://localhost:3870
 ข้อมูลทดสอบทั้งหมด (ออเดอร์, รหัสโปรโมชันที่ออกไปแล้ว, เลขลำดับออเดอร์, รูปสลิป) ล้างได้ด้วยคำสั่งเดียว เมนู สาขา และค่า stock ไม่ถูกแตะ
 
 ```bash
-cd order-site
 node scripts/reset-data.js --yes
 ```
 
@@ -115,7 +118,7 @@ node scripts/reset-data.js --yes
 
 ```bash
 git pull
-cd order-site && npm install --omit=dev
+npm install --omit=dev
 NODE_ENV=production pm2 start server.js --name jiancha-order
 ```
 
