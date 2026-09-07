@@ -259,31 +259,36 @@ svg.ic{width:18px;height:18px;flex:none;vertical-align:-3px}
 .drop img{max-width:100%;max-height:260px;border-radius:8px}
 .hidden{display:none!important}
 
-/* back-office: Design page (promote images + set images per campaign) */
+/* back-office: Design page (promote images + set images per campaign) — layout per mock-up */
 .dz-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:22px}
 .dz-name{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:12px;background:#fff;padding:10px 20px;font-size:20px;font-weight:800}
 .dz-state{font-size:12px;color:var(--muted)}
-.dz-title{display:flex;align-items:center;justify-content:space-between;font-size:20px;font-weight:700;margin:26px 0 12px}
-.dz-title .set-tag{font-size:15px;padding:4px 10px}
-.dz-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:20px}
-.dz-card{position:relative;border:1px solid var(--line);border-radius:var(--r-card);background:#fff;overflow:hidden;min-height:220px}
-.dz-card.wide{aspect-ratio:1180/570;min-height:0}
-.dz-card.big{aspect-ratio:320/330;min-height:0}
-.dz-card.sm{min-height:0;aspect-ratio:115/105}
+.dz-title{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:22px;font-weight:700;margin:26px 0 10px}
+.dz-title .set-tag{font-size:16px;padding:4px 10px;border-radius:4px}
 .dz-size{font-size:12px;font-weight:400;color:var(--muted);font-family:"Noto Sans Thai","Montserrat",sans-serif}
-.dz-card img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.dz-row{display:flex;flex-wrap:wrap;gap:20px;align-items:stretch}
+.dz-card{position:relative;border:1px solid var(--line);border-radius:var(--r-card);background:#fff;overflow:hidden}
+.dz-card.wide{width:435px;max-width:100%;height:270px}
+.dz-card.create.wide{width:300px;height:270px}
+.dz-card.big{height:190px}
+.dz-card.sm{height:115px}
+.dz-card img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block;background:#fff}
 .dz-card .up{position:absolute;right:12px;bottom:12px;display:inline-flex;align-items:center;gap:6px;background:#000;color:#fff;border:0;border-radius:var(--r-pill);padding:6px 12px;font-size:13px;font-weight:700}
-.dz-card.sm .up{right:8px;bottom:8px;padding:5px 10px;font-size:12px}
+.dz-card.sm .up{right:auto;left:12px;bottom:10px;padding:5px 10px;font-size:12px}
 .dz-card .rm{position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:50%;border:1px solid var(--line);background:#fff;font-size:16px;line-height:1;padding:0;display:flex;align-items:center;justify-content:center}
 .dz-card.create{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;cursor:pointer;background:#fff}
 .dz-card.create:hover{background:var(--panel)}
 .dz-card.create .plus{font-size:52px;font-weight:800;line-height:1}
-.dz-card.create b{font-size:18px;margin-top:6px}
+.dz-card.create b{font-size:18px;margin-top:4px}
 .dz-card.create span{font-size:16px}
-.dz-sets{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:24px;align-items:start}
+.dz-sets{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}
+.dz-set{width:435px;max-width:100%}
 .dz-set .dz-title{margin-top:0}
+.dz-set-new{width:300px}
+.dz-set-new .dz-title{visibility:hidden}
+.dz-create{width:300px;max-width:100%;height:190px}
 .dz-thumbs{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px}
-.dz-form{margin-top:14px;border:1px solid var(--line);border-radius:var(--r-card);background:#fff;padding:14px 16px}
+.dz-form{margin-top:12px;border:1px solid var(--line);border-radius:var(--r-card);background:#fff;padding:14px 16px}
 .dz-form label{display:block;font-size:12px;font-weight:700}
 .dz-form input,.dz-form select{display:block;width:100%;margin-top:3px;border:1px solid var(--line);border-radius:10px;padding:7px 10px;font-weight:500;background:#fff}
 .dz-form .g2{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px}
@@ -291,4 +296,18 @@ svg.ic{width:18px;height:18px;flex:none;vertical-align:-3px}
 .dz-form .items-h{font-size:12px;font-weight:700;margin:12px 0 4px;display:flex;justify-content:space-between;align-items:center}
 .dz-form .items-h button,.dz-form .del{border:1px solid var(--line);background:#fff;border-radius:var(--r-pill);padding:3px 10px;font-size:12px}
 .dz-form .del{margin-top:10px}
-.dz-create{min-height:320px}
+@media (max-width:700px){.dz-set,.dz-set-new,.dz-create,.dz-card.wide,.dz-card.create.wide{width:100%}.dz-card.create.wide{height:160px}}
+/* campaign card extras: customer link + Design / Copy buttons */
+.camp .camp-url{margin-top:6px;font-size:12px;word-break:break-all}
+.camp .camp-url a{color:var(--muted)}
+.camp .camp-acts{display:flex;gap:8px;margin-top:10px}
+.btn.sm{padding:5px 12px;font-size:13px}
+.dz-head .dz-another{margin-left:auto;font-size:18px;font-weight:800;padding:10px 20px}
+.dz-camps{display:flex;flex-wrap:wrap;gap:16px}
+.dz-camp{position:relative;width:250px;max-width:100%;min-height:100px;border:1px solid var(--line);border-radius:var(--r-card);background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:18px 16px;cursor:pointer;overflow:hidden}
+.dz-camp:hover{background:var(--panel)}
+.dz-camp b{font-size:19px;font-weight:800;line-height:1.2}
+.dz-camp small{font-size:11px;color:var(--muted);margin-top:6px;word-break:break-all}
+.dz-camp img{width:100%;height:70px;object-fit:cover;border-radius:8px;margin-bottom:8px}
+.dz-camp.create{flex-direction:row;gap:14px;font-size:16px;line-height:1.15}
+.dz-camp.create .plus{font-size:44px;font-weight:800;line-height:1}

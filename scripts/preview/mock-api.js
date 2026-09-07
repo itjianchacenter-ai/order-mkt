@@ -1,6 +1,6 @@
 /* PREVIEW ONLY — replaces api() with an in-browser implementation of the same endpoints.
    Data lives in this browser's localStorage. The real site talks to server.js. */
-const PREVIEW_DB_KEY = 'jc_preview_db_v3';
+const PREVIEW_DB_KEY = 'jc_preview_db_v4';
 const PAGE_SIZE = 8;
 const PV_PERMS = {
   orders_view: ['it_admin', 'admin', 'finance'], slip_review: ['it_admin', 'finance'], pickup: ['it_admin', 'admin', 'finance'],
@@ -59,7 +59,7 @@ function pvSeed() {
     { id: 'u-fin', username: 'finance', password: 'jiancha', role: 'finance', display_name: 'Finance', department: 'Finance', active: true, created_at: pvNow(-9000) },
   ];
   const st = PREVIEW_MENU.stock || {}, pc = PREVIEW_MENU.promo_code || {};
-  const campaigns = [{ id: PV_CAMPAIGN_ID, name: 'JIANCHA x NAVORI', active: true, stock: { total: st.total ?? 1000, drink: st.drink ?? null, dessert: st.dessert ?? null }, promo_code: { from: pc.from || 2026090001, to: pc.to || 2026092000 }, created_at: pvNow(-9000) }];
+  const campaigns = [{ id: PV_CAMPAIGN_ID, slug: 'jianchaxnavori', name: 'JIANCHA x NAVORI', active: true, orders_open: true, stock: { total: st.total ?? 1000, drink: st.drink ?? null, dessert: st.dessert ?? null }, promo_code: { from: pc.from || 2026090001, to: pc.to || 2026092000 }, created_at: pvNow(-9000) }];
   return { orders, users, campaigns, session: null, counter: { day, seq: orders.length } };
 }
 function pvSetLine(s, q) {
@@ -72,6 +72,9 @@ function pvNextNumber(d) {
   d.counter.seq += 1; return day + String(d.counter.seq).padStart(5, '0');
 }
 function pvActiveCampaign(d) { return d.campaigns.find((c) => c.active) || d.campaigns[0]; }
+const pvSlugOf = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 40);
+function pvCampaignBySlug(d, s) { s = pvSlugOf(s); return s ? (d.campaigns.find((c) => c.slug === s) || d.campaigns.find((c) => c.id.replace(/-/g, '') === s) || null) : null; }
+function pvCampaignPublic(c) { return { id: c.id, slug: c.slug, url: `/${c.slug}/`, name: c.name, active: Boolean(c.active), orders_open: c.orders_open !== false }; }
 /* campaign design (promote images + sets); a campaign without one uses the bundled menu.json as its template */
 function pvNormDesign(src) {
   src = src && typeof src === 'object' ? src : {};
@@ -87,7 +90,7 @@ function pvNormDesign(src) {
 }
 function pvDesign(c) { return c.design ? pvNormDesign(c.design) : pvNormDesign({ promote_images: PREVIEW_MENU.banner ? [PREVIEW_MENU.banner] : [], sets: PREVIEW_MENU.sets }); }
 function pvMenuFor(c) { const dz = pvDesign(c); return { banner: dz.promote_images[0] || '', banners: dz.promote_images, sets: dz.sets.filter((x) => x.active), drinks: [], desserts: [] }; }
-function pvCampaignView(c) { const dz = pvDesign(c); return { ...c, design: undefined, cover: dz.promote_images[0] || '', set_count: dz.sets.filter((x) => x.active).length, has_design: Boolean(c.design) }; }
+function pvCampaignView(c) { const dz = pvDesign(c); return { ...c, url: `/${c.slug}/`, orders_open: c.orders_open !== false, design: undefined, cover: dz.promote_images[0] || '', set_count: dz.sets.filter((x) => x.active).length, has_design: Boolean(c.design) }; }
 function pvCampaignName(d, id) { const c = d.campaigns.find((x) => x.id === id); return c ? c.name : ''; }
 function pvView(d, o, admin) {
   const v = { id: o.id, order_number: o.order_number, campaign_id: o.campaign_id, campaign_name: pvCampaignName(d, o.campaign_id), store_id: o.store_id, store_name: o.store_name, total: o.total, status: o.status, note: o.note, created_at: o.created_at, paid_at: o.paid_at, picked_up_at: o.picked_up_at, has_slip: Boolean(o.slip_url), slip_reason: o.slip_reason, lines: o.lines, promo_code: o.promo_code || null, code_available: ['paid', 'picked_up'].includes(o.status), payable: ['pending', 'slip_rejected'].includes(o.status) };
@@ -145,17 +148,19 @@ async function api(path, opts = {}) {
   const find = (id) => d.orders.find((o) => o.id === id);
   const own = (id) => { const o = find(id); if (!o || (o.customer_id !== me && !admin)) pvFail('ไม่พบคำสั่งซื้อ'); return o; };
   const active = pvActiveCampaign(d);
+  const reqCamp = pvCampaignBySlug(d, q.get('campaign') || (body && !(body instanceof FormData) && body.campaign) || '') || active;
   let m;
 
   /* ── public ── */
-  if (p === '/api/menu') return { ...pvMenuFor(active), campaign: { id: active.id, name: active.name }, stock: pvStockView(d, active) };
-  if (p === '/api/stock') return pvStockView(d, active);
+  if (p === '/api/menu') return { ...pvMenuFor(reqCamp), campaign: pvCampaignPublic(reqCamp), stock: pvStockView(d, reqCamp) };
+  if (p === '/api/stock') return pvStockView(d, reqCamp);
   if (p === '/api/stores') return PREVIEW_STORES;
   if (p === '/api/config') return { payment_ready: true, slip_auto_verify: false };
   if (p === '/api/orders' && method === 'POST') {
     const store = PREVIEW_STORES.find((s) => s.id === String(body.store_id)); if (!store) pvFail('กรุณาเลือกสาขาที่รับสินค้า');
     if (!Array.isArray(body.lines) || !body.lines.length) pvFail('ยังไม่มีรายการในตะกร้า');
-    const SETS = Object.fromEntries(pvMenuFor(active).sets.map((x) => [x.id, x]));
+    const camp = reqCamp; if (camp.orders_open === false) pvFail('แคมเปญนี้ปิดรับคำสั่งซื้อแล้ว / This campaign is closed');
+    const SETS = Object.fromEntries(pvMenuFor(camp).sets.map((x) => [x.id, x]));
     const lines = body.lines.map((l) => {
       const s = SETS[String(l.set_id)]; const qty = parseInt(l.quantity, 10);
       if (!s) pvFail('มีเซ็ตที่ไม่มีให้บริการแล้ว กรุณาเลือกใหม่'); if (!(qty >= 1 && qty <= 99)) pvFail('รายการสินค้าไม่ถูกต้อง');
@@ -163,8 +168,8 @@ async function api(path, opts = {}) {
     });
     const total = pvMoney(lines.reduce((s, l) => s + l.line_total, 0));
     const want = lines.reduce((w, r) => { w.total += r.quantity * r.pieces; w.drink += r.quantity * r.drink_pieces; w.dessert += r.quantity * r.dessert_pieces; return w; }, { drink: 0, dessert: 0, total: 0 });
-    const short = pvStockShortfall(d, active, want); if (short) pvFail(short);
-    const o = { promo_code: null, id: pvUuid(), order_number: pvNextNumber(d), customer_id: me, campaign_id: active.id, store_id: store.id, store_name: `${store.brand} - ${store.name}`, total, status: total > 0 ? 'pending' : 'paid', note: String(body.note || '').slice(0, 500), created_at: pvNow(), paid_at: total > 0 ? null : pvNow(), picked_up_at: null, cancelled_at: null, slip_url: '', slip_hash: '', slip_ref: '', slip_amount: null, slip_reason: '', slip_verified: 0, lines };
+    const short = pvStockShortfall(d, camp, want); if (short) pvFail(short);
+    const o = { promo_code: null, id: pvUuid(), order_number: pvNextNumber(d), customer_id: me, campaign_id: camp.id, store_id: store.id, store_name: `${store.brand} - ${store.name}`, total, status: total > 0 ? 'pending' : 'paid', note: String(body.note || '').slice(0, 500), created_at: pvNow(), paid_at: total > 0 ? null : pvNow(), picked_up_at: null, cancelled_at: null, slip_url: '', slip_hash: '', slip_ref: '', slip_amount: null, slip_reason: '', slip_verified: 0, lines };
     d.orders.unshift(o); pvSave(d); return pvView(d, o);
   }
   if (p === '/api/orders') return d.orders.filter((o) => o.customer_id === me).map((o) => pvView(d, o));
@@ -201,7 +206,7 @@ async function api(path, opts = {}) {
     d.session = u.id; pvSave(d); return { ok: true, user: pvUserView(u), permissions: pvPerms(u) };
   }
   if (p === '/api/admin/logout') { d.session = null; pvSave(d); return { ok: true }; }
-  if (p === '/api/admin/me') return { admin: Boolean(admin), user: admin ? pvUserView(admin) : null, permissions: pvPerms(admin), slip_auto_verify: false, payment_ready: true };
+  if (p === '/api/admin/me') return { admin: Boolean(admin), user: admin ? pvUserView(admin) : null, permissions: pvPerms(admin), slip_auto_verify: false, payment_ready: true, public_base_url: '' };
   if (!admin) pvFail('HTTP 401');
   const need = (perm) => { if (!can(perm)) pvFail('สิทธิ์ไม่เพียงพอ / Not allowed for your role'); };
 
@@ -237,7 +242,8 @@ async function api(path, opts = {}) {
     need('campaigns'); const name = String(body.name || '').trim().slice(0, 80); if (!name) pvFail('กรุณาใส่ชื่อแคมเปญ');
     const from = parseInt(body.promo_from, 10), to = parseInt(body.promo_to, 10); if (!(from >= 0 && to >= from)) pvFail('ช่วงรหัสโปรโมชันไม่ถูกต้อง');
     let id = pvSlug(name), n = 2; while (d.campaigns.some((c) => c.id === id)) id = `${pvSlug(name)}-${n++}`;
-    const c = { id, name, active: false, stock: { total: pvLim(body.stock_total), drink: pvLim(body.stock_drink), dessert: pvLim(body.stock_dessert) }, promo_code: { from, to }, created_at: pvNow() };
+    const slug = pvSlugOf(body.slug || name); if (slug.length < 2) pvFail('ลิงก์แคมเปญ (URL) ต้องเป็น a-z, 0-9 อย่างน้อย 2 ตัว'); if (d.campaigns.some((c) => c.slug === slug)) pvFail(`ลิงก์ /${slug}/ ถูกใช้แล้ว กรุณาตั้งใหม่`);
+    const c = { id, slug, name, active: false, orders_open: body.orders_open !== false, stock: { total: pvLim(body.stock_total), drink: pvLim(body.stock_drink), dessert: pvLim(body.stock_dessert) }, promo_code: { from, to }, created_at: pvNow() };
     d.campaigns.push(c); if (body.active) { d.campaigns.forEach((x) => { x.active = false; }); c.active = true; }
     pvSave(d); return pvCampaignStats(d, c);
   }
@@ -246,6 +252,8 @@ async function api(path, opts = {}) {
     const name = String(body.name ?? c.name).trim().slice(0, 80); if (!name) pvFail('กรุณาใส่ชื่อแคมเปญ');
     const from = body.promo_from == null ? c.promo_code.from : parseInt(body.promo_from, 10), to = body.promo_to == null ? c.promo_code.to : parseInt(body.promo_to, 10);
     if (!(from >= 0 && to >= from)) pvFail('ช่วงรหัสโปรโมชันไม่ถูกต้อง');
+    if ('slug' in body) { const slug = pvSlugOf(body.slug || name); if (slug.length < 2) pvFail('ลิงก์แคมเปญ (URL) ต้องเป็น a-z, 0-9 อย่างน้อย 2 ตัว'); if (d.campaigns.some((x) => x.slug === slug && x.id !== c.id)) pvFail(`ลิงก์ /${slug}/ ถูกใช้แล้ว กรุณาตั้งใหม่`); c.slug = slug; }
+    if ('orders_open' in body) c.orders_open = Boolean(body.orders_open);
     c.name = name; c.promo_code = { from, to }; if ('stock_total' in body) c.stock.total = pvLim(body.stock_total);
     if (body.active === true) { d.campaigns.forEach((x) => { x.active = false; }); c.active = true; }
     pvSave(d); return pvCampaignStats(d, c);

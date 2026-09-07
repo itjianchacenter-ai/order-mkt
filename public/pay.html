@@ -17,13 +17,13 @@
   const id = new URLSearchParams(location.search).get('order');
   const head = $('#order-head'), pay = $('#pay');
   let o;
-  try { o = await api('/api/orders/' + encodeURIComponent(id)); } catch (e) { head.innerHTML = '<div class="empty">ไม่พบคำสั่งซื้อ / Order not found. <a href="/orders">Order History</a></div>'; return; }
+  try { o = await api('/api/orders/' + encodeURIComponent(id)); } catch (e) { head.innerHTML = `<div class="empty">ไม่พบคำสั่งซื้อ / Order not found. <a href="${H()}/orders">Order History</a></div>`; return; }
   head.innerHTML = orderCard(o, { open: true });
   bindOrderToggles(head);
 
   function done(msgTh, msgEn) {
     pay.innerHTML = `<div class="paybox" style="grid-column:1/-1;text-align:center">${ICONS.check}<h3 style="margin-top:8px">${msgEn}</h3><span class="sub th">${msgTh}</span>
-      <a class="btn" href="/orders">${ICONS.doc} Order History</a></div>`;
+      <a class="btn" href="${H()}/orders">${ICONS.doc} Order History</a></div>`;
   }
   if (o.status === 'paid' || o.status === 'picked_up') return done('ชำระเงินเรียบร้อยแล้ว ขอบคุณค่ะ', 'Payment received. Thank you!');
   if (o.status === 'cancelled') return done('คำสั่งซื้อนี้ถูกยกเลิกแล้ว', 'This order was cancelled.');

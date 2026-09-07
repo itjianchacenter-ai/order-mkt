@@ -93,6 +93,17 @@ for (const [col, ddl] of [['set_id', "TEXT DEFAULT ''"], ['set_label', "TEXT DEF
 }
 db.exec("UPDATE order_lines SET pieces = (drink_id <> '') + (dessert_id <> ''), drink_pieces = (drink_id <> ''), dessert_pieces = (dessert_id <> '') WHERE pieces IS NULL");
 
+// campaigns.slug: the campaign's own customer URL (order.jianchatea.com/<slug>/), letters+digits from the name, e.g. jianchaxnavori
+if (!db.prepare("SELECT 1 FROM pragma_table_info('campaigns') WHERE name = 'slug'").get()) {
+  db.exec('ALTER TABLE campaigns ADD COLUMN slug TEXT');
+  db.exec("UPDATE campaigns SET slug = lower(replace(id, '-', '')) WHERE slug IS NULL OR slug = ''");
+}
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_campaigns_slug ON campaigns(slug)');
+// campaigns.orders_open: 0 = the campaign page is visible but no longer takes orders
+if (!db.prepare("SELECT 1 FROM pragma_table_info('campaigns') WHERE name = 'orders_open'").get()) {
+  db.exec('ALTER TABLE campaigns ADD COLUMN orders_open INTEGER NOT NULL DEFAULT 1');
+}
+
 // campaigns.design_json: what the customer homepage shows for this campaign (promote images + Match Sets), edited on the IT-Admin Design page
 if (!db.prepare("SELECT 1 FROM pragma_table_info('campaigns') WHERE name = 'design_json'").get()) {
   db.exec('ALTER TABLE campaigns ADD COLUMN design_json TEXT');
@@ -124,8 +135,8 @@ function seedDefaults({ campaign } = {}) {
   }
   if (db.prepare('SELECT COUNT(*) AS n FROM campaigns').get().n === 0) {
     const c = campaign || {};
-    db.prepare('INSERT INTO campaigns(id, name, active, stock_total, stock_drink, stock_dessert, promo_from, promo_to) VALUES (?, ?, 1, ?, ?, ?, ?, ?)')
-      .run(c.id || 'jiancha-x-navori', c.name || 'JIANCHA x NAVORI', c.stock_total ?? 1000, c.stock_drink ?? null, c.stock_dessert ?? null, c.promo_from || 2026090001, c.promo_to || 2026092000);
+    db.prepare('INSERT INTO campaigns(id, slug, name, active, stock_total, stock_drink, stock_dessert, promo_from, promo_to) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?)')
+      .run(c.id || 'jiancha-x-navori', c.slug || 'jianchaxnavori', c.name || 'JIANCHA x NAVORI', c.stock_total ?? 1000, c.stock_drink ?? null, c.stock_dessert ?? null, c.promo_from || 2026090001, c.promo_to || 2026092000);
   }
   // orders created before campaigns existed belong to the active campaign
   const active = db.prepare('SELECT id FROM campaigns WHERE active = 1 ORDER BY created_at LIMIT 1').get();

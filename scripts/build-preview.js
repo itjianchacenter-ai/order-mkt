@@ -14,6 +14,7 @@ const toPreview = (js) => js
   .replace(/location\.reload\(\)/g, 'route()')
   .replace(/new URLSearchParams\(location\.search\)/g, "new URLSearchParams((location.hash.split('?')[1] || ''))")
   .replace(/location\.search/g, "(location.hash.includes('?') ? '?' + location.hash.split('?')[1] : '')")
+  .replace(/location\.pathname/g, "('/' + location.hash.replace(/^#\\/?/, '').split('?')[0])")
   .replace(/href="\//g, 'href="#/');
 // app.js without its real api(): the mock defines api() instead
 let app = read(path.join(PUB, 'js/app.js'));
@@ -62,7 +63,11 @@ ${Object.entries(js).map(([n, code]) => `  ${n}: function () {\n${code}\n  },`).
 };
 const ROUTES = { '/': 'home', '/index': 'home', '/cart': 'cart', '/orders': 'orders', '/stores': 'stores', '/pay': 'pay', '/receipt': 'receipt', '/admin-page': 'admin' };
 function route() {
-  const h = (location.hash.replace(/^#/, '') || '/').split('?')[0];
+  let h = (location.hash.replace(/^#/, '') || '/').split('?')[0].replace(new RegExp('/+$'), '') || '/';
+  // #/<campaign-slug>/cart -> page 'cart' of that campaign (campaignSlug() reads the slug from the hash)
+  const segs = h.split('/').filter(Boolean);
+  if (segs.length && !ROUTES['/' + segs[0]] && segs[0] !== 'index') h = '/' + segs.slice(1).join('/');
+  if (h === '') h = '/';
   const name = ROUTES[h] || 'home';
   document.getElementById('root').innerHTML = '<div class="wrap">' + PAGE_HTML[name] + '</div>';
   window.scrollTo(0, 0);

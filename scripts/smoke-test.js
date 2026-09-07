@@ -144,6 +144,23 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     r = await call('fin', 'POST', `/api/admin/orders/${orderC.id}/status`, { status: 'cancelled' }); check('cleanup: cancel designed-set order', r.json.status === 'cancelled');
     r = await call('it', 'GET', '/api/admin/campaigns/jiancha-x-summer/design'); check('other campaign still on template', r.json.design.sets.length === 2 && r.json.design.promote_images.length === 0);
 
+    // ── campaign URLs: /<slug>/ shows that campaign; orders can name the campaign ──
+    r = await call('it', 'GET', '/api/admin/campaigns'); check('campaign slug + url', r.json.find((c) => c.id === 'jiancha-x-navori').slug === 'jianchaxnavori' && r.json.find((c) => c.id === 'jiancha-x-summer').slug === 'jianchaxsummer' && r.json[0].url === `/${r.json[0].slug}/`, r.json.map((c) => c.slug));
+    r = await fetch(base + '/jianchaxnavori/'); check('campaign page served', r.status === 200 && /Match Sets|id="sets"/.test(await r.text()));
+    r = await fetch(base + '/jianchaxnavori', { redirect: 'manual' }); check('campaign page redirects to trailing slash', r.status === 301 && r.headers.get('location') === '/jianchaxnavori/');
+    r = await fetch(base + '/jianchaxsummer/cart'); check('campaign sub-page served', r.status === 200);
+    r = await fetch(base + '/no-such-campaign/'); check('unknown campaign 404', r.status === 404);
+    r = await call('customer', 'GET', '/api/menu?campaign=jianchaxsummer'); check('menu for a campaign by slug', r.json.campaign.id === 'jiancha-x-summer' && r.json.campaign.url === '/jianchaxsummer/' && r.json.stock.limits.total === 500, r.json.campaign);
+    r = await call('customer', 'GET', '/api/menu'); check('root menu is the active campaign', r.json.campaign.id === 'jiancha-x-navori');
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, campaign: 'jianchaxsummer', lines: [{ set_id: A, quantity: 1 }] }); check('order into a campaign by slug', r.status === 201 && r.json.campaign_id === 'jiancha-x-summer', r.json);
+    r = await call('fin', 'POST', `/api/admin/orders/${r.json.id}/status`, { status: 'cancelled' });
+    r = await call('it', 'PATCH', '/api/admin/campaigns/jiancha-x-summer', { slug: 'jianchaxnavori' }); check('duplicate slug rejected', r.status === 409);
+    r = await call('it', 'PATCH', '/api/admin/campaigns/jiancha-x-summer', { slug: 'Summer 2026!', orders_open: false }); check('slug normalized + orders closed', r.status === 200 && r.json.slug === 'summer2026' && r.json.orders_open === false, r.json);
+    r = await fetch(base + '/summer2026/'); check('renamed campaign page served', r.status === 200);
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, campaign: 'summer2026', lines: [{ set_id: A, quantity: 1 }] }); check('closed campaign refuses orders', r.status === 400 && /ปิดรับ/.test(r.json.error));
+    r = await call('customer', 'GET', '/api/menu?campaign=summer2026'); check('closed flag visible to customers', r.json.campaign.orders_open === false);
+    r = await call('it', 'POST', '/api/admin/campaigns', { name: 'JIANCHA x SUMMER', slug: 'x' }); check('too-short slug rejected', r.status === 400);
+
     // ── stock (campaign jiancha-x-navori: 1000 sets; 4 used above: A×2 + B×1 + B×1) ──
     r = await call('customer', 'GET', '/api/stock'); check('stock view', r.json.limits.total === 1000 && r.json.used.total === 4 && r.json.remaining.total === 996 && r.json.used.drink === 4 && r.json.used.dessert === 8, r.json);
     const big = (n) => Array.from({ length: n }, () => ({ set_id: A, quantity: 99 }));

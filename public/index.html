@@ -59,7 +59,9 @@
   const [menu, stores] = await Promise.all([getMenu(), api('/api/stores')]);
   const map = menuMap(menu);
   let stock = menu.stock; const getStock = () => stock;
-  async function refreshStock() { try { stock = await api('/api/stock'); } catch (e) { /* keep last */ } render(); }
+  async function refreshStock() { try { stock = await api(withCampaign('/api/stock')); } catch (e) { /* keep last */ } render(); }
+  const closed = menu.campaign && menu.campaign.orders_open === false;
+  if (closed) $('#stock-err').textContent = 'แคมเปญนี้ปิดรับคำสั่งซื้อแล้ว / This campaign is closed';
   renderHero($('#hero'), menu.banners && menu.banners.length ? menu.banners : [menu.banner]);
   if (menu.campaign && menu.campaign.name) { const b = $('.brand b'); if (b) b.textContent = menu.campaign.name; document.title = menu.campaign.name + ' | Order'; }
 
@@ -113,7 +115,7 @@
   function render() {
     const cart = loadCart(); const storeId = getStore(); const store = stores.find((s) => s.id === storeId);
     $('#stock-pill').innerHTML = stockPill(stock);
-    $('#confirm').disabled = Boolean(stock && stock.sold_out);
+    $('#confirm').disabled = Boolean(stock && stock.sold_out) || closed;
     sets.innerHTML = (menu.sets || []).map(setCard).join('') || '<div class="empty">ยังไม่มีเซ็ตเมนู</div>';
     $('#stores').innerHTML = storeChips(stores, storeId);
     const lines = cart.map((l) => `<li><span>${esc(lineName(l, map))}</span><span class="n">x ${l.quantity}</span><span class="p">${money(linePrice(l, map) * l.quantity)} ฿</span></li>`);

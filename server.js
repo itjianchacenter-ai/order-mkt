@@ -90,11 +90,23 @@ function activeCampaign() {
     || db.prepare('SELECT * FROM campaigns ORDER BY created_at LIMIT 1').get();
 }
 function getCampaign(id) { return db.prepare('SELECT * FROM campaigns WHERE id = ?').get(id); }
+const slugOf = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 40);
+/** Campaign by its customer URL slug (order.jianchatea.com/<slug>/); also accepts the id for older links. */
+function campaignBySlug(slug) {
+  const s = slugOf(slug); if (!s) return null;
+  return db.prepare('SELECT * FROM campaigns WHERE slug = ?').get(s) || db.prepare("SELECT * FROM campaigns WHERE lower(replace(id, '-', '')) = ?").get(s) || null;
+}
+/** The campaign a customer request is about: ?campaign=<slug> / body.campaign, otherwise the active one. */
+function requestCampaign(req) {
+  const s = (req.query && req.query.campaign) || (req.body && req.body.campaign) || '';
+  return (s && campaignBySlug(s)) || activeCampaign();
+}
 function campaignView(c) {
   const d = campaignDesign(c);
-  return { id: c.id, name: c.name, active: Boolean(c.active), stock: { total: c.stock_total, drink: c.stock_drink, dessert: c.stock_dessert }, promo_code: { from: c.promo_from, to: c.promo_to }, created_at: c.created_at,
+  return { id: c.id, slug: c.slug, url: `/${c.slug}/`, name: c.name, active: Boolean(c.active), orders_open: c.orders_open !== 0, stock: { total: c.stock_total, drink: c.stock_drink, dessert: c.stock_dessert }, promo_code: { from: c.promo_from, to: c.promo_to }, created_at: c.created_at,
     cover: d.promote_images[0] || '', set_count: d.sets.filter((x) => x.active).length, has_design: Boolean(c.design_json) };
 }
+const campaignPublic = (c) => ({ id: c.id, slug: c.slug, url: `/${c.slug}/`, name: c.name, active: Boolean(c.active), orders_open: c.orders_open !== 0 });
 /** Pieces committed by every non-cancelled order of a campaign (pending ones reserve stock). */
 function stockUsage(campaignId) {
   const r = db.prepare(`SELECT COALESCE(SUM(l.quantity * COALESCE(l.pieces, 1)), 0) AS total,
@@ -187,20 +199,21 @@ app.get('/admin-page', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'admin-p
 app.use(express.static(PUBLIC_DIR, { extensions: ['html'], index: 'index.html' }));
 
 // ─── Public API ───
-app.get('/api/menu', (req, res) => { const c = activeCampaign(); res.json({ ...menuFor(c), campaign: { id: c.id, name: c.name }, stock: stockView(c) }); });
-app.get('/api/stock', (req, res) => res.json(stockView(activeCampaign())));
+app.get('/api/menu', (req, res) => { const c = requestCampaign(req); res.json({ ...menuFor(c), campaign: campaignPublic(c), stock: stockView(c) }); });
+app.get('/api/stock', (req, res) => res.json(stockView(requestCampaign(req))));
 app.get('/api/stores', (req, res) => res.json(loadStores()));
 app.get('/api/config', (req, res) => res.json({ payment_ready: qrConfigured(), slip_auto_verify: slipOkEnabled() }));
 
 const money = (n) => Math.round(Number(n) * 100) / 100;
 
-/** Body: { store_id, note, lines: [{set_id, quantity}] } (drink_id/dessert_id lines are still accepted for older clients) */
+/** Body: { store_id, note, campaign?: slug, lines: [{set_id, quantity}] } (drink_id/dessert_id lines are still accepted for older clients) */
 app.post('/api/orders', (req, res) => {
   const { store_id, note = '', lines } = req.body || {};
   const store = loadStores().find((s) => s.id === String(store_id));
   if (!store) return res.status(400).json({ error: 'กรุณาเลือกสาขาที่รับสินค้า' });
   if (!Array.isArray(lines) || lines.length === 0) return res.status(400).json({ error: 'ยังไม่มีรายการในตะกร้า' });
-  const campaign = activeCampaign();
+  const campaign = requestCampaign(req);
+  if (campaign.orders_open === 0) return res.status(400).json({ error: 'แคมเปญนี้ปิดรับคำสั่งซื้อแล้ว / This campaign is closed' });
   const menu = menuFor(campaign);
   const drinks = Object.fromEntries(menu.drinks.map((d) => [d.id, d]));
   const desserts = Object.fromEntries(menu.desserts.map((d) => [d.id, d]));
@@ -365,7 +378,7 @@ app.post('/api/admin/login', (req, res) => {
 app.post('/api/admin/logout', (req, res) => { res.clearCookie(ADMIN_COOKIE, { path: '/' }); res.json({ ok: true }); });
 app.get('/api/admin/me', (req, res) => {
   const u = adminFromReq(req);
-  res.json({ admin: Boolean(u), user: u ? userView(u) : null, permissions: u ? permissionsOf(u) : {}, slip_auto_verify: slipOkEnabled(), payment_ready: qrConfigured() });
+  res.json({ admin: Boolean(u), user: u ? userView(u) : null, permissions: u ? permissionsOf(u) : {}, slip_auto_verify: slipOkEnabled(), payment_ready: qrConfigured(), public_base_url: (process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, '') });
 });
 app.post('/api/admin/me/password', requireAdmin, (req, res) => {
   const u = adminFromReq(req); const { current = '', password = '' } = req.body || {};
@@ -437,6 +450,8 @@ function readCampaignBody(b, base = {}) {
   if (!Number.isInteger(promo_from) || !Number.isInteger(promo_to) || promo_from > promo_to || promo_from < 0) return { error: 'ช่วงรหัสโปรโมชันไม่ถูกต้อง' };
   return {
     name: String(b.name ?? base.name ?? '').trim().slice(0, 80),
+    slug: slugOf('slug' in b && b.slug !== '' ? b.slug : (b.name != null && !base.slug ? b.name : base.slug)),
+    orders_open: 'orders_open' in b ? (b.orders_open ? 1 : 0) : (base.orders_open == null ? 1 : base.orders_open),
     stock_total: 'stock_total' in b ? lim(b.stock_total) : base.stock_total ?? null,
     stock_drink: 'stock_drink' in b ? lim(b.stock_drink) : base.stock_drink ?? null,
     stock_dessert: 'stock_dessert' in b ? lim(b.stock_dessert) : base.stock_dessert ?? null,
@@ -448,10 +463,12 @@ app.post('/api/admin/campaigns', requirePerm('campaigns'), (req, res) => {
   const v = readCampaignBody(req.body || {}, { promo_from: 2026090001, promo_to: 2026092000, stock_total: 1000 });
   if (v.error) return res.status(400).json({ error: v.error });
   if (!v.name) return res.status(400).json({ error: 'กรุณาใส่ชื่อแคมเปญ' });
+  if (!v.slug || v.slug.length < 2) return res.status(400).json({ error: 'ลิงก์แคมเปญ (URL) ต้องเป็น a-z, 0-9 อย่างน้อย 2 ตัว' });
+  if (db.prepare('SELECT 1 FROM campaigns WHERE slug = ?').get(v.slug)) return res.status(409).json({ error: `ลิงก์ /${v.slug}/ ถูกใช้แล้ว กรุณาตั้งใหม่` });
   let id = slugify(v.name); let n = 2;
   while (getCampaign(id)) id = `${slugify(v.name)}-${n++}`;
-  db.prepare('INSERT INTO campaigns(id, name, active, stock_total, stock_drink, stock_dessert, promo_from, promo_to) VALUES (?, ?, 0, ?, ?, ?, ?, ?)')
-    .run(id, v.name, v.stock_total, v.stock_drink, v.stock_dessert, v.promo_from, v.promo_to);
+  db.prepare('INSERT INTO campaigns(id, slug, name, active, orders_open, stock_total, stock_drink, stock_dessert, promo_from, promo_to) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?)')
+    .run(id, v.slug, v.name, v.orders_open, v.stock_total, v.stock_drink, v.stock_dessert, v.promo_from, v.promo_to);
   if (req.body && req.body.active) setActiveCampaign(id);
   res.status(201).json(campaignStats(getCampaign(id)));
 });
@@ -461,8 +478,10 @@ app.patch('/api/admin/campaigns/:id', requirePerm('campaigns'), (req, res) => {
   const v = readCampaignBody(req.body || {}, c);
   if (v.error) return res.status(400).json({ error: v.error });
   if (!v.name) return res.status(400).json({ error: 'กรุณาใส่ชื่อแคมเปญ' });
-  db.prepare("UPDATE campaigns SET name = ?, stock_total = ?, stock_drink = ?, stock_dessert = ?, promo_from = ?, promo_to = ?, updated_at = datetime('now','localtime') WHERE id = ?")
-    .run(v.name, v.stock_total, v.stock_drink, v.stock_dessert, v.promo_from, v.promo_to, c.id);
+  if (!v.slug || v.slug.length < 2) return res.status(400).json({ error: 'ลิงก์แคมเปญ (URL) ต้องเป็น a-z, 0-9 อย่างน้อย 2 ตัว' });
+  if (db.prepare('SELECT 1 FROM campaigns WHERE slug = ? AND id <> ?').get(v.slug, c.id)) return res.status(409).json({ error: `ลิงก์ /${v.slug}/ ถูกใช้แล้ว กรุณาตั้งใหม่` });
+  db.prepare("UPDATE campaigns SET name = ?, slug = ?, orders_open = ?, stock_total = ?, stock_drink = ?, stock_dessert = ?, promo_from = ?, promo_to = ?, updated_at = datetime('now','localtime') WHERE id = ?")
+    .run(v.name, v.slug, v.orders_open, v.stock_total, v.stock_drink, v.stock_dessert, v.promo_from, v.promo_to, c.id);
   if (req.body && req.body.active === true) setActiveCampaign(c.id);
   res.json(campaignStats(getCampaign(c.id)));
 });
@@ -554,6 +573,15 @@ app.get('/api/admin/summary', requireAdmin, (req, res) => {
 });
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'not found' }));
+
+// Campaign pages: order.jianchatea.com/<slug>/ shows that campaign (and /<slug>/cart, /orders, /stores, /pay, /receipt)
+const CAMPAIGN_PAGES = { '': 'index', cart: 'cart', orders: 'orders', stores: 'stores', pay: 'pay', receipt: 'receipt' };
+app.get('/:slug/:page?', (req, res, next) => {
+  const page = CAMPAIGN_PAGES[req.params.page || ''];
+  if (page === undefined || !campaignBySlug(req.params.slug)) return next();
+  if (!req.params.page && !req.path.endsWith('/')) return res.redirect(301, `/${req.params.slug}/${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`);
+  res.sendFile(path.join(PUBLIC_DIR, page + '.html'));
+});
 app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
   if (err && err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'ไฟล์ใหญ่เกิน 8 MB' });
   console.error(err);

@@ -25,7 +25,16 @@ const ICONS = {
   upload: '<svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l5 5-1.4 1.4L13 6.8V16h-2V6.8L8.4 9.4 7 8l5-5zM4 18h16v3H4v-3z"/></svg>',
 };
 
-const CART_KEY = 'jc_cart', STORE_KEY = 'jc_store', NOTE_KEY = 'jc_note';
+/* Campaign pages live at /<slug>/ (e.g. /jianchaxnavori/). The root shows the active campaign. */
+const KNOWN_PAGES = ['', 'index', 'index.html', 'cart', 'orders', 'stores', 'pay', 'receipt', 'admin-page'];
+function campaignSlug() {
+  const seg = (location.pathname.split('/')[1] || '').toLowerCase().replace(/\.html$/, '');
+  return KNOWN_PAGES.includes(seg) ? '' : seg.replace(/[^a-z0-9]/g, '');
+}
+const B = () => (campaignSlug() ? '/' + campaignSlug() : '');          // path prefix for navigation
+const H = () => (window.PREVIEW_MODE ? '#' : '') + B();                // same, for href attributes
+const withCampaign = (p) => (campaignSlug() ? p + (p.includes('?') ? '&' : '?') + 'campaign=' + campaignSlug() : p);
+const CART_KEY = 'jc_cart' + (campaignSlug() ? ':' + campaignSlug() : ''), STORE_KEY = 'jc_store', NOTE_KEY = 'jc_note';
 const money = (n) => (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -68,7 +77,7 @@ function renderHeader(active, { admin = false, role = '', user = null, hideNav =
   const el = $('#site-head'); if (!el) return;
   const brand = admin
     ? `<a class="brand" href="/admin-page"><b>JIAN CHA Page</b>${role ? `<span class="tag">${ROLE_TAG[role] || role.toUpperCase()}</span>` : ''}</a>`
-    : `<a class="brand" href="/"><b>JIANCHA x NAVORI</b></a>`;
+    : `<a class="brand" href="${H()}/"><b>JIANCHA x NAVORI</b></a>`;
   const item = (view, icon, label) => `<a class="pill ${active === view ? 'on' : ''}" href="/admin-page?view=${view}">${icon} ${label}</a>`;
   const adminNav = () => {
     const items = [];
@@ -85,10 +94,10 @@ function renderHeader(active, { admin = false, role = '', user = null, hideNav =
   const nav = admin
     ? (role && !hideNav ? adminNav() : '')
     : `<nav class="nav">
-        ${active === 'home' ? '' : `<a class="pill" href="/" aria-label="Back to homepage">${ICONS.arrowL} Back</a>`}
-        <a class="pill" href="/cart">${ICONS.cart} Cart <span class="badge hidden" data-cart-badge></span></a>
-        <a class="pill" href="/orders">${ICONS.doc} Order History</a>
-        <a class="pill" href="/stores">${ICONS.store} JIANCHA Store Location</a>
+        ${active === 'home' ? '' : `<a class="pill" href="${H()}/" aria-label="Back to homepage">${ICONS.arrowL} Back</a>`}
+        <a class="pill" href="${H()}/cart">${ICONS.cart} Cart <span class="badge hidden" data-cart-badge></span></a>
+        <a class="pill" href="${H()}/orders">${ICONS.doc} Order History</a>
+        <a class="pill" href="${H()}/stores">${ICONS.store} JIANCHA Store Location</a>
        </nav>`;
   el.innerHTML = brand + nav;
   const lo = $('#logout'); if (lo) lo.addEventListener('click', async () => { await api('/api/admin/logout', { method: 'POST' }); if (location.search.length > 1) location.href = '/admin-page'; else location.reload(); });
@@ -96,8 +105,8 @@ function renderHeader(active, { admin = false, role = '', user = null, hideNav =
 }
 
 /* menu lookup helpers: the menu is a list of Match Sets */
-let _menu = null;
-async function getMenu() { if (!_menu) _menu = await api('/api/menu'); return _menu; }
+let _menu = null, _menuKey = null;
+async function getMenu() { const k = campaignSlug(); if (!_menu || _menuKey !== k) { _menu = await api(withCampaign('/api/menu')); _menuKey = k; } return _menu; }
 function menuMap(menu) { const m = {}; for (const s of menu.sets || []) m[s.id] = s; return m; }
 function lineSet(line, map) { return map[line.set_id] || null; }
 function linePrice(line, map) { const s = lineSet(line, map); return s ? s.price : 0; }
@@ -193,9 +202,9 @@ async function submitOrder({ storeId, note, errEl, btn, onFail }) {
   if (!storeId) { errEl.textContent = 'กรุณาเลือกสาขาที่รับสินค้า / Please choose a pick-up location'; return; }
   btn.disabled = true;
   try {
-    const order = await api('/api/orders', { method: 'POST', body: { store_id: storeId, note, lines } });
+    const order = await api('/api/orders', { method: 'POST', body: { store_id: storeId, note, lines, campaign: campaignSlug() || undefined } });
     cartClear(); setNote('');
-    location.href = `/pay?order=${encodeURIComponent(order.id)}`;
+    location.href = `${B()}/pay?order=${encodeURIComponent(order.id)}`;
   } catch (e) { errEl.textContent = e.message; btn.disabled = false; if (onFail) onFail(); }
 }
 

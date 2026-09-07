@@ -16,13 +16,15 @@
   // In the single-file preview the page is re-run on every hash change; stop stale async renders.
   const token = Symbol('page'); window.__pageToken = token; const alive = () => window.__pageToken === token;
   const params = new URLSearchParams(location.search);
-  const state = { view: params.get('view') || '', campaign: params.get('campaign') || '', store: params.get('store') || '', q: params.get('q') || '', date: '', status: params.get('status') || '', page: 1 };
+  const state = { view: params.get('view') || '', campaign: params.get('campaign') || '', create: params.get('create') || '', store: params.get('store') || '', q: params.get('q') || '', date: '', status: params.get('status') || '', page: 1 };
   const go = (p) => { const qs = new URLSearchParams(Object.fromEntries(Object.entries(p).filter(([, v]) => v))); location.href = '/admin-page' + (qs.toString() ? '?' + qs : ''); };
 
   const me = await api('/api/admin/me');
   if (!alive()) return;
   if (!me.admin) { renderHeader('', { admin: true }); return renderLogin(); }
   const user = me.user, P = me.permissions;
+  // customer URL of a campaign: order.jianchatea.com/<slug>/ (preview: this file + #/<slug>/)
+  const siteUrl = (c) => (me.public_base_url || (location.origin + (window.PREVIEW_MODE ? window.location['pathname'] + '#' : ''))) + c.url;
   // '' = home (campaign page). Every role sees Order / Slip Issue / Store Pick-up Order; IT-Admin also Account.
   const VIEWS = { '': true, accounts: P.accounts, design: P.campaigns, orders: true, slips: true, pickup: true };
   if (!VIEWS[state.view]) state.view = '';
@@ -60,7 +62,9 @@
           ${P.campaigns ? `<button type="button" class="wrench" data-edit="${esc(c.id)}" aria-label="แก้ไข">${ICONS.wrench}</button>` : ''}
           ${c.cover ? `<img class="cover" src="${esc(c.cover)}" alt="">` : ''}
           <b>${esc(c.name)}</b>
-          <small>${c.active ? 'Active' : 'Inactive'} · ${c.stats.orders} orders${c.stock.total != null ? ` · stock ${c.stock_view.used.total}/${c.stock.total}` : ''}${c.set_count != null ? ` · ${c.set_count} sets` : ''}</small>
+          <small>${c.active ? 'Active' : 'Inactive'}${c.orders_open === false ? ' · ปิดรับออเดอร์' : ''} · ${c.stats.orders} orders${c.stock.total != null ? ` · stock ${c.stock_view.used.total}/${c.stock.total}` : ''}${c.set_count != null ? ` · ${c.set_count} sets` : ''}</small>
+          <small class="camp-url"><a href="${esc(siteUrl(c))}" target="_blank" rel="noopener" data-stop="1">${esc(siteUrl(c).replace(/^https?:\/\//, ''))}</a></small>
+          ${P.campaigns ? `<span class="camp-acts"><button type="button" class="btn ghost sm" data-design="${esc(c.id)}">${ICONS.brush} Design</button><button type="button" class="btn ghost sm" data-copy="${esc(siteUrl(c))}">Copy link</button></span>` : ''}
         </div>`);
       if (P.campaigns) cards.push(`<div class="camp create" data-create="1"><span class="plus">+</span><b>Create</b><span>new campaign</span></div>`);
       // an order number in the search box jumps straight to that order (all campaigns)
@@ -68,9 +72,13 @@
       $('#camps').innerHTML = cards.join('') || '<div class="empty">ไม่พบแคมเปญ</div>';
     };
     draw();
+    if (state.create && P.campaigns) campaignForm(null);
     $('#q').addEventListener('input', (e) => draw(e.target.value));
     $('#camps').addEventListener('click', (e) => {
+      if (e.target.closest('[data-stop]')) return;
       const edit = e.target.closest('[data-edit]'); if (edit) return campaignForm(campaigns.find((c) => c.id === edit.dataset.edit));
+      const dz = e.target.closest('[data-design]'); if (dz) return go({ view: 'design', campaign: dz.dataset.design });
+      const cp = e.target.closest('[data-copy]'); if (cp) { navigator.clipboard && navigator.clipboard.writeText(cp.dataset.copy); cp.textContent = 'Copied ✓'; setTimeout(() => { cp.textContent = 'Copy link'; }, 1500); return; }
       if (e.target.closest('[data-create]')) return campaignForm(null);
       const s = e.target.closest('[data-search]'); if (s) return go({ view: 'orders', q: s.dataset.search, all: 1 });
       const card = e.target.closest('[data-open]'); if (card) go({ view: 'orders', campaign: card.dataset.open });
@@ -81,17 +89,22 @@
         <h3 style="margin:0 0 4px">${isNew ? 'Create new campaign' : 'Edit campaign'}</h3><span class="th" style="font-size:13px">${isNew ? 'สร้างแคมเปญใหม่ (เริ่มเป็น Inactive จนกว่าจะเปิดใช้งาน)' : 'แก้ไขแคมเปญ ' + esc(c.name)}</span>
         <div class="grid2">
           <label>Campaign name<input name="name" required value="${esc(c ? c.name : '')}" placeholder="JIANCHA x NAVORI"></label>
+          <label>Campaign link (URL) <span class="th" style="font-weight:400">a-z, 0-9 — ว่าง = ตั้งจากชื่อ</span><input name="slug" pattern="[a-z0-9]{2,40}" value="${esc(c ? c.slug : '')}" placeholder="jianchaxnavori"><span class="th" style="font-size:12px;color:var(--muted)">${esc((me.public_base_url || location.origin) + '/')}<b id="slug-preview">${esc(c ? c.slug : '…')}</b>/</span></label>
           <label>Stock (total pieces)<input name="stock_total" type="number" min="0" value="${c && c.stock.total != null ? c.stock.total : (isNew ? 1000 : '')}" placeholder="ว่าง = ไม่จำกัด"></label>
           <label>Promo code from<input name="promo_from" type="number" required value="${c ? c.promo_code.from : 2026090001}"></label>
           <label>Promo code to<input name="promo_to" type="number" required value="${c ? c.promo_code.to : 2026092000}"></label>
         </div>
-        <label class="chk"><input type="checkbox" name="active" ${c && c.active ? 'checked' : ''}> <span>Active <span class="th">(ใช้แคมเปญนี้บนหน้าเว็บลูกค้า มีได้ครั้งละ 1 แคมเปญ)</span></span></label>
+        <label class="chk"><input type="checkbox" name="active" ${c && c.active ? 'checked' : ''}> <span>Active <span class="th">(แคมเปญหลักที่แสดงเมื่อเปิด ${esc((me.public_base_url || location.origin).replace(/^https?:\/\//, ''))}/ มีได้ครั้งละ 1 แคมเปญ ทุกแคมเปญยังเปิดได้จากลิงก์ของตัวเอง)</span></span></label>
+        <label class="chk"><input type="checkbox" name="orders_open" ${!c || c.orders_open !== false ? 'checked' : ''}> <span>เปิดรับคำสั่งซื้อ <span class="th">(ปิด = ลูกค้ายังเปิดหน้าแคมเปญได้แต่สั่งซื้อไม่ได้)</span></span></label>
         <div class="actions"><button class="btn" type="submit">${isNew ? '+ Create' : 'Save'}</button><button class="btn ghost" type="button" id="cf-cancel">Cancel</button></div>
         <div class="err" id="cf-err"></div></form>`;
       $('#cf-cancel').addEventListener('click', () => { $('#camp-form').innerHTML = ''; });
+      const slugFrom = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 40);
+      const showSlug = () => { const f = $('#cf'); $('#slug-preview').textContent = slugFrom(f.slug.value) || slugFrom(f.name.value) || '…'; };
+      $('#cf').name.addEventListener('input', showSlug); $('#cf').slug.addEventListener('input', showSlug);
       $('#cf').addEventListener('submit', async (e) => {
         e.preventDefault(); const f = new FormData(e.target);
-        const body = { name: f.get('name'), stock_total: f.get('stock_total'), promo_from: f.get('promo_from'), promo_to: f.get('promo_to'), active: f.get('active') === 'on' };
+        const body = { name: f.get('name'), slug: String(f.get('slug') || '').trim(), stock_total: f.get('stock_total'), promo_from: f.get('promo_from'), promo_to: f.get('promo_to'), active: f.get('active') === 'on', orders_open: f.get('orders_open') === 'on' };
         try { await api(isNew ? '/api/admin/campaigns' : '/api/admin/campaigns/' + encodeURIComponent(c.id), { method: isNew ? 'POST' : 'PATCH', body }); location.reload(); }
         catch (err) { $('#cf-err').textContent = err.message; }
       });
@@ -162,19 +175,28 @@
   async function renderDesign() {
     const campaigns = await api('/api/admin/campaigns');
     if (!alive()) return;
-    const campaign = campaigns.find((c) => c.id === state.campaign) || campaigns.find((c) => c.active) || campaigns[0];
-    if (!campaign) { app.innerHTML = '<div class="empty">ยังไม่มีแคมเปญ</div>'; return; }
+    const campaign = campaigns.find((c) => c.id === state.campaign);
+    if (!campaign) { // landing: pick the campaign whose pictures you want to edit
+      app.innerHTML = `
+        <div class="toolbar"><span class="pill on" style="font-size:20px;font-weight:800;padding:10px 20px">All Campaign</span></div>
+        <div class="dz-camps">${campaigns.map((c) => `<div class="dz-camp" data-design="${esc(c.id)}">${c.cover ? `<img src="${esc(c.cover)}" alt="">` : ''}<b>${esc(c.name)}</b><small>${esc(siteUrl(c).replace(/^https?:\/\//, ''))}</small></div>`).join('')}
+          <div class="dz-camp create" data-create="1"><span class="plus">+</span><span><b>Create</b><br>new campaign</span></div>
+        </div>`;
+      app.addEventListener('click', (e) => {
+        const dz = e.target.closest('[data-design]'); if (dz) return go({ view: 'design', campaign: dz.dataset.design });
+        if (e.target.closest('[data-create]')) go({ view: '', create: 1 });
+      });
+      return;
+    }
     let { design } = await api('/api/admin/campaigns/' + encodeURIComponent(campaign.id) + '/design');
     if (!alive()) return;
-    const sel = campaigns.length > 1 ? `<select class="pill" id="campaign-select" style="padding-right:28px">${campaigns.map((c) => `<option value="${esc(c.id)}" ${c.id === campaign.id ? 'selected' : ''}>${esc(c.name)}${c.active ? '' : ' (inactive)'}</option>`).join('')}</select>` : '';
     app.innerHTML = `
-      <div class="dz-head"><span class="dz-name">${esc(campaign.name)}</span>${sel}<span class="dz-state" id="dz-state">${campaign.active ? 'แสดงบนหน้าเว็บลูกค้าอยู่ตอนนี้' : 'แคมเปญนี้ยังไม่ Active'}</span></div>
-      <div class="dz-title"><span>Promote Image <span class="dz-size">1180 × 570 px · svg / png — รูปใหญ่รวมน้ำ + ขนม (หลายรูป = สไลด์)</span></span></div>
-      <div class="dz-row" id="promos"></div>
+      <div class="dz-head"><span class="dz-name">${esc(campaign.name)}</span><a class="pill" href="${esc(siteUrl(campaign))}" target="_blank" rel="noopener">${ICONS.eye} ${esc(siteUrl(campaign).replace(/^https?:\/\//, ''))}</a><span class="dz-state" id="dz-state">${campaign.active ? 'แคมเปญหลัก · แสดงที่หน้าแรกด้วย' : 'เปิดได้จากลิงก์ของแคมเปญ'}</span><a class="pill on dz-another" href="/admin-page?view=design">Another Campaign</a></div>
+      <div class="dz-title"><span>Promote Image</span><span class="dz-size">1180 × 570 px · svg / png · รูปใหญ่รวมน้ำ + ขนม (หลายรูป = สไลด์)</span></div>
+      <div class="dz-row promo" id="promos"></div>
       <div id="sets"></div>
       <input type="file" id="dz-file" accept="image/*" class="hidden">
       <div class="err" id="dz-err"></div>`;
-    const sc = $('#campaign-select'); if (sc) sc.addEventListener('change', (e) => go({ view: 'design', campaign: e.target.value }));
     const img = (src, cls) => (src ? `<img src="${esc(src)}" alt="">` : '');
     const upBtn = (key) => `<button type="button" class="up" data-up="${key}">${ICONS.upload} Upload</button>`;
     $('#dz-file').setAttribute('accept', 'image/png,image/jpeg,image/webp,image/svg+xml,image/gif');
@@ -184,10 +206,10 @@
         + `<div class="dz-card wide create" data-add-promo="1"><span class="plus">+</span><b>Create</b><span>more Promote Image</span></div>`;
       $('#sets').innerHTML = `<div class="dz-sets">` + design.sets.map((st, i) => `
         <div class="dz-set" data-set="${i}">
-          <div class="dz-title"><span>Set image <span class="dz-size">320 × 330 px</span></span><span class="set-tag">${esc(st.id)}</span></div>
+          <div class="dz-title"><span>Set image</span><span class="set-tag">${esc(st.id)}</span></div>
           <div class="dz-card big">${img(st.image)}${upBtn('set:' + i + ':image')}</div>
-          <div class="dz-size" style="margin-top:10px">รูปน้ำ / ขนมเดี่ยว 3 รูป · 115 × 105 px · svg / png</div>
-          <div class="dz-thumbs" style="margin-top:6px">${[0, 1, 2].map((k) => `<div class="dz-card sm">${img(st.images[k])}${upBtn('set:' + i + ':images:' + k)}</div>`).join('')}</div>
+          <div class="dz-thumbs">${[0, 1, 2].map((k) => `<div class="dz-card sm">${img(st.images[k])}${upBtn('set:' + i + ':images:' + k)}</div>`).join('')}</div>
+          <div class="dz-size" style="margin-top:8px">รูปเซ็ต 320 × 330 px · รูปน้ำ / ขนมเดี่ยว 115 × 105 px · svg / png</div>
           <div class="dz-form">
             <div class="g2">
               <label>Label<input data-f="label" value="${esc(st.label)}" placeholder="SET ${esc(st.id)}"></label>
@@ -206,7 +228,7 @@
             <button type="button" class="del" data-del-set="${i}">ลบเซ็ตนี้</button>
           </div>
         </div>`).join('')
-        + `<div class="dz-card create dz-create" data-add-set="1"><span class="plus">+</span><b>Create</b><span>new set</span></div></div>`;
+        + `<div class="dz-set dz-set-new"><div class="dz-title"><span>Set image</span></div><div class="dz-card create dz-create" data-add-set="1"><span class="plus">+</span><b>Create</b><span>new set</span></div></div></div>`;
     }
     // autosave: every change is written to the campaign after a short pause
     let saveTimer, saving = false, dirty = false;
@@ -214,7 +236,7 @@
     async function save() {
       if (saving) { dirty = true; return; }
       saving = true; setState('กำลังบันทึก…');
-      try { const r = await api('/api/admin/campaigns/' + encodeURIComponent(campaign.id) + '/design', { method: 'PUT', body: design }); design = r.design; $('#dz-err').textContent = ''; setState('บันทึกแล้ว ✓ ' + (campaign.active ? '(แสดงบนหน้าเว็บลูกค้า)' : '')); }
+      try { const r = await api('/api/admin/campaigns/' + encodeURIComponent(campaign.id) + '/design', { method: 'PUT', body: design }); design = r.design; $('#dz-err').textContent = ''; setState('บันทึกแล้ว ✓ แสดงที่ ' + siteUrl(campaign).replace(/^https?:\/\//, '')); }
       catch (e) { $('#dz-err').textContent = e.message; setState('บันทึกไม่สำเร็จ'); }
       saving = false; if (dirty) { dirty = false; save(); }
     }

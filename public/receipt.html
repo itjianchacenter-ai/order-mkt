@@ -9,13 +9,14 @@
   <header class="site-head no-print" id="site-head"></header>
   <div class="no-print" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px">
     <button type="button" class="btn" id="print"></button>
-    <a class="btn ghost" href="/orders" id="back-orders"></a>
+    <a class="btn ghost" href="/orders" id="back-orders" data-campaign-link="/orders"></a>
   </div>
   <div id="receipt"></div>
 </div>
 <script src="/js/app.js"></script>
 <script>
 (async () => {
+  $$('[data-campaign-link]').forEach((a) => { a.setAttribute('href', H() + a.dataset.campaignLink); });
   renderHeader('orders');
   $('#print').innerHTML = ICONS.print + ' Print <span class="th">/ พิมพ์ใบรายการ</span>';
   $('#back-orders').innerHTML = ICONS.doc + ' Order History';
