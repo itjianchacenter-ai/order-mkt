@@ -196,7 +196,8 @@ function permissionsOf(u) { const p = {}; for (const k of Object.keys(PERMS)) p[
 
 // ─── Static pages ───
 app.get('/admin-page', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'admin-page.html')));
-app.use(express.static(PUBLIC_DIR, { extensions: ['html'], index: 'index.html' }));
+app.get('/', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'landing.html')));   // "Order with us" -> active campaign page
+app.use(express.static(PUBLIC_DIR, { extensions: ['html'], index: false }));
 
 // ─── Public API ───
 app.get('/api/menu', (req, res) => { const c = requestCampaign(req); res.json({ ...menuFor(c), campaign: campaignPublic(c), stock: stockView(c) }); });

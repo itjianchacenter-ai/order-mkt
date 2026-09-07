@@ -181,6 +181,8 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     r = await call('it', 'POST', '/api/admin/logout'); r = await call('it', 'GET', '/api/admin/orders'); check('logout works', r.status === 401);
     r = await fetch(base + '/admin-page'); check('admin page served', r.status === 200 && /JIAN CHA Page/.test(await r.text()));
     r = await fetch(base + '/cart'); check('extensionless page served', r.status === 200);
+    r = await fetch(base + '/'); check('root is the Order with us landing', r.status === 200 && /Order with us/.test(await r.text()));
+    r = await fetch(base + '/index'); check('/index is the active campaign home', r.status === 200 && /id="sets"/.test(await r.text()));
   } finally {
     server.close();
     for (const dir of ['uploads', 'uploads/design']) for (const f of fs.readdirSync(path.join(__dirname, '..', dir))) if (/^\d{13}-/.test(f) && Date.now() - Number(f.slice(0, 13)) < 60000) fs.unlinkSync(path.join(__dirname, '..', dir, f));

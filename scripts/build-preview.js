@@ -21,7 +21,7 @@ app = app.replace(/async function api\(path, opts = \{\}\) \{[\s\S]*?\n\}\n/, '/
 if (/async function api\(/.test(app)) throw new Error('failed to strip api()');
 app = toPreview(app).replace("'/admin-page' : '/'", "'#/admin-page' : '#/'");
 
-const PAGES = { home: 'index', cart: 'cart', orders: 'orders', stores: 'stores', pay: 'pay', receipt: 'receipt', admin: 'admin-page' };
+const PAGES = { landing: 'landing', home: 'index', cart: 'cart', orders: 'orders', stores: 'stores', pay: 'pay', receipt: 'receipt', admin: 'admin-page' };
 const html = {}, js = {};
 for (const [name, file] of Object.entries(PAGES)) {
   const src = read(path.join(PUB, file + '.html'));
@@ -69,14 +69,16 @@ const PAGE_HTML = ${JSON.stringify(html)};
 const PAGE_JS = {
 ${Object.entries(js).map(([n, code]) => `  ${n}: function () {\n${code}\n  },`).join('\n')}
 };
-const ROUTES = { '/': 'home', '/index': 'home', '/cart': 'cart', '/orders': 'orders', '/stores': 'stores', '/pay': 'pay', '/receipt': 'receipt', '/admin-page': 'admin' };
+const ROUTES = { '/': 'landing', '/index': 'home', '/cart': 'cart', '/orders': 'orders', '/stores': 'stores', '/pay': 'pay', '/receipt': 'receipt', '/admin-page': 'admin' };
 function route() {
   let h = pvPath().split('?')[0].replace(new RegExp('/+$'), '') || '/';
   // #/<campaign-slug>/cart -> page 'cart' of that campaign (campaignSlug() reads the slug from the hash)
   const segs = h.split('/').filter(Boolean);
-  if (segs.length && !ROUTES['/' + segs[0]] && segs[0] !== 'index') h = '/' + segs.slice(1).join('/');
+  const hasSlug = segs.length > 0 && !ROUTES['/' + segs[0]] && segs[0] !== 'index';
+  if (hasSlug) h = '/' + segs.slice(1).join('/');
   if (h === '') h = '/';
-  const name = ROUTES[h] || 'home';
+  // "/" is the Order-with-us landing; "/<slug>/" is that campaign's home
+  const name = (h === '/' && hasSlug) ? 'home' : (ROUTES[h] || 'home');
   document.getElementById('root').innerHTML = '<div class="wrap">' + PAGE_HTML[name] + '</div>';
   window.scrollTo(0, 0);
   PAGE_JS[name]();
