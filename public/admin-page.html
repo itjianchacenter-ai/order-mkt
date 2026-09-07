@@ -196,7 +196,8 @@
       <div class="dz-row promo" id="promos"></div>
       <div id="sets"></div>
       <input type="file" id="dz-file" accept="image/*" class="hidden">
-      <div class="err" id="dz-err"></div>`;
+      <div class="err" id="dz-err"></div>
+      <div class="dz-savebar" id="dz-savebar"><span class="th" id="dz-dirty">ยังไม่มีการแก้ไข</span><button type="button" class="btn ghost" id="dz-discard" disabled>ยกเลิกการแก้ไข</button><button type="button" class="btn" id="dz-save" disabled>${ICONS.check} Save <span class="th">/ บันทึก</span></button></div>`;
     const img = (src, cls) => (src ? `<img src="${esc(src)}" alt="">` : '');
     const upBtn = (key) => `<button type="button" class="up" data-up="${key}">${ICONS.upload} Upload</button>`;
     $('#dz-file').setAttribute('accept', 'image/png,image/jpeg,image/webp,image/svg+xml,image/gif');
@@ -230,17 +231,26 @@
         </div>`).join('')
         + `<div class="dz-set dz-set-new"><div class="dz-title"><span>Set image</span></div><div class="dz-card create dz-create" data-add-set="1"><span class="plus">+</span><b>Create</b><span>new set</span></div></div></div>`;
     }
-    // autosave: every change is written to the campaign after a short pause
-    let saveTimer, saving = false, dirty = false;
+    // changes stay local until Save is pressed (uploads land on the server right away, but the page only uses them once saved)
+    let saving = false, dirty = false;
     const setState = (t) => { const el = $('#dz-state'); if (el) el.textContent = t; };
+    const setDirty = (v) => {
+      dirty = v; const bar = $('#dz-savebar'); if (!bar) return;
+      bar.classList.toggle('dirty', v); $('#dz-save').disabled = !v || saving; $('#dz-discard').disabled = !v || saving;
+      $('#dz-dirty').textContent = v ? 'มีการแก้ไขที่ยังไม่บันทึก กด Save เพื่อยืนยัน' : 'ยังไม่มีการแก้ไข';
+    };
     async function save() {
-      if (saving) { dirty = true; return; }
-      saving = true; setState('กำลังบันทึก…');
-      try { const r = await api('/api/admin/campaigns/' + encodeURIComponent(campaign.id) + '/design', { method: 'PUT', body: design }); design = r.design; $('#dz-err').textContent = ''; setState('บันทึกแล้ว ✓ แสดงที่ ' + siteUrl(campaign).replace(/^https?:\/\//, '')); }
-      catch (e) { $('#dz-err').textContent = e.message; setState('บันทึกไม่สำเร็จ'); }
-      saving = false; if (dirty) { dirty = false; save(); }
+      if (saving || !dirty) return;
+      saving = true; setState('กำลังบันทึก…'); $('#dz-save').disabled = true; $('#dz-discard').disabled = true;
+      try { const r = await api('/api/admin/campaigns/' + encodeURIComponent(campaign.id) + '/design', { method: 'PUT', body: design }); design = r.design; $('#dz-err').textContent = ''; setState('บันทึกแล้ว ✓ แสดงที่ ' + siteUrl(campaign).replace(/^https?:\/\//, '')); saving = false; setDirty(false); draw(); }
+      catch (e) { $('#dz-err').textContent = e.message; setState('บันทึกไม่สำเร็จ'); saving = false; setDirty(true); }
     }
-    const queueSave = () => { clearTimeout(saveTimer); setState('มีการแก้ไข…'); saveTimer = setTimeout(save, 700); };
+    const queueSave = () => { setState('แก้ไขแล้ว ยังไม่บันทึก'); setDirty(true); };
+    $('#dz-save').addEventListener('click', save);
+    $('#dz-discard').addEventListener('click', () => { if (confirm('ยกเลิกการแก้ไขทั้งหมดที่ยังไม่ได้บันทึก?')) location.reload(); });
+    const guard = (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } };
+    window.addEventListener('beforeunload', guard);
+    app.addEventListener('click', (e) => { const a = e.target.closest('a.dz-another'); if (a && dirty && !confirm('มีการแก้ไขที่ยังไม่บันทึก ออกจากหน้านี้โดยไม่บันทึก?')) e.preventDefault(); });
     // read a set's form fields back into the design
     function readSet(i, root) {
       const st = design.sets[i]; if (!st) return;
