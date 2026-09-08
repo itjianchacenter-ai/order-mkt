@@ -514,7 +514,7 @@ app.post('/api/admin/design/upload', requirePerm('campaigns'), designUpload.sing
 });
 
 // Orders
-const PAGE_SIZE = 8;
+const PAGE_SIZE = 20; // รายการออเดอร์หลังบ้าน หน้าละ 20
 app.get('/api/admin/orders', requireAdmin, (req, res) => {
   const q = String(req.query.q || '').trim();
   const date = String(req.query.date || '').trim();      // YYYY-MM-DD
