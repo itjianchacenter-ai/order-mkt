@@ -17,14 +17,14 @@
   const token = Symbol('page'); window.__pageToken = token; const alive = () => window.__pageToken === token;
   const params = new URLSearchParams(location.search);
   const state = { view: params.get('view') || '', campaign: params.get('campaign') || '', create: params.get('create') || '', store: params.get('store') || '', q: params.get('q') || '', date: '', status: params.get('status') || '', page: 1 };
-  const go = (p) => { const qs = new URLSearchParams(Object.fromEntries(Object.entries(p).filter(([, v]) => v))); location.href = '/admin-page' + (qs.toString() ? '?' + qs : ''); };
+  const go = (p) => { const qs = new URLSearchParams(Object.fromEntries(Object.entries(p).filter(([, v]) => v))); location.href = ADMIN_PATH + (qs.toString() ? '?' + qs : ''); };
 
   const me = await api('/api/admin/me');
   if (!alive()) return;
   if (!me.admin) { renderHeader('', { admin: true }); return renderLogin(); }
   const user = me.user, P = me.permissions;
   // customer URL of a campaign: order.jianchatea.com/<slug>/ (preview: this file + #/<slug>/)
-  const siteUrl = (c) => (me.public_base_url || (location.origin + (window.PREVIEW_MODE ? window.location['pathname'] + '#' : ''))) + c.url;
+  const siteUrl = (c) => (me.public_base_url || (location.origin + (window.PREVIEW_MODE ? (location.protocol === 'file:' ? window.location['pathname'] + '#' : PV_BASE.replace(/\/$/, '')) : ''))) + c.url;
   // '' = home (campaign page). Every role sees Order / Slip Issue / Store Pick-up Order; IT-Admin also Account.
   const VIEWS = { '': true, accounts: P.accounts, design: P.campaigns, orders: true, slips: true, pickup: true };
   if (!VIEWS[state.view]) state.view = '';
@@ -191,7 +191,7 @@
     let { design } = await api('/api/admin/campaigns/' + encodeURIComponent(campaign.id) + '/design');
     if (!alive()) return;
     app.innerHTML = `
-      <div class="dz-head"><span class="dz-name">${esc(campaign.name)}</span><a class="pill" href="${esc(siteUrl(campaign))}" target="_blank" rel="noopener">${ICONS.eye} ${esc(siteUrl(campaign).replace(/^https?:\/\//, ''))}</a><span class="dz-state" id="dz-state">${campaign.active ? 'แคมเปญหลัก · แสดงที่หน้าแรกด้วย' : 'เปิดได้จากลิงก์ของแคมเปญ'}</span><a class="pill on dz-another" href="/admin-page?view=design">Another Campaign</a></div>
+      <div class="dz-head"><span class="dz-name">${esc(campaign.name)}</span><a class="pill" href="${esc(siteUrl(campaign))}" target="_blank" rel="noopener">${ICONS.eye} ${esc(siteUrl(campaign).replace(/^https?:\/\//, ''))}</a><span class="dz-state" id="dz-state">${campaign.active ? 'แคมเปญหลัก · แสดงที่หน้าแรกด้วย' : 'เปิดได้จากลิงก์ของแคมเปญ'}</span><a class="pill on dz-another" href="${ADMIN_PATH}?view=design">Another Campaign</a></div>
       <div class="dz-title"><span>Promote Image</span><span class="dz-size">1180 × 570 px · svg / png · รูปใหญ่รวมน้ำ + ขนม (หลายรูป = สไลด์)</span></div>
       <div class="dz-row promo" id="promos"></div>
       <div id="sets"></div>

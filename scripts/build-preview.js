@@ -14,12 +14,13 @@ const toPreview = (js) => js
   .replace(/location\.reload\(\)/g, 'route()')
   .replace(/location\.search/g, "pvSearch()")
   .replace(/location\.pathname/g, "pvPath()")
-  .replace(/href="\//g, 'href="#/');
+  .replace(/href="\//g, 'href="#/')
+  .replace(/href="\$\{ADMIN_PATH\}/g, 'href="#${ADMIN_PATH}');
 // app.js without its real api(): the mock defines api() instead
 let app = read(path.join(PUB, 'js/app.js'));
 app = app.replace(/async function api\(path, opts = \{\}\) \{[\s\S]*?\n\}\n/, '/* api() provided by mock-api.js */\n');
 if (/async function api\(/.test(app)) throw new Error('failed to strip api()');
-app = toPreview(app).replace("'/admin-page' : '/'", "'#/admin-page' : '#/'");
+app = toPreview(app).replace('location.href = ADMIN_PATH; else', "location.hash = '#' + ADMIN_PATH; else");
 
 const PAGES = { landing: 'landing', home: 'index', cart: 'cart', orders: 'orders', stores: 'stores', pay: 'pay', receipt: 'receipt', admin: 'admin-page' };
 const html = {}, js = {};
@@ -47,12 +48,12 @@ ${css}
 </style>
 </head>
 <body>
-<div class="pv-bar"><b>PREVIEW</b><span class="th">ข้อมูลทดลอง เก็บในเบราว์เซอร์นี้เท่านั้น</span><span>Back-office: <b>it-admin</b>/jiancha2026 · <b>admin</b>/marketing · <b>finance</b>/jiancha</span><a href="#/admin-page">เปิดหลังบ้าน</a><button type="button" id="pv-reset">รีเซ็ตข้อมูล</button></div>
+<div class="pv-bar" id="pv-bar" style="display:none"><b>PREVIEW</b><span class="th">ข้อมูลทดลอง เก็บในเบราว์เซอร์นี้เท่านั้น</span><a href="#/">หน้าร้าน</a><button type="button" id="pv-reset">รีเซ็ตข้อมูล</button></div>
 <div id="root"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script>
 window.PREVIEW_MODE = true;
-// Static hosting serves this file for every path (404.html), so /jianchaxnavori/ and /admin-page work as real URLs;
+// Static hosting serves this file for every path (404.html), so /jianchaxnavori/ and /backend/ work as real URLs;
 // in-app links then use #/... routes. The current "path"/"search" come from the hash when there is one, else the real URL.
 const PV_BASE = (window.location['pathname'].match(new RegExp('^(.*/)[^/]*[.]html$')) || [, '/'])[1];
 function pvPath() {
@@ -69,7 +70,7 @@ const PAGE_HTML = ${JSON.stringify(html)};
 const PAGE_JS = {
 ${Object.entries(js).map(([n, code]) => `  ${n}: function () {\n${code}\n  },`).join('\n')}
 };
-const ROUTES = { '/': 'landing', '/index': 'home', '/cart': 'cart', '/orders': 'orders', '/stores': 'stores', '/pay': 'pay', '/receipt': 'receipt', '/admin-page': 'admin' };
+const ROUTES = { '/': 'landing', '/index': 'home', '/cart': 'cart', '/orders': 'orders', '/stores': 'stores', '/pay': 'pay', '/receipt': 'receipt', '/backend': 'admin', '/admin-page': 'admin' };
 function route() {
   let h = pvPath().split('?')[0].replace(new RegExp('/+$'), '') || '/';
   // #/<campaign-slug>/cart -> page 'cart' of that campaign (campaignSlug() reads the slug from the hash)
@@ -79,6 +80,8 @@ function route() {
   if (h === '') h = '/';
   // "/" is the Order-with-us landing; "/<slug>/" is that campaign's home
   const name = (h === '/' && hasSlug) ? 'home' : (ROUTES[h] || 'home');
+  // แถบ PREVIEW (ข้อมูลทดลอง + บัญชีหลังบ้าน) แสดงเฉพาะหน้าหลังบ้าน /backend เท่านั้น หน้าลูกค้าไม่แสดง
+  document.getElementById('pv-bar').style.display = name === 'admin' ? '' : 'none';
   document.getElementById('root').innerHTML = '<div class="wrap">' + PAGE_HTML[name] + '</div>';
   window.scrollTo(0, 0);
   PAGE_JS[name]();
