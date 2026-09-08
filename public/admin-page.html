@@ -315,7 +315,7 @@
   if (isPickup && state.store === 'all') state.store = '';
   if (isPickup && !state.status) state.status = 'paid,picked_up'; // orders that reached the store: waiting for pick-up and already picked up
   if (isSlips && !state.status) state.status = 'slip_uploaded,slip_rejected'; // Slip Issue opens on every slip that needs attention
-  const FIN_LABEL = { pending: 'Unpaid', slip_uploaded: 'Paid', paid: 'Approved', slip_rejected: 'On Issue', picked_up: 'Picked up', cancelled: 'Cancelled' };
+  const FIN_LABEL = { pending: 'Unpaid', slip_uploaded: 'Verifying', paid: 'Approved', slip_rejected: 'On Issue', picked_up: 'Picked up', cancelled: 'Cancelled' };
   const STATUS_OPTIONS = isSlips
     ? [['slip_uploaded,slip_rejected', 'Slip issues · ทั้งหมดที่มีปัญหา'], ['slip_uploaded', 'Paid · รอตรวจ'], ['slip_rejected', 'On Issue'], ['pending', 'Unpaid'], ['paid', 'Approved'], ['picked_up', 'Picked up'], ['cancelled', 'Cancelled'], ['', 'All status']]
     : isPickup ? [['paid', 'รอรับสินค้า'], ['picked_up', 'รับแล้ว'], ['paid,picked_up', 'ทั้งหมด']]
@@ -374,7 +374,7 @@
     const btn = (to, label, ghost) => `<button type="button" class="btn ${ghost ? 'ghost' : ''}" data-action="${to}">${label}</button>`;
     const acts = [];
     acts.push(`<a class="btn ghost" href="/receipt?order=${esc(o.id)}" target="_blank" rel="noopener">${ICONS.eye} View PO</a>`);
-    acts.push(`<a class="btn ghost" href="/receipt?order=${esc(o.id)}&print=1" target="_blank" rel="noopener" aria-label="Print">${ICONS.print}</a>`);
+    if (canPrint(o)) acts.push(`<a class="btn ghost" href="/receipt?order=${esc(o.id)}&print=1" target="_blank" rel="noopener" aria-label="Print">${ICONS.print}</a>`);
     if (P.slip_review && o.status === 'slip_uploaded') { acts.push(btn('paid', ICONS.check + ' Approve')); acts.push(btn('slip_rejected', 'Reject')); }
     if (P.slip_review && (o.status === 'pending' || o.status === 'slip_rejected') && o.has_slip) acts.push(btn('paid', ICONS.check + ' Approve'));
     if (P.pickup && o.status === 'paid') acts.push(btn('picked_up', ICONS.store + ' รับสินค้าแล้ว'));
@@ -386,7 +386,7 @@
   function headExtras(o) {
     if (!isSlips) return {};
     return {
-      badge: `<span class="fin-pill">${FIN_LABEL[o.status] || o.status}</span>`,
+      badge: `<span class="fin-pill st-${esc(o.status)}">${FIN_LABEL[o.status] || o.status}</span>`,
       aside: o.slip_url ? `<a class="slip-mini" href="${esc(o.slip_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()"><img src="${esc(o.slip_url)}" alt="slip"></a>` : '<span class="slip-mini empty-slip" title="ยังไม่มีสลิป"></span>',
     };
   }

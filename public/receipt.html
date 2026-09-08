@@ -47,8 +47,15 @@
       </table>
       <p class="r-foot th">กรุณาแสดงใบรายการนี้หรือแจ้งเลขคำสั่งซื้อที่สาขาเพื่อรับสินค้า<br><span style="font-family:Montserrat,sans-serif">Show this receipt or quote your order number at the store to pick up.</span></p>
     </div>`;
-  $('#print').addEventListener('click', () => window.print());
-  if (params.get('print') === '1') setTimeout(() => window.print(), 300);
+  if (canPrint(o)) {
+    $('#print').addEventListener('click', () => window.print());
+    if (params.get('print') === '1') setTimeout(() => window.print(), 300);
+  } else {
+    // ยังไม่ approve: ดูได้แต่พิมพ์ไม่ได้
+    const pb = $('#print');
+    pb.insertAdjacentHTML('afterend', '<span class="th" style="align-self:center;font-size:13px;color:#d32f2f">พิมพ์ใบรายการได้เมื่อบัญชีตรวจสอบเรียบร้อยแล้ว (Approved)</span>');
+    pb.remove();
+  }
 })();
 </script>
 </body>

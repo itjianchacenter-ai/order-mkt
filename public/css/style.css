@@ -177,7 +177,10 @@ svg.ic{width:18px;height:18px;flex:none;vertical-align:-3px}
 .order .body td.q{text-align:right;width:90px}
 .order .body td.p{text-align:right;width:140px}
 .order .status{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:var(--r-pill);padding:4px 12px;font-size:13px;font-weight:700;background:#fff}
-.order .status.paid{background:#000;color:#fff}
+.order .status.slip_uploaded{background:#d32f2f;border-color:#d32f2f;color:#fff}
+.order .status.slip_uploaded .th{color:#fff;opacity:.9}
+.order .status.paid{background:#1e8e3e;border-color:#1e8e3e;color:#fff}
+.order .status.paid .th{color:#fff;opacity:.9}
 .order .status.pending{background:#fff}
 .order .status.cancelled{opacity:.5}
 .order .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;align-items:center}
@@ -262,6 +265,8 @@ svg.ic{width:18px;height:18px;flex:none;vertical-align:-3px}
 .cform .chk{display:flex;align-items:center;gap:8px;margin-top:14px;font-weight:500}
 .cform .actions{margin-top:16px;display:flex;gap:10px;flex-wrap:wrap}
 .fin-pill{display:inline-block;background:var(--tag);border-radius:var(--r-pill);padding:3px 12px;font-size:13px;font-weight:500;vertical-align:middle;margin-left:8px}
+.fin-pill.st-slip_uploaded{background:#d32f2f;color:#fff;font-weight:700}
+.fin-pill.st-paid{background:#1e8e3e;color:#fff;font-weight:700}
 .slip-mini{display:inline-block;width:64px;height:76px;background:var(--ph);border-radius:4px;overflow:hidden;vertical-align:middle;margin-right:12px}
 .slip-mini img{width:100%;height:100%;object-fit:cover;display:block}
 

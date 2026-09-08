@@ -223,9 +223,11 @@ async function submitOrder({ storeId, note, errEl, btn, onFail }) {
 }
 
 const STATUS_LABEL = {
-  pending: ['Awaiting payment', 'รอชำระเงิน'], slip_uploaded: ['Verifying slip', 'รอตรวจสอบสลิป'], paid: ['Paid', 'ชำระแล้ว'], slip_rejected: ['Slip rejected', 'สลิปไม่ผ่าน กรุณาอัปโหลดใหม่'],
+  pending: ['Awaiting payment', 'รอชำระเงิน'], slip_uploaded: ['Verifying slip', 'รอตรวจสอบสลิป'], paid: ['Approved', 'บัญชีตรวจสอบรายการคำสั่งซื้อเรียบร้อย'], slip_rejected: ['Slip rejected', 'สลิปไม่ผ่าน กรุณาอัปโหลดใหม่'],
   picked_up: ['Picked up', 'รับสินค้าแล้ว'], cancelled: ['Cancelled', 'ยกเลิก'],
 };
+const PRINTABLE = ['paid', 'picked_up']; // ใบรายการพิมพ์ได้เมื่อบัญชี approve แล้วเท่านั้น
+function canPrint(o) { return PRINTABLE.includes(o && o.status); }
 function statusPill(s) { const [en, th] = STATUS_LABEL[s] || [s, '']; return `<span class="status ${esc(s)}">${en}<span class="th">${th}</span></span>`; }
 function fmtDateTime(v) { if (!v) return ''; const d = new Date(String(v).replace(' ', 'T')); if (isNaN(d)) return v; const p = (n) => String(n).padStart(2, '0'); return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`; }
 
