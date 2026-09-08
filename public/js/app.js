@@ -22,6 +22,8 @@ const ICONS = {
   print: '<svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M6 2h12v5H6V2zm-2 6h16a2 2 0 0 1 2 2v7h-4v5H6v-5H2v-7a2 2 0 0 1 2-2zm4 9v3h8v-3H8zm10-6a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/></svg>',
   check: '<svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.2l-3.5-3.5L4 14.2l5 5 11-11-1.4-1.4z"/></svg>',
   brush: '<svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M20.7 3.3a1 1 0 0 0-1.4 0L9.5 13.1l1.4 1.4 9.8-9.8a1 1 0 0 0 0-1.4zM8.2 14.4a3.3 3.3 0 0 0-3.3 3.1c-.1 1.2-.6 2-1.9 2.5.9.7 2.3 1 3.6 1a3.7 3.7 0 0 0 3.7-3.6l-2.1-3z"/></svg>',
+  menu: '<svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M2 4h20v3H2V4zm0 6.5h20v3H2v-3zM2 17h20v3H2v-3z"/></svg>',
+  logout: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h5"/><path d="M15 8l4 4-4 4"/><path d="M9 12h10"/></svg>',
   upload: '<svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l5 5-1.4 1.4L13 6.8V16h-2V6.8L8.4 9.4 7 8l5-5zM4 18h16v3H4v-3z"/></svg>',
 };
 
@@ -78,18 +80,22 @@ function renderHeader(active, { admin = false, role = '', user = null, hideNav =
   const brand = admin
     ? `<a class="brand" href="/admin-page"><b>JIAN CHA Page</b>${role ? `<span class="tag">${ROLE_TAG[role] || role.toUpperCase()}</span>` : ''}</a>`
     : `<a class="brand" href="${H()}/"><b>JIANCHA x NAVORI</b></a>`;
-  const item = (view, icon, label) => `<a class="pill ${active === view ? 'on' : ''}" href="/admin-page?view=${view}">${icon} ${label}</a>`;
+  // Back-office menu: a hamburger button (top-right) that opens a stacked list of wide buttons, icon left + label centred.
+  const mi = (view, icon, label) => `<a class="mi ${active === view ? 'on' : ''}" href="/admin-page?view=${view}">${icon}<span>${label}</span></a>`;
   const adminNav = () => {
     const items = [];
-    // Home is the campaign page (/admin-page). Any menu or campaign adds query params, so show Back whenever they exist.
-    if (location.search.length > 1) items.push(`<a class="pill" href="/admin-page" aria-label="Back to campaign page">${ICONS.arrowL} Back</a>`);
-    if (role === 'it_admin') items.push(`<a class="pill icon ${active === 'design' ? 'on' : ''}" href="/admin-page?view=design" aria-label="Design" title="Design: รูปและรายละเอียดหน้าแรกของแคมเปญ">${ICONS.brush}</a>`);
-    if (role === 'it_admin') items.push(item('accounts', ICONS.user, 'Account'));
-    items.push(item('orders', ICONS.doc, 'Order'));
-    items.push(item('slips', ICONS.slip, 'Slip Issue'));
-    items.push(item('pickup', ICONS.store, 'Store Pick-up Order'));
-    if (user) items.push(`<button type="button" class="pill" id="logout" title="${esc(user.username)}">Logout</button>`);
-    return `<nav class="nav">${items.join('')}</nav>`;
+    // Home is the campaign page (/admin-page). Any menu or campaign adds query params, so offer Back whenever they exist.
+    if (location.search.length > 1) items.push(`<a class="mi" href="/admin-page">${ICONS.arrowL}<span>Back</span></a>`);
+    if (role === 'it_admin') items.push(mi('design', ICONS.brush, 'Design'));
+    if (role === 'it_admin') items.push(mi('accounts', ICONS.user, 'Account'));
+    items.push(mi('orders', ICONS.doc, 'Order'));
+    items.push(mi('slips', ICONS.slip, 'Slip Issue'));
+    items.push(mi('pickup', ICONS.store, 'Pick-up Order'));
+    if (user) items.push(`<button type="button" class="mi" id="logout" title="${esc(user.username)}">${ICONS.logout}<span>Logout</span></button>`);
+    return `<nav class="nav burger" id="burger">
+      <button type="button" class="burger-btn" id="burger-btn" aria-label="Menu" aria-haspopup="true" aria-expanded="false" aria-controls="burger-menu">${ICONS.menu}</button>
+      <div class="burger-menu" id="burger-menu" hidden>${items.join('')}</div>
+    </nav>`;
   };
   const nav = admin
     ? (role && !hideNav ? adminNav() : '')
@@ -100,6 +106,14 @@ function renderHeader(active, { admin = false, role = '', user = null, hideNav =
         <a class="pill" href="${H()}/stores">${ICONS.store} JIANCHA Store Location</a>
        </nav>`;
   el.innerHTML = brand + nav;
+  const burger = $('#burger'), burgerBtn = $('#burger-btn'), burgerMenu = $('#burger-menu');
+  el.classList.toggle('has-burger', Boolean(burger));
+  if (burger) {
+    const setOpen = (open) => { burger.classList.toggle('open', open); burgerMenu.hidden = !open; burgerBtn.setAttribute('aria-expanded', String(open)); };
+    burgerBtn.addEventListener('click', (e) => { e.stopPropagation(); setOpen(burgerMenu.hidden); });
+    document.addEventListener('click', (e) => { if (!burger.contains(e.target)) setOpen(false); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setOpen(false); });
+  }
   const lo = $('#logout'); if (lo) lo.addEventListener('click', async () => { await api('/api/admin/logout', { method: 'POST' }); if (location.search.length > 1) location.href = '/admin-page'; else location.reload(); });
   updateCartBadge();
 }
