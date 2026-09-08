@@ -200,7 +200,10 @@ function openLightbox(src, alt = '') {
     lb.addEventListener('click', (e) => { if (e.target === lb || e.target.closest('.lb-close')) close(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && lb.classList.contains('open')) close(); });
   }
-  const im = lb.querySelector('img'); im.src = src; im.alt = alt;
+  const im = lb.querySelector('img'); im.style.width = ''; im.alt = alt;
+  // รูปย่อยต้นฉบับเล็ก (115x105) ขยายให้ดูได้ 2.5 เท่า; รูปใหญ่ใช้ขนาดตาม CSS
+  im.onload = () => { if (im.naturalWidth && im.naturalWidth < 400) im.style.width = Math.min(im.naturalWidth * 2.5, window.innerWidth * 0.92) + 'px'; };
+  im.src = src;
   lb.classList.add('open'); document.body.classList.add('lb-lock');
 }
 
