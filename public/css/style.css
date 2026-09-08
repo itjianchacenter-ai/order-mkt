@@ -82,6 +82,13 @@ svg.ic{width:18px;height:18px;flex:none;vertical-align:-3px}
 .set-imgs .big{aspect-ratio:320/330;width:100%;object-fit:cover}
 .set-imgs .small{display:grid;gap:12px}
 .set-imgs .small .ph{aspect-ratio:115/105;width:88px;object-fit:cover}
+.set-imgs img.ph{cursor:zoom-in}
+/* pop-up รูปสินค้า */
+.lightbox{position:fixed;inset:0;z-index:100;display:none;align-items:center;justify-content:center;padding:24px;background:rgba(0,0,0,.82);cursor:zoom-out}
+.lightbox.open{display:flex}
+.lightbox img{max-width:min(92vw,1100px);max-height:90vh;object-fit:contain;background:#fff;border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,.5);cursor:default}
+.lb-close{position:absolute;top:14px;right:16px;width:44px;height:44px;border:0;border-radius:50%;background:#fff;color:#000;font-size:30px;line-height:1;cursor:pointer}
+body.lb-lock{overflow:hidden}
 .set-tag{background:#000;color:#fff;font-weight:700;font-size:13px;padding:6px 12px;border-radius:4px;white-space:nowrap}
 .set-meta{display:flex;gap:12px;margin-top:14px;align-items:flex-start}
 .set-meta .pick{position:relative;flex:none;margin-top:2px}
