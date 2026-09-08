@@ -1,5 +1,5 @@
 {
-  "banner": "",
+  "banner": "/img/menu/navori-banner.jpg",
   "stock": {
     "total": 1000
   },
@@ -14,11 +14,11 @@
       "name_en": "Menu Name",
       "name_th": "ชื่อเมนู ภาษาไทย",
       "price": 215,
-      "image": "",
+      "image": "/img/menu/navori-set-a.jpg",
       "images": [
-        "",
-        "",
-        ""
+        "/img/menu/pomegranate-iced-tea.png",
+        "/img/menu/mooncake.png",
+        "/img/menu/snowy-mooncake.png"
       ],
       "pieces": 1,
       "items": [
@@ -45,11 +45,11 @@
       "name_en": "Menu Name",
       "name_th": "ชื่อเมนู ภาษาไทย",
       "price": 245,
-      "image": "",
+      "image": "/img/menu/navori-set-b.jpg",
       "images": [
-        "",
-        "",
-        ""
+        "/img/menu/pomegranate-smoothie.png",
+        "/img/menu/mooncake.png",
+        "/img/menu/snowy-mooncake.png"
       ],
       "pieces": 1,
       "items": [
