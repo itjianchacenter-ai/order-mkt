@@ -48,7 +48,7 @@ ${css}
 </style>
 </head>
 <body>
-<div class="pv-bar" id="pv-bar" style="display:none"><b>PREVIEW</b><span class="th">ข้อมูลทดลอง เก็บในเบราว์เซอร์นี้เท่านั้น</span><span>Back-office: <b>it-admin</b>/jiancha2026 · <b>admin</b>/marketing · <b>finance</b>/jiancha</span><a href="#/">หน้าร้าน</a><button type="button" id="pv-reset">รีเซ็ตข้อมูล</button></div>
+<div class="pv-bar" id="pv-bar" style="display:none"><b>PREVIEW</b><span class="th">ข้อมูลทดลอง เก็บในเบราว์เซอร์นี้เท่านั้น</span><a href="#/">หน้าร้าน</a><button type="button" id="pv-reset">รีเซ็ตข้อมูล</button></div>
 <div id="root"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script>
