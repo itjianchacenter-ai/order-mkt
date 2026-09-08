@@ -4,6 +4,8 @@ process.env.PROMPTPAY_ID = '0812345678';
 process.env.JWT_SECRET = 'test'; process.env.NODE_ENV = 'test'; process.env.SLIPOK_API_KEY = '';
 const fs = require('fs'); const path = require('path');
 const app = require('../server');
+// แม่แบบ data/menu.json มีแบนเนอร์หรือไม่ (แคมเปญที่ยังไม่ตั้งค่า Design ต้องได้ค่าตามแม่แบบ)
+const TEMPLATE_BANNERS = require('../data/menu.json').banner ? 1 : 0;
 
 let base; const jars = {};
 function cookieHeader(who) { return jars[who] ? { cookie: jars[who] } : {}; }
@@ -122,7 +124,7 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
 
     // ── design (IT-Admin): promote images + sets per campaign ──
     r = await call('fin', 'GET', '/api/admin/campaigns/jiancha-x-navori/design'); check('finance cannot open design', r.status === 403);
-    r = await call('it', 'GET', '/api/admin/campaigns/jiancha-x-navori/design'); check('design defaults to menu.json', r.status === 200 && r.json.design.sets.length === 2 && r.json.design.promote_images.length === 0 && r.json.campaign.has_design === false, r.json);
+    r = await call('it', 'GET', '/api/admin/campaigns/jiancha-x-navori/design'); check('design defaults to menu.json', r.status === 200 && r.json.design.sets.length === 2 && r.json.design.promote_images.length === TEMPLATE_BANNERS && r.json.campaign.has_design === false, r.json);
     const imgForm = new FormData(); imgForm.append('image', new Blob([tinyPng(9)], { type: 'image/png' }), 'banner.png');
     r = await call('it', 'POST', '/api/admin/design/upload', imgForm); check('design image uploaded', r.status === 201 && /^\/uploads\/design\/\d+-[a-f0-9]+\.png$/.test(r.json.url), r.json);
     const bannerUrl = r.json.url;
@@ -142,7 +144,7 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     dz.sets = dz.sets.filter((x) => x.id !== 'C'); r = await call('it', 'PUT', '/api/admin/campaigns/jiancha-x-navori/design', dz);
     r = await call('customer', 'GET', `/api/orders/${orderC.id}`); check('old order keeps its set snapshot', r.json.lines[0].name === 'SET C · Third');
     r = await call('fin', 'POST', `/api/admin/orders/${orderC.id}/status`, { status: 'cancelled' }); check('cleanup: cancel designed-set order', r.json.status === 'cancelled');
-    r = await call('it', 'GET', '/api/admin/campaigns/jiancha-x-summer/design'); check('other campaign still on template', r.json.design.sets.length === 2 && r.json.design.promote_images.length === 0);
+    r = await call('it', 'GET', '/api/admin/campaigns/jiancha-x-summer/design'); check('other campaign still on template', r.json.design.sets.length === 2 && r.json.design.promote_images.length === TEMPLATE_BANNERS);
 
     // ── campaign URLs: /<slug>/ shows that campaign; orders can name the campaign ──
     r = await call('it', 'GET', '/api/admin/campaigns'); check('campaign slug + url', r.json.find((c) => c.id === 'jiancha-x-navori').slug === 'jianchaxnavori' && r.json.find((c) => c.id === 'jiancha-x-summer').slug === 'jianchaxsummer' && r.json[0].url === `/${r.json[0].slug}/`, r.json.map((c) => c.slug));
