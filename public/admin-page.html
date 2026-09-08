@@ -405,7 +405,8 @@
     if (!alive()) return; // navigated away while loading
     state.page = data.page;
     list.innerHTML = data.rows.map((o) => orderCard(o, { light: true, open: o.id === openId, extra: actionsFor(o), ...headExtras(o) })).join('') || '<div class="empty">ไม่พบคำสั่งซื้อ</div>';
-    $('#pg').textContent = data.page; $('#prev').disabled = data.page <= 1; $('#next').disabled = data.page >= data.pages;
+    // หน้าละ 20 รายการ (PAGE_SIZE ใน server.js) แสดง "หน้า / ทั้งหมด" ให้รู้ว่ามีหน้าถัดไป
+    $('#pg').textContent = `${data.page} / ${data.pages}`; $('#prev').disabled = data.page <= 1; $('#next').disabled = data.page >= data.pages;
   }
   load();
 })();
