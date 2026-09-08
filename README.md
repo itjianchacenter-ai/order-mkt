@@ -21,7 +21,17 @@
 | `/stores` | สาขาที่รับสินค้า + ปุ่ม Google Map |
 | `/backend/` | หลังบ้าน "JIAN CHA Page" แยกสิทธิ์ 3 บทบาท (ดูหัวข้อถัดไป) ลิงก์เก่า `/admin-page` redirect มาที่นี่ |
 
-ลูกค้าไม่ต้องสมัครสมาชิก ระบบจำเบราว์เซอร์ด้วย cookie (อายุ 1 ปี) ประวัติการสั่งซื้อจึงเห็นเฉพาะบนเบราว์เซอร์ที่สั่ง
+## ลูกค้าเข้าสู่ระบบด้วย Google
+
+ลูกค้าดูเมนู เลือกเซ็ต เลือกสาขาได้โดยไม่ต้องล็อกอิน แต่เมื่อกด **Confirm** ระบบจะเปิด pop-up "Sign in with Google" ให้ล็อกอินด้วยอีเมล Google ก่อน (ล็อกอินเสร็จจะยืนยันคำสั่งซื้อต่อให้อัตโนมัติ) ประวัติการสั่งซื้อ (`/orders`) ผูกกับบัญชี Google จึงเปิดดูได้จากทุกเครื่อง หัวเว็บแสดงชื่อ/รูปบัญชีและปุ่ม Sign out
+
+- เปิดใช้ด้วยตัวแปร `GOOGLE_CLIENT_ID` (OAuth 2.0 Client ID ชนิด Web application จาก https://console.cloud.google.com/apis/credentials) ใส่ **Authorized JavaScript origins** = `https://order.jianchatea.com` (และ `http://localhost:3870` สำหรับทดสอบ) ไม่ต้องใส่ redirect URI
+- server: ใส่ใน `.env` — preview (GitHub Pages): ตั้ง Repository variable ชื่อ `GOOGLE_CLIENT_ID` (Settings → Secrets and variables → Actions → Variables) แล้ว push/rerun workflow
+- ถ้ายังไม่ตั้งค่า: server จะให้สั่งซื้อแบบไม่ล็อกอินเหมือนเดิม ส่วน preview จะแสดงปุ่ม "ทดลองเข้าสู่ระบบ (preview)" ให้พิมพ์อีเมลเองเพื่อทดสอบ flow
+- ฝั่ง server ตรวจ ID token กับ Google (`oauth2.googleapis.com/tokeninfo`) และเช็ค client id / ผู้ออก / วันหมดอายุ / อีเมลยืนยันแล้ว ก่อนบันทึกบัญชี (`customers.google_sub/email/name/picture`) ออเดอร์ที่สั่งไว้ในเบราว์เซอร์ก่อนล็อกอินจะย้ายไปอยู่กับบัญชีให้
+- หลังบ้านเห็นชื่อและอีเมลลูกค้าในการ์ดออเดอร์
+
+ก่อนหน้านี้ระบบจำเบราว์เซอร์ด้วย cookie (อายุ 1 ปี) ซึ่งยังใช้เป็นตัวตนชั่วคราวก่อนล็อกอิน
 
 ## หลังบ้าน: บทบาทและบัญชี
 
@@ -68,6 +78,7 @@ npm start                # http://localhost:3870
 | ตัวแปร | ความหมาย |
 |---|---|
 | `JWT_SECRET` | ค่าสุ่มยาว ๆ สำหรับเซ็น cookie (จำเป็นเมื่อ `NODE_ENV=production`) |
+| `GOOGLE_CLIENT_ID` | OAuth Client ID สำหรับ Sign in with Google ของลูกค้า (ว่าง = ไม่บังคับล็อกอิน) |
 | `PROMPTPAY_ID` | เบอร์/เลขนิติบุคคล PromptPay ที่รับเงิน |
 | `PROMPTPAY_QR_PAYLOAD` | (ถ้ามี) payload ของ Thai-QR ร้านค้า ระบบจะใส่ยอดเงินให้เอง |
 | `SLIPOK_API_KEY` / `SLIPOK_BRANCH_ID` | (ถ้ามี) ตรวจสลิปอัตโนมัติ |

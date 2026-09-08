@@ -87,6 +87,12 @@ CREATE TABLE IF NOT EXISTS campaigns (
 );
 `);
 
+// customers: Google account (migration for databases created before Google login)
+for (const [col, ddl] of [['google_sub', 'TEXT'], ['email', 'TEXT'], ['name', 'TEXT'], ['picture', 'TEXT'], ['last_login_at', 'TEXT']]) {
+  if (!db.prepare("SELECT 1 FROM pragma_table_info('customers') WHERE name = ?").get(col)) db.exec(`ALTER TABLE customers ADD COLUMN ${col} ${ddl}`);
+}
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_google ON customers(google_sub) WHERE google_sub IS NOT NULL');
+
 // order_lines: Match Set columns (migration for databases created before sets existed)
 for (const [col, ddl] of [['set_id', "TEXT DEFAULT ''"], ['set_label', "TEXT DEFAULT ''"], ['set_name', "TEXT DEFAULT ''"], ['items_json', "TEXT DEFAULT ''"], ['pieces', 'INTEGER'], ['drink_pieces', 'INTEGER'], ['dessert_pieces', 'INTEGER']]) {
   if (!db.prepare("SELECT 1 FROM pragma_table_info('order_lines') WHERE name = ?").get(col)) db.exec(`ALTER TABLE order_lines ADD COLUMN ${col} ${ddl}`);

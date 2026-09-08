@@ -62,6 +62,7 @@ function pvPath() {
   return p.replace(new RegExp('/index[.]html$'), '/').replace(new RegExp('[.]html$'), '');
 }
 function pvSearch() { return location.hash.includes('?') ? '?' + location.hash.split('?')[1] : (location.hash.length > 1 ? '' : window.location['search']); }
+const PREVIEW_GOOGLE_CLIENT_ID = ${JSON.stringify((process.env.GOOGLE_CLIENT_ID || '').trim())}; // ว่าง = ปุ่มทดลองล็อกอินด้วยอีเมล
 const PREVIEW_MENU = ${JSON.stringify(menuPublic)};
 const PREVIEW_STORES = ${JSON.stringify(stores.filter((s) => s.active !== false).map((s) => ({ id: String(s.id), brand: s.brand || 'JIAN CHA', name: s.name, map_url: s.map_url || '' })))};
 ${mock}

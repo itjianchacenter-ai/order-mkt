@@ -26,7 +26,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # ตั้ง Repository variable GOOGLE_CLIENT_ID (Settings → Secrets and variables → Actions → Variables) เพื่อเปิด Sign in with Google บน preview
       - run: node scripts/build-preview.js _site/index.html
+        env:
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
       - run: |
           touch _site/.nojekyll
           cp _site/index.html _site/404.html

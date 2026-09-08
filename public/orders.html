@@ -18,6 +18,12 @@
     const card = list.querySelector(`.order[data-id="${CSS.escape(updated.id)}"]`);
     if (card) card.outerHTML = orderCard(updated, { open: true, extra: extraFor(updated) });
   });
+  await loadMe();
+  if (needLogin()) {
+    list.innerHTML = `<div class="empty">เข้าสู่ระบบด้วย Google เพื่อดูประวัติการสั่งซื้อ / Sign in with Google to see your orders<br><button type="button" class="btn" id="orders-signin" style="margin-top:12px">${ICONS.google} Sign in with Google</button></div>`;
+    $('#orders-signin').addEventListener('click', () => openLoginModal(() => location.reload()));
+    return;
+  }
   const orders = await api('/api/orders');
   if (!orders.length) { list.innerHTML = `<div class="empty">ยังไม่มีประวัติการสั่งซื้อ / No orders yet. <a href="${H()}/">Order now</a></div>`; return; }
   list.innerHTML = orders.map((o) => orderCard(o, { extra: extraFor(o) })).join('');

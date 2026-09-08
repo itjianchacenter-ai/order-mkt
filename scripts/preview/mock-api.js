@@ -94,6 +94,7 @@ function pvCampaignView(c) { const dz = pvDesign(c); return { ...c, url: `/${c.s
 function pvCampaignName(d, id) { const c = d.campaigns.find((x) => x.id === id); return c ? c.name : ''; }
 function pvView(d, o, admin) {
   const v = { id: o.id, order_number: o.order_number, campaign_id: o.campaign_id, campaign_name: pvCampaignName(d, o.campaign_id), store_id: o.store_id, store_name: o.store_name, total: o.total, status: o.status, note: o.note, created_at: o.created_at, paid_at: o.paid_at, picked_up_at: o.picked_up_at, has_slip: Boolean(o.slip_url), slip_reason: o.slip_reason, lines: o.lines, promo_code: o.promo_code || null, code_available: ['paid', 'picked_up'].includes(o.status), payable: ['pending', 'slip_rejected'].includes(o.status) };
+  if (admin && d.customer && o.customer_id === d.customer.id) Object.assign(v, { customer_email: d.customer.email, customer_name: d.customer.name });
   if (admin) Object.assign(v, { customer_id: o.customer_id, slip_url: o.slip_url, slip_ref: o.slip_ref, slip_amount: o.slip_amount, slip_verified: o.slip_verified, cancelled_at: o.cancelled_at });
   return v;
 }
@@ -142,7 +143,22 @@ async function api(path, opts = {}) {
   const [p, qs] = path.split('?'); const q = new URLSearchParams(qs || '');
   const method = (opts.method || 'GET').toUpperCase();
   const body = opts.body instanceof FormData ? opts.body : (opts.body || {});
-  const d = pvDb(); const me = 'me';
+  const d = pvDb();
+  // ลูกค้าที่ล็อกอิน (Google) เก็บใน d.customer; ยังไม่ล็อกอิน = 'me' (ตัวตนของเบราว์เซอร์)
+  const me = d.customer ? d.customer.id : 'me';
+  const meView = () => ({ logged_in: Boolean(d.customer), login_required: true, google_client_id: (typeof PREVIEW_GOOGLE_CLIENT_ID === 'string' ? PREVIEW_GOOGLE_CLIENT_ID : ''), email: d.customer ? d.customer.email : '', name: d.customer ? d.customer.name : '', picture: d.customer ? d.customer.picture : '' });
+  if (p === '/api/me') return meView();
+  if (p === '/api/auth/google' && method === 'POST') {
+    let g = null;
+    if (body.credential) { try { const payload = JSON.parse(atob(String(body.credential).split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); g = { sub: payload.sub, email: payload.email, name: payload.name || payload.email, picture: payload.picture || '' }; } catch (e) { pvFail('เข้าสู่ระบบด้วย Google ไม่สำเร็จ'); } }
+    else if (body.demo_email) { const em = String(body.demo_email).trim().toLowerCase(); if (!/^[^@\s]+@[^@\s]+$/.test(em)) pvFail('อีเมลไม่ถูกต้อง'); g = { sub: 'demo:' + em, email: em, name: em.split('@')[0], picture: '' }; }
+    if (!g) pvFail('เข้าสู่ระบบด้วย Google ไม่สำเร็จ');
+    const id = 'g:' + g.sub;
+    // ออเดอร์ที่สั่งไว้ก่อนล็อกอินในเบราว์เซอร์นี้ ติดไปกับบัญชี
+    for (const o of d.orders) if (o.customer_id === 'me') o.customer_id = id;
+    d.customer = { id, email: g.email, name: g.name, picture: g.picture }; pvSave(d); return meView();
+  }
+  if (p === '/api/auth/logout' && method === 'POST') { d.customer = null; pvSave(d); return meView(); }
   const admin = d.session ? d.users.find((u) => u.id === d.session && u.active) : null;
   const can = (perm) => Boolean(admin && PV_PERMS[perm].includes(admin.role));
   const find = (id) => d.orders.find((o) => o.id === id);
@@ -157,6 +173,7 @@ async function api(path, opts = {}) {
   if (p === '/api/stores') return PREVIEW_STORES;
   if (p === '/api/config') return { payment_ready: true, slip_auto_verify: false };
   if (p === '/api/orders' && method === 'POST') {
+    if (!d.customer) pvFail('กรุณาเข้าสู่ระบบด้วย Google ก่อนยืนยันคำสั่งซื้อ / Please sign in with Google first');
     const store = PREVIEW_STORES.find((s) => s.id === String(body.store_id)); if (!store) pvFail('กรุณาเลือกสาขาที่รับสินค้า');
     if (!Array.isArray(body.lines) || !body.lines.length) pvFail('ยังไม่มีรายการในตะกร้า');
     const camp = reqCamp; if (camp.orders_open === false) pvFail('แคมเปญนี้ปิดรับคำสั่งซื้อแล้ว / This campaign is closed');

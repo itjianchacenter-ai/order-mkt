@@ -89,6 +89,18 @@ svg.ic{width:18px;height:18px;flex:none;vertical-align:-3px}
 .lightbox img{width:min(92vw,720px);max-width:min(92vw,1100px);height:auto;max-height:90vh;object-fit:contain;background:#fff;border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,.5);cursor:default}
 .lb-close{position:absolute;top:14px;right:16px;width:44px;height:44px;border:0;border-radius:50%;background:#fff;color:#000;font-size:30px;line-height:1;cursor:pointer}
 body.lb-lock{overflow:hidden}
+/* pop-up เข้าสู่ระบบด้วย Google */
+.modal{position:fixed;inset:0;z-index:110;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(0,0,0,.55)}
+.modal.open{display:flex}
+.modal-card{position:relative;background:#fff;border:1px solid var(--line);border-radius:var(--r-card);padding:32px 28px 24px;width:min(92vw,400px);display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
+.modal-card .lb-close{top:8px;right:8px;width:36px;height:36px;font-size:24px;background:#f2f2f2}
+.gsi-btn{min-height:44px;margin-top:8px;display:flex;justify-content:center}
+.demo-login{display:flex;flex-direction:column;gap:8px;width:100%}
+.demo-login input{border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit}
+.acct-slot{display:inline-flex;gap:8px;align-items:center}
+.pill.user{background:#000;color:#fff;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill .avatar{width:22px;height:22px;border-radius:50%;object-fit:cover}
+.pill.user .avatar{margin-left:-4px}
 .set-tag{background:#000;color:#fff;font-weight:700;font-size:13px;padding:6px 12px;border-radius:4px;white-space:nowrap}
 .set-meta{display:flex;gap:12px;margin-top:14px;align-items:flex-start}
 .set-meta .pick{position:relative;flex:none;margin-top:2px}

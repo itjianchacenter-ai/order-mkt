@@ -22,6 +22,7 @@ const ICONS = {
   print: '<svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M6 2h12v5H6V2zm-2 6h16a2 2 0 0 1 2 2v7h-4v5H6v-5H2v-7a2 2 0 0 1 2-2zm4 9v3h8v-3H8zm10-6a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/></svg>',
   check: '<svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.2l-3.5-3.5L4 14.2l5 5 11-11-1.4-1.4z"/></svg>',
   brush: '<svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M20.7 3.3a1 1 0 0 0-1.4 0L9.5 13.1l1.4 1.4 9.8-9.8a1 1 0 0 0 0-1.4zM8.2 14.4a3.3 3.3 0 0 0-3.3 3.1c-.1 1.2-.6 2-1.9 2.5.9.7 2.3 1 3.6 1a3.7 3.7 0 0 0 3.7-3.6l-2.1-3z"/></svg>',
+  google: '<svg class="ic" viewBox="0 0 24 24"><path fill="#4285F4" d="M21.6 12.2c0-.7-.1-1.4-.2-2H12v3.9h5.4a4.6 4.6 0 0 1-2 3v2.5h3.2c1.9-1.7 3-4.3 3-7.4z"/><path fill="#34A853" d="M12 22c2.7 0 5-.9 6.6-2.4l-3.2-2.5c-.9.6-2 1-3.4 1-2.6 0-4.8-1.8-5.6-4.1H3.1v2.6A10 10 0 0 0 12 22z"/><path fill="#FBBC05" d="M6.4 14a6 6 0 0 1 0-3.9V7.5H3.1a10 10 0 0 0 0 9l3.3-2.5z"/><path fill="#EA4335" d="M12 6c1.5 0 2.8.5 3.8 1.5l2.8-2.8A10 10 0 0 0 3.1 7.5L6.4 10C7.2 7.8 9.4 6 12 6z"/></svg>',
   menu: '<svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M2 4h20v3H2V4zm0 6.5h20v3H2v-3zM2 17h20v3H2v-3z"/></svg>',
   logout: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h5"/><path d="M15 8l4 4-4 4"/><path d="M9 12h10"/></svg>',
   upload: '<svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l5 5-1.4 1.4L13 6.8V16h-2V6.8L8.4 9.4 7 8l5-5zM4 18h16v3H4v-3z"/></svg>',
@@ -50,6 +51,67 @@ async function api(path, opts = {}) {
   let data = null; try { data = await r.json(); } catch (e) { /* no body */ }
   if (!r.ok) throw new Error((data && data.error) || `HTTP ${r.status}`);
   return data;
+}
+
+/* ─── Customer account: Sign in with Google ───
+   /api/me → { logged_in, login_required, google_client_id, email, name, picture }
+   login_required = server has GOOGLE_CLIENT_ID; then Confirm (order) needs a signed-in customer. */
+let ME = null;
+async function loadMe(force = false) { if (!ME || force) { try { ME = await api('/api/me'); } catch (e) { ME = { logged_in: false, login_required: false }; } } return ME; }
+function needLogin() { return Boolean(ME && ME.login_required && !ME.logged_in); }
+let _gis = null;
+function ensureGis() {
+  if (window.google && window.google.accounts) return Promise.resolve();
+  if (_gis) return _gis;
+  _gis = new Promise((resolve, reject) => { const s = document.createElement('script'); s.src = 'https://accounts.google.com/gsi/client'; s.async = true; s.defer = true; s.onload = resolve; s.onerror = () => reject(new Error('โหลด Google Sign-In ไม่ได้ / Could not load Google Sign-In')); document.head.appendChild(s); });
+  return _gis;
+}
+async function googleSignIn(credential) {
+  ME = await api('/api/auth/google', { method: 'POST', body: { credential } });
+  refreshAccountSlot(); return ME;
+}
+async function signOut() { ME = await api('/api/auth/logout', { method: 'POST' }); refreshAccountSlot(); location.reload(); }
+/* pop-up: "Sign in with Google" (renders the official button); onDone runs after a successful sign-in */
+let _loginDone = null;
+async function openLoginModal(onDone) {
+  _loginDone = onDone || null;
+  let m = $('#login-modal');
+  if (!m) {
+    m = document.createElement('div'); m.id = 'login-modal'; m.className = 'modal';
+    m.innerHTML = `<div class="modal-card"><button type="button" class="lb-close" aria-label="ปิด">×</button>
+      <b style="font-size:20px">Sign in with Google</b><span class="th">เข้าสู่ระบบด้วยอีเมล Google เพื่อยืนยันคำสั่งซื้อและดูประวัติการสั่งซื้อ</span>
+      <div id="gsi-btn" class="gsi-btn"></div><div class="err" id="login-err"></div></div>`;
+    document.body.appendChild(m);
+    m.addEventListener('click', (e) => { if (e.target === m || e.target.closest('.lb-close')) m.classList.remove('open'); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') m.classList.remove('open'); });
+  }
+  m.classList.add('open'); const err = $('#login-err'); err.textContent = '';
+  const done = async () => { m.classList.remove('open'); if (_loginDone) { const f = _loginDone; _loginDone = null; await f(); } };
+  const cid = ME && ME.google_client_id;
+  if (!cid) {
+    // ยังไม่ได้ตั้งค่า Google Client ID
+    if (window.PREVIEW_MODE) {
+      // preview: ทดลองล็อกอินด้วยอีเมลที่พิมพ์เอง (ไม่มีการตรวจสอบ ใช้ทดสอบ flow เท่านั้น)
+      $('#gsi-btn').innerHTML = `<form id="demo-login" class="demo-login"><input name="email" type="email" placeholder="you@gmail.com" required><button class="btn" type="submit">ทดลองเข้าสู่ระบบ (preview)</button><small class="th">ของจริงจะเป็นปุ่ม Sign in with Google เมื่อตั้งค่า Client ID แล้ว</small></form>`;
+      $('#demo-login').addEventListener('submit', async (e) => { e.preventDefault(); try { ME = await api('/api/auth/google', { method: 'POST', body: { demo_email: new FormData(e.target).get('email') } }); refreshAccountSlot(); await done(); } catch (ex) { err.textContent = ex.message; } });
+    } else err.textContent = 'ยังไม่ได้ตั้งค่า Google login บนเซิร์ฟเวอร์ (GOOGLE_CLIENT_ID)';
+    return;
+  }
+  try {
+    await ensureGis();
+    google.accounts.id.initialize({ client_id: cid, callback: async (resp) => { try { await googleSignIn(resp.credential); await done(); } catch (ex) { err.textContent = ex.message; } }, ux_mode: 'popup', auto_select: false });
+    $('#gsi-btn').innerHTML = '';
+    google.accounts.id.renderButton($('#gsi-btn'), { theme: 'outline', size: 'large', shape: 'pill', text: 'signin_with', width: 280 });
+  } catch (e) { err.textContent = e.message; }
+}
+/* header slot: "Sign in" pill, or the signed-in customer + Sign out */
+function refreshAccountSlot() {
+  const slot = $('#acct-slot'); if (!slot || !ME) return;
+  if (ME.logged_in) slot.innerHTML = `<span class="pill user" title="${esc(ME.email)}">${ME.picture ? `<img class="avatar" src="${esc(ME.picture)}" alt="" referrerpolicy="no-referrer">` : ICONS.user} ${esc(ME.name || ME.email)}</span><button type="button" class="pill" id="signout">${ICONS.logout} Sign out</button>`;
+  else if (ME.login_required) slot.innerHTML = `<button type="button" class="pill" id="signin">${ICONS.google} Sign in</button>`;
+  else slot.innerHTML = '';
+  const si = $('#signin'); if (si) si.addEventListener('click', () => openLoginModal());
+  const so = $('#signout'); if (so) so.addEventListener('click', signOut);
 }
 
 /* cart: [{set_id, quantity}] — one line per Match Set */
@@ -105,6 +167,7 @@ function renderHeader(active, { admin = false, role = '', user = null, hideNav =
         <a class="pill" href="${H()}/cart">${ICONS.cart} Cart <span class="badge hidden" data-cart-badge></span></a>
         <a class="pill" href="${H()}/orders">${ICONS.doc} Order History</a>
         <a class="pill" href="${H()}/stores">${ICONS.store} JIANCHA Store Location</a>
+        <span id="acct-slot" class="acct-slot"></span>
        </nav>`;
   el.innerHTML = brand + nav;
   const burger = $('#burger'), burgerBtn = $('#burger-btn'), burgerMenu = $('#burger-menu');
@@ -117,6 +180,7 @@ function renderHeader(active, { admin = false, role = '', user = null, hideNav =
   }
   const lo = $('#logout'); if (lo) lo.addEventListener('click', async () => { await api('/api/admin/logout', { method: 'POST' }); if (location.search.length > 1) location.href = ADMIN_PATH; else location.reload(); });
   updateCartBadge();
+  if (!admin) loadMe().then(refreshAccountSlot);
 }
 
 /* menu lookup helpers: the menu is a list of Match Sets */
@@ -233,12 +297,18 @@ async function submitOrder({ storeId, note, errEl, btn, onFail }) {
   const lines = loadCart();
   if (!lines.length) { errEl.textContent = 'ยังไม่มีรายการในตะกร้า / Your cart is empty'; return; }
   if (!storeId) { errEl.textContent = 'กรุณาเลือกสาขาที่รับสินค้า / Please choose a pick-up location'; return; }
+  await loadMe();
+  if (needLogin()) { openLoginModal(() => submitOrder({ storeId, note, errEl, btn, onFail })); return; }  // ล็อกอินก่อน แล้วยืนยันต่อให้อัตโนมัติ
   btn.disabled = true;
   try {
     const order = await api('/api/orders', { method: 'POST', body: { store_id: storeId, note, lines, campaign: campaignSlug() || undefined } });
     cartClear(); setNote('');
     location.href = `${B()}/pay?order=${encodeURIComponent(order.id)}`;
-  } catch (e) { errEl.textContent = e.message; btn.disabled = false; if (onFail) onFail(); }
+  } catch (e) {
+    btn.disabled = false;
+    if (/HTTP 401|เข้าสู่ระบบ|sign in/i.test(e.message)) { await loadMe(true); refreshAccountSlot(); openLoginModal(() => submitOrder({ storeId, note, errEl, btn, onFail })); return; }
+    errEl.textContent = e.message; if (onFail) onFail();
+  }
 }
 
 const STATUS_LABEL = {
@@ -267,6 +337,7 @@ function orderCard(o, { light = false, open = false, extra = '', badge = '', asi
     </button>
     <div class="body ${open ? '' : 'hidden'}">
       <table>${rows}</table>
+      ${o.customer_email ? `<div class="meta"><span>${ICONS.user} <b>${esc(o.customer_name || '')}</b> ${esc(o.customer_email)}</span></div>` : ''}
       ${o.note ? `<div class="meta"><span><b>หมายเหตุ:</b> ${esc(o.note)}</span></div>` : ''}
       <div class="meta"><span>${fmtDateTime(o.created_at)}</span>${statusPill(o.status)}${o.slip_reason && ['pending', 'slip_uploaded', 'slip_rejected'].includes(o.status) && o.has_slip ? `<span>${esc(o.slip_reason)}</span>` : ''}</div>
       ${extra}

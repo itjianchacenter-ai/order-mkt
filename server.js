@@ -154,6 +154,57 @@ app.use((req, res, next) => {
   req.customerId = cid;
   next();
 });
+// ─── Customer login with Google (Sign in with Google → ID token → verified here) ───
+// GOOGLE_CLIENT_ID ว่าง = ยังไม่เปิดใช้ login (สั่งซื้อแบบไม่ล็อกอินเหมือนเดิม) — ตั้งค่าแล้วลูกค้าต้องล็อกอินก่อนกด Confirm
+const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID || '').trim();
+const loginRequired = () => Boolean(GOOGLE_CLIENT_ID);
+const customerRow = (id) => db.prepare('SELECT id, google_sub, email, name, picture FROM customers WHERE id = ?').get(id) || null;
+const customerLoggedIn = (id) => { const c = customerRow(id); return Boolean(c && c.google_sub); };
+function meView(id) {
+  const c = customerRow(id); const logged_in = Boolean(c && c.google_sub);
+  return { logged_in, login_required: loginRequired(), google_client_id: GOOGLE_CLIENT_ID, email: logged_in ? c.email : '', name: logged_in ? c.name : '', picture: logged_in ? c.picture : '' };
+}
+// ตรวจ ID token กับ Google (tokeninfo ตรวจลายเซ็นให้) แล้วเช็ค aud/iss/exp/email_verified เอง
+async function verifyGoogleToken(credential) {
+  if (!credential || typeof credential !== 'string' || credential.length > 4096) throw new Error('bad credential');
+  const url = (process.env.GOOGLE_TOKENINFO_URL || 'https://oauth2.googleapis.com/tokeninfo') + '?id_token=' + encodeURIComponent(credential);
+  const r = await fetch(url); const p = await r.json().catch(() => null);
+  if (!r.ok || !p || !p.sub) throw new Error('token rejected');
+  if (p.aud !== GOOGLE_CLIENT_ID) throw new Error('aud mismatch');
+  if (!['accounts.google.com', 'https://accounts.google.com'].includes(p.iss)) throw new Error('iss mismatch');
+  if (Number(p.exp) * 1000 < Date.now()) throw new Error('expired');
+  if (String(p.email_verified) !== 'true') throw new Error('email not verified');
+  return { sub: p.sub, email: p.email, name: p.name || p.email, picture: p.picture || '' };
+}
+function setCustomerCookie(res, cid) {
+  res.cookie(CUSTOMER_COOKIE, jwt.sign({ cid }, JWT_SECRET), { httpOnly: true, sameSite: 'lax', secure: IS_PROD, maxAge: 365 * 24 * 3600 * 1000, path: '/' });
+}
+app.get('/api/me', (req, res) => res.json(meView(req.customerId)));
+app.post('/api/auth/google', async (req, res) => {
+  if (!GOOGLE_CLIENT_ID) return res.status(503).json({ error: 'ยังไม่ได้ตั้งค่า Google login (GOOGLE_CLIENT_ID)' });
+  let g; try { g = await verifyGoogleToken(req.body && req.body.credential); } catch (e) { return res.status(401).json({ error: 'เข้าสู่ระบบด้วย Google ไม่สำเร็จ กรุณาลองใหม่ / Google sign-in failed' }); }
+  const anon = req.customerId;
+  let acct = db.prepare('SELECT id FROM customers WHERE google_sub = ?').get(g.sub);
+  const tx = db.transaction(() => {
+    if (!acct) {
+      // บัญชีใหม่: ใช้แถวลูกค้าของเบราว์เซอร์นี้เป็นบัญชี (ออเดอร์ที่สั่งไว้ก่อนล็อกอินติดมาด้วย)
+      touchCustomer(anon); acct = { id: anon };
+    } else if (acct.id !== anon) {
+      // เคยล็อกอินจากเครื่องอื่น: ย้ายออเดอร์ที่สั่งแบบไม่ล็อกอินในเบราว์เซอร์นี้ไปไว้กับบัญชี
+      db.prepare('UPDATE orders SET customer_id = ? WHERE customer_id = ?').run(acct.id, anon);
+    }
+    db.prepare(`UPDATE customers SET google_sub = ?, email = ?, name = ?, picture = ?, last_login_at = datetime('now','localtime'), last_seen_at = datetime('now','localtime') WHERE id = ?`).run(g.sub, g.email, g.name, g.picture, acct.id);
+  });
+  tx();
+  setCustomerCookie(res, acct.id); req.customerId = acct.id;
+  res.json(meView(acct.id));
+});
+app.post('/api/auth/logout', (req, res) => {
+  // ออกจากระบบ = เริ่มตัวตนใหม่แบบไม่ล็อกอินในเบราว์เซอร์นี้ (ออเดอร์ยังอยู่กับบัญชี Google)
+  const cid = crypto.randomUUID(); setCustomerCookie(res, cid); req.customerId = cid;
+  res.json(meView(cid));
+});
+
 function touchCustomer(id) {
   db.prepare(`INSERT INTO customers(id) VALUES (?) ON CONFLICT(id) DO UPDATE SET last_seen_at = datetime('now','localtime')`).run(id);
 }
@@ -204,12 +255,13 @@ app.use(express.static(PUBLIC_DIR, { extensions: ['html'], index: false }));
 app.get('/api/menu', (req, res) => { const c = requestCampaign(req); res.json({ ...menuFor(c), campaign: campaignPublic(c), stock: stockView(c) }); });
 app.get('/api/stock', (req, res) => res.json(stockView(requestCampaign(req))));
 app.get('/api/stores', (req, res) => res.json(loadStores()));
-app.get('/api/config', (req, res) => res.json({ payment_ready: qrConfigured(), slip_auto_verify: slipOkEnabled() }));
+app.get('/api/config', (req, res) => res.json({ payment_ready: qrConfigured(), slip_auto_verify: slipOkEnabled(), login_required: loginRequired(), google_client_id: GOOGLE_CLIENT_ID }));
 
 const money = (n) => Math.round(Number(n) * 100) / 100;
 
 /** Body: { store_id, note, campaign?: slug, lines: [{set_id, quantity}] } (drink_id/dessert_id lines are still accepted for older clients) */
 app.post('/api/orders', (req, res) => {
+  if (loginRequired() && !customerLoggedIn(req.customerId)) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบด้วย Google ก่อนยืนยันคำสั่งซื้อ / Please sign in with Google first', login_required: true });
   const { store_id, note = '', lines } = req.body || {};
   const store = loadStores().find((s) => s.id === String(store_id));
   if (!store) return res.status(400).json({ error: 'กรุณาเลือกสาขาที่รับสินค้า' });
@@ -284,6 +336,7 @@ function orderView(o, { admin = false } = {}) {
       return { set_id: l.set_id || '', set_label: l.set_label || '', set_name: l.set_name || '', items, name, pieces: l.pieces ?? 1, drink_id: l.drink_id, drink_name: l.drink_name, dessert_id: l.dessert_id, dessert_name: l.dessert_name, quantity: l.quantity, unit_price: l.unit_price, line_total: l.line_total };
     }),
   };
+  if (admin) { const c = customerRow(o.customer_id); Object.assign(v, { customer_email: c && c.google_sub ? c.email : '', customer_name: c && c.google_sub ? c.name : '' }); }
   if (admin) Object.assign(v, { customer_id: o.customer_id, slip_url: o.slip_path ? `/uploads/${path.basename(o.slip_path)}` : '', slip_ref: o.slip_ref, slip_amount: o.slip_amount, slip_verified: o.slip_verified, cancelled_at: o.cancelled_at });
   return v;
 }
