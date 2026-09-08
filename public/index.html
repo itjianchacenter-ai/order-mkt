@@ -97,6 +97,7 @@
     render();
   });
   sets.addEventListener('click', (e) => {
+    const pic = e.target.closest('.set-imgs img.ph'); if (pic) { openLightbox(pic.src, pic.alt); return; }
     const t = e.target.closest('[data-inc],[data-dec]'); if (!t) return;
     const id = t.dataset.inc || t.dataset.dec; const s = map[id]; const line = cartLine(id);
     if (t.dataset.inc) {

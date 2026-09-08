@@ -189,6 +189,24 @@ function stockPill(stock) {
   return parts.length ? `<span class="note-pill th">${parts.join(' · ')}</span>` : '';
 }
 
+/* pop-up (lightbox) for product images: click an image to view it large, close with ×, click outside, or Esc */
+function openLightbox(src, alt = '') {
+  let lb = $('#lightbox');
+  if (!lb) {
+    lb = document.createElement('div'); lb.id = 'lightbox'; lb.className = 'lightbox'; lb.setAttribute('role', 'dialog'); lb.setAttribute('aria-modal', 'true');
+    lb.innerHTML = '<button type="button" class="lb-close" aria-label="ปิด">×</button><img alt="">';
+    document.body.appendChild(lb);
+    const close = () => { lb.classList.remove('open'); document.body.classList.remove('lb-lock'); };
+    lb.addEventListener('click', (e) => { if (e.target === lb || e.target.closest('.lb-close')) close(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && lb.classList.contains('open')) close(); });
+  }
+  const im = lb.querySelector('img'); im.style.width = ''; im.alt = alt;
+  // รูปย่อยต้นฉบับเล็ก (115x105) ขยายให้ดูได้ 2.5 เท่า; รูปใหญ่ใช้ขนาดตาม CSS
+  im.onload = () => { if (im.naturalWidth && im.naturalWidth < 400) im.style.width = Math.min(im.naturalWidth * 2.5, window.innerWidth * 0.92) + 'px'; };
+  im.src = src;
+  lb.classList.add('open'); document.body.classList.add('lb-lock');
+}
+
 /* homepage hero: the campaign's promote images (one image, or a slideshow when there are several) */
 function renderHero(el, banners) {
   const list = (banners || []).filter(Boolean);
