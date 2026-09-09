@@ -21,7 +21,8 @@
 
   const me = await api('/api/admin/me');
   if (!alive()) return;
-  if (!me.admin) { renderHeader('', { admin: true }); return renderLogin(); }
+  // หน้า login: ไม่แสดงโลโก้มุมซ้ายบน (โลโก้อยู่ในกล่อง login อย่างเดียว) เหลือแค่แถบว่างไว้เว้นระยะ
+  if (!me.admin) { renderHeader('', { admin: true }); const br = $('.brand'); if (br) br.remove(); return renderLogin(); }
   const user = me.user, P = me.permissions;
   // customer URL of a campaign: order.jianchatea.com/<slug>/ (preview: this file + #/<slug>/)
   const siteUrl = (c) => (me.public_base_url || (location.origin + (window.PREVIEW_MODE ? (location.protocol === 'file:' ? window.location['pathname'] + '#' : PV_BASE.replace(/\/$/, '')) : ''))) + c.url;
