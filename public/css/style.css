@@ -167,6 +167,8 @@ a.btn{text-decoration:none}
 .notebox{border:1px solid var(--line);border-radius:10px;background:#fff;padding:14px 22px;margin-top:20px}
 .notebox b{display:block;margin-bottom:6px}
 .telbox label{display:block;margin-bottom:6px}
+.telbox label b,.telbox label .th{display:inline;font-size:16px}
+.telbox label .th{font-weight:400}
 .telbox input{width:100%;border:0;border-bottom:1px solid var(--line);background:transparent;padding:6px 0;outline:none;font:inherit;font-size:16px}
 .order .body td .lbl{font-size:19px;font-weight:700;margin-right:6px}
 .order .body td .ln{font-size:15px}
