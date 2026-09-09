@@ -178,7 +178,6 @@ function renderHeader(active, { admin = false, role = '', user = null, hideNav =
         ${active === 'home' ? '' : `<a class="pill" href="${H()}/" aria-label="Back to homepage">${ICONS.arrowL} Back</a>`}
         <a class="pill ${active === 'cart' ? 'on' : ''}" href="${H()}/cart">${ICONS.cart} Cart <span class="badge hidden" data-cart-badge></span></a>
         <a class="pill ${active === 'orders' ? 'on' : ''}" href="${H()}/orders">${ICONS.doc} Order History</a>
-        <a class="pill ${active === 'stores' ? 'on' : ''}" href="${H()}/stores">${ICONS.store} JIANCHA Store Location</a>
         <span id="acct-slot" class="acct-slot"></span>
        </nav>`;
   el.innerHTML = brand + nav;
