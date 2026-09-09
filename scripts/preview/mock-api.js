@@ -93,7 +93,7 @@ function pvMenuFor(c) { const dz = pvDesign(c); return { banner: dz.promote_imag
 function pvCampaignView(c) { const dz = pvDesign(c); return { ...c, url: `/${c.slug}/`, orders_open: c.orders_open !== false, design: undefined, cover: dz.promote_images[0] || '', set_count: dz.sets.filter((x) => x.active).length, has_design: Boolean(c.design) }; }
 function pvCampaignName(d, id) { const c = d.campaigns.find((x) => x.id === id); return c ? c.name : ''; }
 function pvView(d, o, admin) {
-  const v = { id: o.id, order_number: o.order_number, campaign_id: o.campaign_id, campaign_name: pvCampaignName(d, o.campaign_id), store_id: o.store_id, store_name: o.store_name, total: o.total, status: o.status, note: o.note, created_at: o.created_at, paid_at: o.paid_at, picked_up_at: o.picked_up_at, has_slip: Boolean(o.slip_url), slip_reason: o.slip_reason, lines: o.lines, promo_code: o.promo_code || null, code_available: ['paid', 'picked_up'].includes(o.status), payable: ['pending', 'slip_rejected'].includes(o.status) };
+  const v = { id: o.id, order_number: o.order_number, campaign_id: o.campaign_id, campaign_name: pvCampaignName(d, o.campaign_id), store_id: o.store_id, store_name: o.store_name, total: o.total, status: o.status, note: o.note, phone: o.phone || '', created_at: o.created_at, paid_at: o.paid_at, picked_up_at: o.picked_up_at, has_slip: Boolean(o.slip_url), slip_reason: o.slip_reason, lines: o.lines, promo_code: o.promo_code || null, code_available: ['paid', 'picked_up'].includes(o.status), payable: ['pending', 'slip_rejected'].includes(o.status) };
   if (admin && d.customer && o.customer_id === d.customer.id) Object.assign(v, { customer_email: d.customer.email, customer_name: d.customer.name });
   if (admin) Object.assign(v, { customer_id: o.customer_id, slip_url: o.slip_url, slip_ref: o.slip_ref, slip_amount: o.slip_amount, slip_verified: o.slip_verified, cancelled_at: o.cancelled_at });
   return v;
@@ -191,7 +191,7 @@ async function api(path, opts = {}) {
     const total = pvMoney(lines.reduce((s, l) => s + l.line_total, 0));
     const want = lines.reduce((w, r) => { w.total += r.quantity * r.pieces; w.drink += r.quantity * r.drink_pieces; w.dessert += r.quantity * r.dessert_pieces; return w; }, { drink: 0, dessert: 0, total: 0 });
     const short = pvStockShortfall(d, camp, want); if (short) pvFail(short);
-    const o = { promo_code: null, id: pvUuid(), order_number: pvNextNumber(d), customer_id: me, campaign_id: camp.id, store_id: store.id, store_name: `${store.brand} - ${store.name}`, total, status: total > 0 ? 'pending' : 'paid', note: String(body.note || '').slice(0, 500), created_at: pvNow(), paid_at: total > 0 ? null : pvNow(), picked_up_at: null, cancelled_at: null, slip_url: '', slip_hash: '', slip_ref: '', slip_amount: null, slip_reason: '', slip_verified: 0, lines };
+    const o = { promo_code: null, id: pvUuid(), order_number: pvNextNumber(d), customer_id: me, campaign_id: camp.id, store_id: store.id, store_name: `${store.brand} - ${store.name}`, total, status: total > 0 ? 'pending' : 'paid', note: String(body.note || '').slice(0, 500), phone: String(body.phone || '').replace(/[^\d+]/g, '').slice(0, 20), created_at: pvNow(), paid_at: total > 0 ? null : pvNow(), picked_up_at: null, cancelled_at: null, slip_url: '', slip_hash: '', slip_ref: '', slip_amount: null, slip_reason: '', slip_verified: 0, lines };
     d.orders.unshift(o); pvSave(d); return pvView(d, o);
   }
   if (p === '/api/orders') return d.orders.filter((o) => o.customer_id === me).map((o) => pvView(d, o));

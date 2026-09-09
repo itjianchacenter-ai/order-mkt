@@ -15,16 +15,11 @@
   </section>
 
   <section class="section">
-    <div class="label" id="lbl-pickup"></div>
-    <div class="chips" id="stores"></div>
-  </section>
-
-  <section class="section">
     <div class="label" id="lbl-cart"></div>
     <div class="summary">
       <div>
         <div class="panel" style="padding:8px 0"><ul class="cart-table" id="lines"></ul></div>
-        <div class="notebox"><b>หมายเหตุ</b><textarea id="note" rows="1"></textarea></div>
+        <div class="notebox telbox"><label for="phone"><b>Tel</b> <span class="th">(เบอร์ติดต่อของผู้รับขนม):</span></label><input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="08x-xxx-xxxx" maxlength="20"></div>
       </div>
       <div>
         <div class="sumbox bordered">
@@ -45,7 +40,6 @@
 (async () => {
   renderHeader('cart');
   $('#lbl-match').innerHTML = ICONS.match + ' Match Sets';
-  $('#lbl-pickup').innerHTML = ICONS.pin + ' Pick-up Location';
   $('#lbl-cart').innerHTML = ICONS.cart + ' Cart Summary';
   const [menu, stores] = await Promise.all([getMenu(), api('/api/stores')]);
   const map = menuMap(menu);
@@ -54,24 +48,27 @@
   async function refreshStock() { try { stock = await api(withCampaign('/api/stock')); } catch (e) { /* keep last */ } render(); }
   const closed = menu.campaign && menu.campaign.orders_open === false;
   if (closed) $('#stock-err').textContent = 'แคมเปญนี้ปิดรับคำสั่งซื้อแล้ว / This campaign is closed';
-  $('#note').value = getNote();
-  $('#note').addEventListener('input', (e) => setNote(e.target.value));
-  $('#stores').addEventListener('click', (e) => { const b = e.target.closest('[data-store]'); if (b) { setStore(b.dataset.store); render(); } });
+  $('#phone').value = getPhone();
+  $('#phone').addEventListener('input', (e) => setPhone(e.target.value));
   bindMatchControls($('#matches'), render, { getStock, errEl: $('#stock-err'), map });
   function render() {
     const cart = loadCart(); const storeId = getStore(); const store = stores.find((s) => s.id === storeId);
     $('#stock-pill').innerHTML = stockPill(stock);
     $('#confirm').disabled = Boolean(stock && stock.sold_out) || closed;
     $('#matches').innerHTML = cart.map((l) => matchCard(l, map)).join('') || `<div class="match add">ตะกร้าว่าง<br><a href="${H()}/">กลับไปเลือกเซ็ต</a></div>`;
-    $('#stores').innerHTML = storeChips(stores, storeId);
     $('#lines').innerHTML = cart.map((l) => `<li><span>${esc(lineName(l, map))}</span><span>x ${l.quantity}</span><span class="p">${money(linePrice(l, map) * l.quantity)} ฿</span></li>`).join('') || '<li><span class="empty">ยังไม่มีรายการ</span></li>';
     const total = cart.reduce((s, l) => s + linePrice(l, map) * l.quantity, 0);
     $('#total').textContent = money(total) + ' ฿';
-    $('#store-name').innerHTML = store ? `<span class="th" style="font-size:13px;display:block">สถานที่รับของ</span>${esc(store.brand)} - ${esc(store.name)}` : '<span class="th" style="font-weight:400;font-size:13px">ยังไม่ได้เลือกสถานที่รับของ</span>';
+    $('#store-name').innerHTML = store ? `<span class="th" style="font-size:13px;display:block">สถานที่รับของ</span>${esc(store.brand)} - ${esc(store.name)} <a class="th" style="font-size:12px;font-weight:400" href="${H()}/">เปลี่ยน</a>` : '<span class="th" style="font-weight:400;font-size:13px">ยังไม่ได้เลือกสถานที่รับของ</span>';
     updateCartBadge();
   }
   render();
-  $('#confirm').addEventListener('click', () => submitOrder({ storeId: getStore(), note: $('#note').value, errEl: $('#err'), btn: $('#confirm'), onFail: refreshStock }));
+  $('#confirm').addEventListener('click', () => {
+    const phone = $('#phone').value.trim();
+    if (!validPhone(phone)) { $('#err').textContent = 'กรุณาใส่เบอร์ติดต่อของผู้รับขนม (เบอร์มือถือ 10 หลัก) / Please enter a valid phone number'; $('#phone').focus(); return; }
+    if (!getStore()) { $('#err').textContent = 'กรุณาเลือกสาขาที่รับสินค้าที่หน้าแรก / Please choose a pick-up location on the campaign page'; return; }
+    submitOrder({ storeId: getStore(), note: getNote(), phone, errEl: $('#err'), btn: $('#confirm'), onFail: refreshStock });
+  });
 })();
 </script>
 </body>
