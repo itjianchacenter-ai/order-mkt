@@ -2,6 +2,7 @@
 process.env.DB_PATH = require('path').join(require('os').tmpdir(), `jc-order-test-${Date.now()}.db`);
 process.env.PROMPTPAY_ID = '0812345678';
 process.env.JWT_SECRET = 'test'; process.env.NODE_ENV = 'test'; process.env.SLIPOK_API_KEY = '';
+process.env.GOOGLE_CLIENT_ID = 'test-client-id'; // เปิดบังคับล็อกอิน; token ตรวจกับ stub ด้านล่างแทน Google
 const fs = require('fs'); const path = require('path');
 const app = require('../server');
 // แม่แบบ data/menu.json มีแบนเนอร์หรือไม่ (แคมเปญที่ยังไม่ตั้งค่า Design ต้องได้ค่าตามแม่แบบ)
@@ -26,12 +27,30 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
 
 (async () => {
   const server = app.listen(0); base = `http://127.0.0.1:${server.address().port}`;
+  // stub ของ oauth2.googleapis.com/tokeninfo: id_token = ชื่อผู้ใช้จำลอง ('bad' = ไม่ผ่าน)
+  const http = require('http');
+  const tokeninfo = http.createServer((req, res) => {
+    const t = new URL(req.url, 'http://x').searchParams.get('id_token');
+    if (!t || t === 'bad') { res.writeHead(400, { 'content-type': 'application/json' }); return res.end('{"error":"invalid_token"}'); }
+    const wrongAud = t.endsWith('@wrong');
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ iss: 'https://accounts.google.com', aud: wrongAud ? 'other-client' : 'test-client-id', sub: 'sub-' + t, email: t + '@gmail.com', email_verified: 'true', name: 'Test ' + t, picture: '', exp: String(Math.floor(Date.now() / 1000) + 3600) }));
+  }).listen(0);
+  process.env.GOOGLE_TOKENINFO_URL = `http://127.0.0.1:${tokeninfo.address().port}/tokeninfo`;
   try {
     let r = await call('customer', 'GET', '/api/menu');
     check('menu loads with sets + campaign + stock', r.status === 200 && r.json.sets.length === 2 && r.json.sets[0].label === 'SET A' && r.json.sets[0].items.length === 3 && r.json.campaign.name === 'JIANCHA x NAVORI' && r.json.stock.limits.total === 1000, r.json.sets);
     const menu = r.json; const A = menu.sets[0].id, B = menu.sets[1].id; // SET A 215 · SET B 245, each set = 1 unit of stock
     r = await call('customer', 'GET', '/api/stores'); check('stores load (6 branches incl. Emsphere)', r.status === 200 && r.json.length === 6 && r.json.some((x) => x.name === 'Emsphere'));
     const storeId = r.json[2].id;
+
+    // ── customer: Google login required before ordering ──
+    r = await call('customer', 'GET', '/api/me'); check('me: not logged in, login required', r.json.logged_in === false && r.json.login_required === true && r.json.google_client_id === 'test-client-id');
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, lines: [{ set_id: A, quantity: 1 }] }); check('order without login rejected (401)', r.status === 401 && r.json.login_required === true, r.json);
+    r = await call('customer', 'POST', '/api/auth/google', { credential: 'bad' }); check('bad google token rejected', r.status === 401);
+    r = await call('customer', 'POST', '/api/auth/google', { credential: 'alice@wrong' }); check('token for another client id rejected', r.status === 401);
+    r = await call('customer', 'POST', '/api/auth/google', { credential: 'alice', campaign: 'jianchaxnavori' }); check('google login ok', r.status === 200 && r.json.logged_in === true && r.json.email === 'alice@gmail.com' && r.json.name === 'Test alice', r.json);
+    r = await call('customer', 'GET', '/api/me'); check('me: logged in', r.json.logged_in === true && r.json.email === 'alice@gmail.com');
 
     // ── customer: ordering ──
     r = await call('customer', 'POST', '/api/orders', { store_id: '', lines: [{ set_id: A, quantity: 1 }] }); check('order without store rejected', r.status === 400);
@@ -40,6 +59,13 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     r = await call('customer', 'POST', '/api/orders', { store_id: storeId, note: 'no sugar', lines: [{ set_id: A, quantity: 2 }, { set_id: B, quantity: 1 }] });
     check('order created', r.status === 201 && /^\d{13}$/.test(r.json.order_number) && r.json.campaign_id === 'jiancha-x-navori', r.json);
     const order = r.json;
+    // ล็อกอินบัญชีเดิมจากเบราว์เซอร์ใหม่ → เห็นออเดอร์เดิม; ออเดอร์ที่สั่งแบบไม่ล็อกอินก่อนหน้าย้ายมาด้วย (ทดสอบผ่านสถานะ login เพราะยังสั่งไม่ได้ก่อนล็อกอิน)
+    r = await call('customer2', 'GET', '/api/orders'); check('new browser sees no orders', r.status === 200 && r.json.length === 0);
+    r = await call('customer2', 'POST', '/api/auth/google', { credential: 'alice' }); check('same google account on new browser', r.json.logged_in === true);
+    r = await call('customer2', 'GET', '/api/orders'); check('order history follows the google account', r.json.some((o) => o.id === order.id), r.json.map((o) => o.id));
+    r = await call('customer2', 'POST', '/api/auth/logout'); check('logout', r.json.logged_in === false);
+    r = await call('customer2', 'GET', '/api/orders'); check('after logout the browser has no orders', r.json.length === 0);
+    r = await call('customer2', 'POST', '/api/orders', { store_id: storeId, lines: [{ set_id: A, quantity: 1 }] }); check('after logout ordering needs login again', r.status === 401);
     check('order lines + total', order.lines.length === 2 && order.total === 2 * 215 + 245 && order.lines[0].name === 'SET A · Menu Name' && order.lines[0].items.length === 3 && order.store_name === 'JIAN CHA - Central World', order);
     r = await call('customer', 'POST', '/api/orders', { store_id: storeId, lines: [{ set_id: B, quantity: 1 }] });
     check('order numbers increment', r.json.order_number === String(BigInt(order.order_number) + 1n), r.json.order_number);
@@ -147,6 +173,16 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     r = await call('it', 'GET', '/api/admin/campaigns/jiancha-x-summer/design'); check('other campaign still on template', r.json.design.sets.length === 2 && r.json.design.promote_images.length === TEMPLATE_BANNERS);
 
     // ── campaign URLs: /<slug>/ shows that campaign; orders can name the campaign ──
+    r = await call('mkt', 'GET', '/api/admin/customers'); check('admin customer list has the google customer', r.status === 200 && r.json.total === 1 && r.json.rows[0].email === 'alice@gmail.com' && r.json.rows[0].orders >= 1, r.json);
+    r = await call('mkt', 'GET', '/api/admin/customers?q=nobody'); check('customer search filters', r.json.total === 0);
+    r = await call('mkt', 'GET', '/api/admin/customers?campaign=jiancha-x-navori'); check('customer listed under the campaign she signed in from', r.json.total === 1 && r.json.campaign.slug === 'jianchaxnavori' && r.json.rows[0].joined_at, r.json);
+    const navoriOrders = r.json.rows[0].orders;
+    r = await call('mkt', 'GET', '/api/admin/customers?campaign=jiancha-x-summer'); check('summer lists alice only via her summer order, counted per campaign', r.json.total === 1 && r.json.rows[0].email === 'alice@gmail.com' && r.json.rows[0].orders >= 1 && r.json.rows[0].orders < navoriOrders, r.json.rows.map((c) => [c.email, c.orders]));
+    r = await call('mkt', 'GET', '/api/admin/customers?campaign=all'); check('all campaigns lists her once', r.json.total === 1 && r.json.campaign === null);
+    r = await call('customer2', 'POST', '/api/auth/google', { credential: 'bob', campaign: 'jianchaxsummer' }); check('bob signs in from the summer campaign page', r.json.logged_in === true && r.json.email === 'bob@gmail.com');
+    r = await call('mkt', 'GET', '/api/admin/customers?campaign=jiancha-x-summer'); check('bob listed under summer with 0 orders (signed in from that page)', r.json.total === 2 && r.json.rows.some((c) => c.email === 'bob@gmail.com' && c.orders === 0), r.json.rows.map((c) => [c.email, c.orders]));
+    r = await call('mkt', 'GET', '/api/admin/customers?campaign=jiancha-x-navori'); check('navori still only alice', r.json.total === 1 && r.json.rows[0].email === 'alice@gmail.com');
+    r = await call('customer', 'GET', '/api/admin/customers'); check('customer list needs admin', r.status === 401);
     r = await call('it', 'GET', '/api/admin/campaigns'); check('campaign slug + url', r.json.find((c) => c.id === 'jiancha-x-navori').slug === 'jianchaxnavori' && r.json.find((c) => c.id === 'jiancha-x-summer').slug === 'jianchaxsummer' && r.json[0].url === `/${r.json[0].slug}/`, r.json.map((c) => c.slug));
     r = await fetch(base + '/jianchaxnavori/'); check('campaign page served', r.status === 200 && /Match Sets|id="sets"/.test(await r.text()));
     r = await fetch(base + '/jianchaxnavori', { redirect: 'manual' }); check('campaign page redirects to trailing slash', r.status === 301 && r.headers.get('location') === '/jianchaxnavori/');

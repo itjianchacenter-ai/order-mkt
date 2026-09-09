@@ -154,6 +154,65 @@ app.use((req, res, next) => {
   req.customerId = cid;
   next();
 });
+// ─── Customer login with Google (Sign in with Google → ID token → verified here) ───
+// GOOGLE_CLIENT_ID ว่าง = ยังไม่เปิดใช้ login (สั่งซื้อแบบไม่ล็อกอินเหมือนเดิม) — ตั้งค่าแล้วลูกค้าต้องล็อกอินก่อนกด Confirm
+const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID || '').trim();
+const loginRequired = () => Boolean(GOOGLE_CLIENT_ID);
+const customerRow = (id) => db.prepare('SELECT id, google_sub, email, name, picture FROM customers WHERE id = ?').get(id) || null;
+const customerLoggedIn = (id) => { const c = customerRow(id); return Boolean(c && c.google_sub); };
+function meView(id) {
+  const c = customerRow(id); const logged_in = Boolean(c && c.google_sub);
+  return { logged_in, login_required: loginRequired(), google_client_id: GOOGLE_CLIENT_ID, email: logged_in ? c.email : '', name: logged_in ? c.name : '', picture: logged_in ? c.picture : '' };
+}
+// ตรวจ ID token กับ Google (tokeninfo ตรวจลายเซ็นให้) แล้วเช็ค aud/iss/exp/email_verified เอง
+async function verifyGoogleToken(credential) {
+  if (!credential || typeof credential !== 'string' || credential.length > 4096) throw new Error('bad credential');
+  const url = (process.env.GOOGLE_TOKENINFO_URL || 'https://oauth2.googleapis.com/tokeninfo') + '?id_token=' + encodeURIComponent(credential);
+  const r = await fetch(url); const p = await r.json().catch(() => null);
+  if (!r.ok || !p || !p.sub) throw new Error('token rejected');
+  if (p.aud !== GOOGLE_CLIENT_ID) throw new Error('aud mismatch');
+  if (!['accounts.google.com', 'https://accounts.google.com'].includes(p.iss)) throw new Error('iss mismatch');
+  if (Number(p.exp) * 1000 < Date.now()) throw new Error('expired');
+  if (String(p.email_verified) !== 'true') throw new Error('email not verified');
+  return { sub: p.sub, email: p.email, name: p.name || p.email, picture: p.picture || '' };
+}
+function linkCustomerCampaign(customerId, campaignId) {
+  if (!customerId || !campaignId) return;
+  db.prepare(`INSERT INTO customer_campaigns(customer_id, campaign_id) VALUES (?, ?) ON CONFLICT(customer_id, campaign_id) DO UPDATE SET last_seen_at = datetime('now','localtime')`).run(customerId, campaignId);
+}
+function setCustomerCookie(res, cid) {
+  res.cookie(CUSTOMER_COOKIE, jwt.sign({ cid }, JWT_SECRET), { httpOnly: true, sameSite: 'lax', secure: IS_PROD, maxAge: 365 * 24 * 3600 * 1000, path: '/' });
+}
+app.get('/api/me', (req, res) => res.json(meView(req.customerId)));
+app.post('/api/auth/google', async (req, res) => {
+  if (!GOOGLE_CLIENT_ID) return res.status(503).json({ error: 'ยังไม่ได้ตั้งค่า Google login (GOOGLE_CLIENT_ID)' });
+  let g; try { g = await verifyGoogleToken(req.body && req.body.credential); } catch (e) { return res.status(401).json({ error: 'เข้าสู่ระบบด้วย Google ไม่สำเร็จ กรุณาลองใหม่ / Google sign-in failed' }); }
+  const anon = req.customerId;
+  let acct = db.prepare('SELECT id FROM customers WHERE google_sub = ?').get(g.sub);
+  const tx = db.transaction(() => {
+    if (!acct) {
+      // บัญชีใหม่: ใช้แถวลูกค้าของเบราว์เซอร์นี้เป็นบัญชี (ออเดอร์ที่สั่งไว้ก่อนล็อกอินติดมาด้วย)
+      touchCustomer(anon); acct = { id: anon };
+    } else if (acct.id !== anon) {
+      // เคยล็อกอินจากเครื่องอื่น: ย้ายออเดอร์ที่สั่งแบบไม่ล็อกอินในเบราว์เซอร์นี้ไปไว้กับบัญชี
+      db.prepare('UPDATE orders SET customer_id = ? WHERE customer_id = ?').run(acct.id, anon);
+    }
+    db.prepare(`UPDATE customers SET google_sub = ?, email = ?, name = ?, picture = ?, last_login_at = datetime('now','localtime'), last_seen_at = datetime('now','localtime') WHERE id = ?`).run(g.sub, g.email, g.name, g.picture, acct.id);
+  });
+  tx();
+  const fromCampaign = req.body && req.body.campaign ? campaignBySlug(String(req.body.campaign)) : null;
+  if (fromCampaign) linkCustomerCampaign(acct.id, fromCampaign.id);
+  // ออเดอร์เก่าของบัญชี → ผูกแคมเปญให้ครบ (กรณีสั่งไว้ก่อนมีตารางนี้)
+  for (const r of db.prepare('SELECT DISTINCT campaign_id FROM orders WHERE customer_id = ? AND campaign_id IS NOT NULL').all(acct.id)) linkCustomerCampaign(acct.id, r.campaign_id);
+  setCustomerCookie(res, acct.id); req.customerId = acct.id;
+  res.json(meView(acct.id));
+});
+app.post('/api/auth/logout', (req, res) => {
+  // ออกจากระบบ = เริ่มตัวตนใหม่แบบไม่ล็อกอินในเบราว์เซอร์นี้ (ออเดอร์ยังอยู่กับบัญชี Google)
+  const cid = crypto.randomUUID(); setCustomerCookie(res, cid); req.customerId = cid;
+  res.json(meView(cid));
+});
+
 function touchCustomer(id) {
   db.prepare(`INSERT INTO customers(id) VALUES (?) ON CONFLICT(id) DO UPDATE SET last_seen_at = datetime('now','localtime')`).run(id);
 }
@@ -204,12 +263,13 @@ app.use(express.static(PUBLIC_DIR, { extensions: ['html'], index: false }));
 app.get('/api/menu', (req, res) => { const c = requestCampaign(req); res.json({ ...menuFor(c), campaign: campaignPublic(c), stock: stockView(c) }); });
 app.get('/api/stock', (req, res) => res.json(stockView(requestCampaign(req))));
 app.get('/api/stores', (req, res) => res.json(loadStores()));
-app.get('/api/config', (req, res) => res.json({ payment_ready: qrConfigured(), slip_auto_verify: slipOkEnabled() }));
+app.get('/api/config', (req, res) => res.json({ payment_ready: qrConfigured(), slip_auto_verify: slipOkEnabled(), login_required: loginRequired(), google_client_id: GOOGLE_CLIENT_ID }));
 
 const money = (n) => Math.round(Number(n) * 100) / 100;
 
 /** Body: { store_id, note, campaign?: slug, lines: [{set_id, quantity}] } (drink_id/dessert_id lines are still accepted for older clients) */
 app.post('/api/orders', (req, res) => {
+  if (loginRequired() && !customerLoggedIn(req.customerId)) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบด้วย Google ก่อนยืนยันคำสั่งซื้อ / Please sign in with Google first', login_required: true });
   const { store_id, note = '', lines } = req.body || {};
   const store = loadStores().find((s) => s.id === String(store_id));
   if (!store) return res.status(400).json({ error: 'กรุณาเลือกสาขาที่รับสินค้า' });
@@ -250,7 +310,7 @@ app.post('/api/orders', (req, res) => {
   const create = db.transaction(() => {
     const short = stockShortfall(want, campaign); // checked inside the write transaction so two customers cannot both take the last pieces
     if (short) { const e = new Error(short); e.status = 409; throw e; }
-    touchCustomer(req.customerId);
+    touchCustomer(req.customerId); linkCustomerCampaign(req.customerId, campaign.id);
     const order_number = nextOrderNumber();
     // A zero-total order (free campaign item) has nothing to pay: it is paid on creation.
     db.prepare(`INSERT INTO orders(id, order_number, customer_id, campaign_id, store_id, store_name, total, note, status, paid_at)
@@ -284,6 +344,7 @@ function orderView(o, { admin = false } = {}) {
       return { set_id: l.set_id || '', set_label: l.set_label || '', set_name: l.set_name || '', items, name, pieces: l.pieces ?? 1, drink_id: l.drink_id, drink_name: l.drink_name, dessert_id: l.dessert_id, dessert_name: l.dessert_name, quantity: l.quantity, unit_price: l.unit_price, line_total: l.line_total };
     }),
   };
+  if (admin) { const c = customerRow(o.customer_id); Object.assign(v, { customer_email: c && c.google_sub ? c.email : '', customer_name: c && c.google_sub ? c.name : '' }); }
   if (admin) Object.assign(v, { customer_id: o.customer_id, slip_url: o.slip_path ? `/uploads/${path.basename(o.slip_path)}` : '', slip_ref: o.slip_ref, slip_amount: o.slip_amount, slip_verified: o.slip_verified, cancelled_at: o.cancelled_at });
   return v;
 }
@@ -516,6 +577,33 @@ app.post('/api/admin/design/upload', requirePerm('campaigns'), designUpload.sing
 
 // Orders
 const PAGE_SIZE = 20; // รายการออเดอร์หลังบ้าน หน้าละ 20
+// ─── Customers (ลูกค้าที่ล็อกอินด้วย Google) ───
+// GET /api/admin/customers?campaign=<id|all>&q=&page=&export=1
+//   campaign = id → เฉพาะลูกค้าที่ล็อกอินจาก /<แคมเปญ>/ หรือสั่งซื้อในแคมเปญนั้น (จำนวนออเดอร์/ยอดนับเฉพาะแคมเปญนั้น)
+//   campaign = all → ทุกแคมเปญ; ไม่ส่ง = แคมเปญที่ Active
+app.get('/api/admin/customers', requireAdmin, (req, res) => {
+  const q = String(req.query.q || '').trim().toLowerCase();
+  const cparam = String(req.query.campaign || '');
+  const camp = cparam === 'all' ? null : (cparam ? getCampaign(cparam) : activeCampaign());
+  if (cparam && cparam !== 'all' && !camp) return res.status(404).json({ error: 'ไม่พบแคมเปญ' });
+  const where = ['c.google_sub IS NOT NULL']; const args = [];
+  const ordersWhere = ["status <> 'cancelled'" + (camp ? ' AND campaign_id = ?' : '')]; const oargs = camp ? [camp.id] : [];
+  if (camp) { where.push('(cc.customer_id IS NOT NULL OR o.customer_id IS NOT NULL)'); }
+  if (q) { where.push('(lower(c.email) LIKE ? OR lower(c.name) LIKE ?)'); args.push(`%${q}%`, `%${q}%`); }
+  const sql = `FROM customers c
+    LEFT JOIN (SELECT customer_id, COUNT(*) AS orders, SUM(CASE WHEN status IN ('paid','picked_up') THEN total ELSE 0 END) AS paid_total, MAX(created_at) AS last_order_at
+               FROM orders WHERE ${ordersWhere.join(' AND ')} GROUP BY customer_id) o ON o.customer_id = c.id
+    ${camp ? 'LEFT JOIN customer_campaigns cc ON cc.customer_id = c.id AND cc.campaign_id = ?' : ''}
+    WHERE ${where.join(' AND ')}`;
+  const allArgs = [...oargs, ...(camp ? [camp.id] : []), ...args];
+  const total = db.prepare(`SELECT COUNT(*) AS n ${sql}`).get(...allArgs).n;
+  const exp = req.query.export === '1';
+  const page = exp ? 1 : Math.max(1, parseInt(req.query.page, 10) || 1);
+  const rows = db.prepare(`SELECT c.id, c.email, c.name, c.picture, c.created_at, c.last_login_at, COALESCE(o.orders, 0) AS orders, COALESCE(o.paid_total, 0) AS paid_total, o.last_order_at${camp ? ', cc.first_seen_at AS joined_at' : ''} ${sql}
+    ORDER BY c.last_login_at DESC, c.created_at DESC ${exp ? '' : 'LIMIT ? OFFSET ?'}`).all(...allArgs, ...(exp ? [] : [PAGE_SIZE, (page - 1) * PAGE_SIZE]));
+  res.json({ campaign: camp ? campaignPublic(camp) : null, page, pages: exp ? 1 : Math.max(1, Math.ceil(total / PAGE_SIZE)), total, rows });
+});
+
 app.get('/api/admin/orders', requireAdmin, (req, res) => {
   const q = String(req.query.q || '').trim();
   const date = String(req.query.date || '').trim();      // YYYY-MM-DD

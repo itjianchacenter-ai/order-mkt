@@ -26,7 +26,7 @@
   // customer URL of a campaign: order.jianchatea.com/<slug>/ (preview: this file + #/<slug>/)
   const siteUrl = (c) => (me.public_base_url || (location.origin + (window.PREVIEW_MODE ? (location.protocol === 'file:' ? window.location['pathname'] + '#' : PV_BASE.replace(/\/$/, '')) : ''))) + c.url;
   // '' = home (campaign page). Every role sees Order / Slip Issue / Store Pick-up Order; IT-Admin also Account.
-  const VIEWS = { '': true, accounts: P.accounts, design: P.campaigns, orders: true, slips: true, pickup: true };
+  const VIEWS = { '': true, accounts: P.accounts, design: P.campaigns, orders: true, slips: true, pickup: true, customers: true };
   if (!VIEWS[state.view]) state.view = '';
   // Every role gets the hamburger menu on every back-office page (it also holds Logout).
   renderHeader(state.view, { admin: true, role: user.role, user });
@@ -110,6 +110,58 @@
       });
       $('#camp-form').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
+  }
+
+  /* ───────── customers: ลูกค้าที่ล็อกอินด้วย Google (อีเมล ชื่อ ล็อกอินล่าสุด ออเดอร์ ยอดชำระ) ───────── */
+  if (state.view === 'customers') return renderCustomers();
+  async function renderCustomers() {
+    // แยกตามแคมเปญ: ลูกค้าที่ล็อกอินจาก /<แคมเปญ>/ หรือสั่งซื้อในแคมเปญนั้น (ค่าเริ่มต้น = แคมเปญที่ Active; เลือก "ทุกแคมเปญ" ได้)
+    const campaigns = await api('/api/admin/campaigns'); if (!alive()) return;
+    const allC = state.campaign === 'all';
+    const campaign = allC ? null : (campaigns.find((c) => c.id === state.campaign) || campaigns.find((c) => c.active) || campaigns[0]);
+    const campParam = allC ? 'all' : (campaign ? campaign.id : '');
+    const campSelect = `<select class="pill" id="campaign-select" style="padding-right:28px">${campaigns.map((c) => `<option value="${esc(c.id)}" ${campaign && c.id === campaign.id ? 'selected' : ''}>${esc(c.name)} · /${esc(c.slug)}/${c.active ? '' : ' (inactive)'}</option>`).join('')}<option value="all" ${allC ? 'selected' : ''}>ทุกแคมเปญ / All campaigns</option></select>`;
+    app.innerHTML = `
+      <div class="toolbar">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <input class="search" id="q" placeholder="Email / ชื่อ …" value="${esc(state.q)}">
+          ${campSelect}
+          <span class="pill" id="cust-count">${ICONS.customer} Customer</span>
+        </div>
+        <button type="button" class="pill" id="cust-csv">${ICONS.doc} Download CSV</button>
+      </div>
+      <div class="tbl-wrap"><table class="jc-tbl" id="cust-tbl">
+        <thead><tr><th>Customer</th><th>Email</th><th>Last login</th><th class="num">Orders</th><th class="num">Paid (฿)</th><th>Last order</th>${allC ? '' : '<th>Joined campaign</th>'}</tr></thead>
+        <tbody></tbody></table></div>
+      <div class="pager"><button type="button" id="prev">${ICONS.arrowL}</button><span class="pg" id="pg">1</span><button type="button" id="next">${ICONS.arrowR}</button></div>`;
+    const row = (c) => `<tr>
+        <td class="who">${c.picture ? `<img class="avatar" src="${esc(c.picture)}" alt="" referrerpolicy="no-referrer">` : ICONS.user} <b>${esc(c.name || '-')}</b></td>
+        <td class="mono"><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></td>
+        <td>${fmtDateTime(c.last_login_at)}</td>
+        <td class="num">${c.orders}</td>
+        <td class="num">${money(c.paid_total)}</td>
+        <td>${c.last_order_at ? fmtDateTime(c.last_order_at) : '-'}</td>${allC ? '' : `<td>${c.joined_at ? fmtDateTime(c.joined_at) : '-'}</td>`}</tr>`;
+    async function load() {
+      let data; try { data = await api('/api/admin/customers?' + new URLSearchParams({ campaign: campParam, q: state.q, page: state.page })); } catch (e) { if (/401/.test(e.message)) return location.reload(); $('#cust-tbl tbody').innerHTML = `<tr><td colspan="6" class="err">${esc(e.message)}</td></tr>`; return; }
+      if (!alive()) return;
+      state.page = data.page;
+      $('#cust-tbl tbody').innerHTML = data.rows.map(row).join('') || `<tr><td colspan="7" class="empty">ยังไม่มีลูกค้าที่ล็อกอิน${campaign ? 'ในแคมเปญ ' + esc(campaign.name) : ''} / No customers yet</td></tr>`;
+      $('#cust-count').innerHTML = `${ICONS.customer} Customer <b>${data.total}</b>${campaign ? ` <span class="th">· ${esc(campaign.name)}</span>` : ' <span class="th">· ทุกแคมเปญ</span>'}`;
+      $('#pg').textContent = `${data.page} / ${data.pages}`; $('#prev').disabled = data.page <= 1; $('#next').disabled = data.page >= data.pages;
+    }
+    $('#campaign-select').addEventListener('change', (e) => go({ view: 'customers', campaign: e.target.value, q: state.q }));
+    let t; $('#q').addEventListener('input', (e) => { clearTimeout(t); t = setTimeout(() => { state.q = e.target.value.trim(); state.page = 1; load(); }, 250); });
+    $('#prev').addEventListener('click', () => { state.page--; load(); });
+    $('#next').addEventListener('click', () => { state.page++; load(); });
+    // CSV: ดึงทั้งหมด (ตามคำค้น) แล้วสร้างไฟล์ฝั่งเบราว์เซอร์ ใช้ได้ทั้ง server จริงและ preview
+    $('#cust-csv').addEventListener('click', async () => {
+      const data = await api('/api/admin/customers?' + new URLSearchParams({ campaign: campParam, q: state.q, export: '1' }));
+      const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+      const lines = [['campaign', 'name', 'email', 'last_login', 'orders', 'paid_total', 'last_order', 'joined_campaign', 'first_seen'].join(','), ...data.rows.map((c) => [campaign ? campaign.name : 'all', c.name, c.email, c.last_login_at, c.orders, c.paid_total, c.last_order_at || '', c.joined_at || '', c.created_at].map(cell).join(','))];
+      const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `customers-${campaign ? campaign.slug : 'all'}-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    });
+    load();
   }
 
   /* ───────── accounts (IT-Admin) ───────── */
