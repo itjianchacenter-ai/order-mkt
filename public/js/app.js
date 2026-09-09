@@ -149,6 +149,11 @@ function updateCartBadge() {
 }
 
 const ROLE_TAG = { it_admin: 'IT-ADMIN', admin: 'ADMIN', finance: 'FINANCE' };
+/* ชื่อแคมเปญบนหัวเว็บ: JIANCHA x NAVORI ใช้โลโก้รูป (คงไว้) แคมเปญอื่นแสดงชื่อเป็นข้อความแทน */
+function applyCampaignBrand(name) {
+  if (!name) return;
+  if (String(name).toUpperCase().replace(/\s+/g, '') !== 'JIANCHAXNAVORI') { const br = $('.brand'); if (br) br.innerHTML = `<b>${esc(name)}</b>`; }
+}
 function renderHeader(active, { admin = false, role = '', user = null, hideNav = false } = {}) {
   const el = $('#site-head'); if (!el) return;
   const brand = admin

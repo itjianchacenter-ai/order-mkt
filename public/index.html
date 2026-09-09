@@ -67,7 +67,7 @@
   renderHero($('#hero'), menu.banners && menu.banners.length ? menu.banners : [menu.banner]);
   if (menu.campaign && menu.campaign.name) {
     // แคมเปญอื่นที่ไม่ใช่ JIANCHA x NAVORI ใช้ชื่อเป็นข้อความแทนโลโก้
-    if (menu.campaign.name.toUpperCase().replace(/\s+/g, '') !== 'JIANCHAXNAVORI') { const br = $('.brand'); if (br) br.innerHTML = `<b>${esc(menu.campaign.name)}</b>`; }
+    applyCampaignBrand(menu.campaign.name);
     document.title = menu.campaign.name + ' | Order';
   }
 
