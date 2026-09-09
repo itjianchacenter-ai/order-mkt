@@ -271,7 +271,8 @@ const money = (n) => Math.round(Number(n) * 100) / 100;
 app.post('/api/orders', (req, res) => {
   if (loginRequired() && !customerLoggedIn(req.customerId)) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบด้วย Google ก่อนยืนยันคำสั่งซื้อ / Please sign in with Google first', login_required: true });
   const { store_id, note = '', lines } = req.body || {};
-  const phone = String((req.body && req.body.phone) || '').replace(/[^\d+]/g, '').slice(0, 20);   // เบอร์ผู้รับขนม (หน้า Cart) ไม่บังคับฝั่ง server
+  const phone = String((req.body && req.body.phone) || '').replace(/[^\d+]/g, '').slice(0, 20);   // เบอร์ติดต่อผู้รับขนม
+  if (!/^(\+66|0)\d{8,9}$/.test(phone)) return res.status(400).json({ error: 'กรุณาใส่เบอร์ติดต่อผู้รับขนม (เบอร์มือถือ 10 หลัก) / Contact number is required', field: 'phone' });
   const store = loadStores().find((s) => s.id === String(store_id));
   if (!store) return res.status(400).json({ error: 'กรุณาเลือกสาขาที่รับสินค้า' });
   if (!Array.isArray(lines) || lines.length === 0) return res.status(400).json({ error: 'ยังไม่มีรายการในตะกร้า' });

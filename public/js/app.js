@@ -138,6 +138,8 @@ const setNote = (t) => { try { localStorage.setItem(NOTE_KEY, t); } catch (e) { 
 const PHONE_KEY = 'jc_phone';
 const getPhone = () => { try { return localStorage.getItem(PHONE_KEY) || ''; } catch (e) { return ''; } };
 const setPhone = (t) => { try { localStorage.setItem(PHONE_KEY, t); } catch (e) { /* ignore */ } };
+const contactBox = () => `<div class="notebox telbox"><label for="phone"><b>Contact number</b> <span class="th">(เบอร์ติดต่อผู้รับขนม):</span> <span class="req" title="จำเป็น">*</span></label><input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="08x-xxx-xxxx" maxlength="20" required></div>`;
+const bindContactBox = () => { const f = $('#phone'); if (!f) return; f.value = getPhone(); f.addEventListener('input', (e) => { setPhone(e.target.value); e.target.classList.toggle('invalid', e.target.value.trim() !== '' && !validPhone(e.target.value)); }); };
 const normalizePhone = (t) => String(t || '').replace(/[^\d+]/g, '');
 const validPhone = (t) => /^(\+66|0)\d{8,9}$/.test(normalizePhone(t));
 
@@ -306,6 +308,7 @@ async function submitOrder({ storeId, note, phone = '', errEl, btn, onFail }) {
   const lines = loadCart();
   if (!lines.length) { errEl.textContent = 'ยังไม่มีรายการในตะกร้า / Your cart is empty'; return; }
   if (!storeId) { errEl.textContent = 'กรุณาเลือกสาขาที่รับสินค้า / Please choose a pick-up location'; return; }
+  if (!validPhone(phone)) { errEl.textContent = 'กรุณาใส่เบอร์ติดต่อผู้รับขนม (เบอร์มือถือ 10 หลัก) / Please enter the contact number'; const f = $('#phone'); if (f) { f.focus(); f.classList.add('invalid'); } return; }
   await loadMe();
   if (needLogin()) { openLoginModal(() => submitOrder({ storeId, note, phone, errEl, btn, onFail })); return; }  // ล็อกอินก่อน แล้วยืนยันต่อให้อัตโนมัติ
   btn.disabled = true;

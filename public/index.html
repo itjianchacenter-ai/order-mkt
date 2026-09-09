@@ -29,6 +29,7 @@
     <div class="summary">
       <div>
         <div class="panel"><ul class="lines" id="lines"></ul></div>
+        <div id="contact-box"></div>
         <div class="notebox"><b>หมายเหตุ</b><textarea id="note" rows="1" placeholder=""></textarea></div>
       </div>
       <div>
@@ -55,6 +56,7 @@
   $('#lbl-sets').innerHTML = ICONS.match + ' Match Sets';
   $('#lbl-pickup').innerHTML = ICONS.pin + ' Pick-up Location';
   $('#lbl-summary').innerHTML = ICONS.tag + ' Order Summary';
+  $('#contact-box').innerHTML = contactBox(); bindContactBox();
 
   const [menu, stores] = await Promise.all([getMenu(), api('/api/stores')]);
   const map = menuMap(menu);
@@ -128,7 +130,7 @@
     updateCartBadge();
   }
   render();
-  $('#confirm').addEventListener('click', () => submitOrder({ storeId: getStore(), note: $('#note').value, errEl: $('#err'), btn: $('#confirm'), onFail: refreshStock }));
+  $('#confirm').addEventListener('click', () => submitOrder({ storeId: getStore(), note: $('#note').value, phone: $('#phone').value.trim(), errEl: $('#err'), btn: $('#confirm'), onFail: refreshStock }));
 })();
 </script>
 </body>
