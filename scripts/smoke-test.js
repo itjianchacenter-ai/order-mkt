@@ -56,9 +56,10 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     r = await call('customer', 'POST', '/api/orders', { store_id: '', lines: [{ set_id: A, quantity: 1 }] }); check('order without store rejected', r.status === 400);
     r = await call('customer', 'POST', '/api/orders', { store_id: storeId, lines: [] }); check('order without lines rejected', r.status === 400);
     r = await call('customer', 'POST', '/api/orders', { store_id: storeId, lines: [{ set_id: 'nope', quantity: 1 }] }); check('unknown set rejected', r.status === 400);
-    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, note: 'no sugar', lines: [{ set_id: A, quantity: 2 }, { set_id: B, quantity: 1 }] });
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, note: 'no sugar', phone: '081-234-5678', lines: [{ set_id: A, quantity: 2 }, { set_id: B, quantity: 1 }] });
     check('order created', r.status === 201 && /^\d{13}$/.test(r.json.order_number) && r.json.campaign_id === 'jiancha-x-navori', r.json);
     const order = r.json;
+    check('phone kept (digits only)', r.json.phone === '0812345678', r.json.phone);
     // ล็อกอินบัญชีเดิมจากเบราว์เซอร์ใหม่ → เห็นออเดอร์เดิม; ออเดอร์ที่สั่งแบบไม่ล็อกอินก่อนหน้าย้ายมาด้วย (ทดสอบผ่านสถานะ login เพราะยังสั่งไม่ได้ก่อนล็อกอิน)
     r = await call('customer2', 'GET', '/api/orders'); check('new browser sees no orders', r.status === 200 && r.json.length === 0);
     r = await call('customer2', 'POST', '/api/auth/google', { credential: 'alice' }); check('same google account on new browser', r.json.logged_in === true);

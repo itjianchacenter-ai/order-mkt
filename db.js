@@ -87,6 +87,9 @@ CREATE TABLE IF NOT EXISTS campaigns (
 );
 `);
 
+// orders.phone: เบอร์ติดต่อของผู้รับขนม (กรอกที่หน้า Cart)
+if (!db.prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name = 'phone'").get()) db.exec("ALTER TABLE orders ADD COLUMN phone TEXT DEFAULT ''");
+
 // customers: Google account (migration for databases created before Google login)
 for (const [col, ddl] of [['google_sub', 'TEXT'], ['email', 'TEXT'], ['name', 'TEXT'], ['picture', 'TEXT'], ['last_login_at', 'TEXT']]) {
   if (!db.prepare("SELECT 1 FROM pragma_table_info('customers') WHERE name = ?").get(col)) db.exec(`ALTER TABLE customers ADD COLUMN ${col} ${ddl}`);

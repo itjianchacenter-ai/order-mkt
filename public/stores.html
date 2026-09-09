@@ -15,7 +15,7 @@
   renderHeader('stores');
   const stores = await api('/api/stores');
   $('#list').innerHTML = stores.map((s) => `<div class="store-card"><span><b>${esc(s.brand)}</b> - ${esc(s.name)}</span>
-    <a class="pill" href="${esc(s.map_url)}" target="_blank" rel="noopener">${ICONS.pin} Google Map</a></div>`).join('');
+    <a class="btn" href="${esc(s.map_url)}" target="_blank" rel="noopener">${ICONS.pin} Google Map</a></div>`).join('');
 })();
 </script>
 </body>

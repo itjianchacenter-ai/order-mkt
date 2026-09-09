@@ -271,6 +271,7 @@ const money = (n) => Math.round(Number(n) * 100) / 100;
 app.post('/api/orders', (req, res) => {
   if (loginRequired() && !customerLoggedIn(req.customerId)) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบด้วย Google ก่อนยืนยันคำสั่งซื้อ / Please sign in with Google first', login_required: true });
   const { store_id, note = '', lines } = req.body || {};
+  const phone = String((req.body && req.body.phone) || '').replace(/[^\d+]/g, '').slice(0, 20);   // เบอร์ผู้รับขนม (หน้า Cart) ไม่บังคับฝั่ง server
   const store = loadStores().find((s) => s.id === String(store_id));
   if (!store) return res.status(400).json({ error: 'กรุณาเลือกสาขาที่รับสินค้า' });
   if (!Array.isArray(lines) || lines.length === 0) return res.status(400).json({ error: 'ยังไม่มีรายการในตะกร้า' });
@@ -313,8 +314,8 @@ app.post('/api/orders', (req, res) => {
     touchCustomer(req.customerId); linkCustomerCampaign(req.customerId, campaign.id);
     const order_number = nextOrderNumber();
     // A zero-total order (free campaign item) has nothing to pay: it is paid on creation.
-    db.prepare(`INSERT INTO orders(id, order_number, customer_id, campaign_id, store_id, store_name, total, note, status, paid_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, order_number, req.customerId, campaign.id, store.id, `${store.brand} - ${store.name}`, total, String(note).slice(0, 500),
+    db.prepare(`INSERT INTO orders(id, order_number, customer_id, campaign_id, store_id, store_name, total, note, phone, status, paid_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, order_number, req.customerId, campaign.id, store.id, `${store.brand} - ${store.name}`, total, String(note).slice(0, 500), phone,
                 total > 0 ? 'pending' : 'paid', total > 0 ? null : new Date().toISOString().slice(0, 19).replace('T', ' '));
     const ins = db.prepare(`INSERT INTO order_lines(order_id, set_id, set_label, set_name, items_json, pieces, drink_pieces, dessert_pieces, drink_id, drink_name, dessert_id, dessert_name, quantity, unit_price, line_total)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -335,7 +336,7 @@ const SLIP_ACCEPTED = ['pending', 'slip_uploaded', 'slip_rejected'];
 function orderView(o, { admin = false } = {}) {
   const v = {
     id: o.id, order_number: o.order_number, campaign_id: o.campaign_id, campaign_name: o.campaign_name || '', store_id: o.store_id, store_name: o.store_name,
-    total: o.total, status: o.status, note: o.note, created_at: o.created_at, paid_at: o.paid_at,
+    total: o.total, status: o.status, note: o.note, phone: o.phone || '', created_at: o.created_at, paid_at: o.paid_at,
     picked_up_at: o.picked_up_at, has_slip: Boolean(o.slip_path), slip_reason: o.slip_reason,
     promo_code: o.promo_code || null, code_available: ['paid', 'picked_up'].includes(o.status), payable: PAYABLE.includes(o.status),
     lines: (o.lines || []).map((l) => {
