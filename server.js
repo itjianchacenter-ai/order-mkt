@@ -176,6 +176,10 @@ async function verifyGoogleToken(credential) {
   if (String(p.email_verified) !== 'true') throw new Error('email not verified');
   return { sub: p.sub, email: p.email, name: p.name || p.email, picture: p.picture || '' };
 }
+function linkCustomerCampaign(customerId, campaignId) {
+  if (!customerId || !campaignId) return;
+  db.prepare(`INSERT INTO customer_campaigns(customer_id, campaign_id) VALUES (?, ?) ON CONFLICT(customer_id, campaign_id) DO UPDATE SET last_seen_at = datetime('now','localtime')`).run(customerId, campaignId);
+}
 function setCustomerCookie(res, cid) {
   res.cookie(CUSTOMER_COOKIE, jwt.sign({ cid }, JWT_SECRET), { httpOnly: true, sameSite: 'lax', secure: IS_PROD, maxAge: 365 * 24 * 3600 * 1000, path: '/' });
 }
@@ -196,6 +200,10 @@ app.post('/api/auth/google', async (req, res) => {
     db.prepare(`UPDATE customers SET google_sub = ?, email = ?, name = ?, picture = ?, last_login_at = datetime('now','localtime'), last_seen_at = datetime('now','localtime') WHERE id = ?`).run(g.sub, g.email, g.name, g.picture, acct.id);
   });
   tx();
+  const fromCampaign = req.body && req.body.campaign ? campaignBySlug(String(req.body.campaign)) : null;
+  if (fromCampaign) linkCustomerCampaign(acct.id, fromCampaign.id);
+  // ออเดอร์เก่าของบัญชี → ผูกแคมเปญให้ครบ (กรณีสั่งไว้ก่อนมีตารางนี้)
+  for (const r of db.prepare('SELECT DISTINCT campaign_id FROM orders WHERE customer_id = ? AND campaign_id IS NOT NULL').all(acct.id)) linkCustomerCampaign(acct.id, r.campaign_id);
   setCustomerCookie(res, acct.id); req.customerId = acct.id;
   res.json(meView(acct.id));
 });
@@ -302,7 +310,7 @@ app.post('/api/orders', (req, res) => {
   const create = db.transaction(() => {
     const short = stockShortfall(want, campaign); // checked inside the write transaction so two customers cannot both take the last pieces
     if (short) { const e = new Error(short); e.status = 409; throw e; }
-    touchCustomer(req.customerId);
+    touchCustomer(req.customerId); linkCustomerCampaign(req.customerId, campaign.id);
     const order_number = nextOrderNumber();
     // A zero-total order (free campaign item) has nothing to pay: it is paid on creation.
     db.prepare(`INSERT INTO orders(id, order_number, customer_id, campaign_id, store_id, store_name, total, note, status, paid_at)
@@ -570,21 +578,30 @@ app.post('/api/admin/design/upload', requirePerm('campaigns'), designUpload.sing
 // Orders
 const PAGE_SIZE = 20; // รายการออเดอร์หลังบ้าน หน้าละ 20
 // ─── Customers (ลูกค้าที่ล็อกอินด้วย Google) ───
-// GET /api/admin/customers?q=&page=&all=1 → { page, pages, total, rows: [{ id, email, name, picture, created_at, last_login_at, orders, paid_total, last_order_at }] }
+// GET /api/admin/customers?campaign=<id|all>&q=&page=&export=1
+//   campaign = id → เฉพาะลูกค้าที่ล็อกอินจาก /<แคมเปญ>/ หรือสั่งซื้อในแคมเปญนั้น (จำนวนออเดอร์/ยอดนับเฉพาะแคมเปญนั้น)
+//   campaign = all → ทุกแคมเปญ; ไม่ส่ง = แคมเปญที่ Active
 app.get('/api/admin/customers', requireAdmin, (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
+  const cparam = String(req.query.campaign || '');
+  const camp = cparam === 'all' ? null : (cparam ? getCampaign(cparam) : activeCampaign());
+  if (cparam && cparam !== 'all' && !camp) return res.status(404).json({ error: 'ไม่พบแคมเปญ' });
   const where = ['c.google_sub IS NOT NULL']; const args = [];
+  const ordersWhere = ["status <> 'cancelled'" + (camp ? ' AND campaign_id = ?' : '')]; const oargs = camp ? [camp.id] : [];
+  if (camp) { where.push('(cc.customer_id IS NOT NULL OR o.customer_id IS NOT NULL)'); }
   if (q) { where.push('(lower(c.email) LIKE ? OR lower(c.name) LIKE ?)'); args.push(`%${q}%`, `%${q}%`); }
   const sql = `FROM customers c
     LEFT JOIN (SELECT customer_id, COUNT(*) AS orders, SUM(CASE WHEN status IN ('paid','picked_up') THEN total ELSE 0 END) AS paid_total, MAX(created_at) AS last_order_at
-               FROM orders WHERE status <> 'cancelled' GROUP BY customer_id) o ON o.customer_id = c.id
+               FROM orders WHERE ${ordersWhere.join(' AND ')} GROUP BY customer_id) o ON o.customer_id = c.id
+    ${camp ? 'LEFT JOIN customer_campaigns cc ON cc.customer_id = c.id AND cc.campaign_id = ?' : ''}
     WHERE ${where.join(' AND ')}`;
-  const total = db.prepare(`SELECT COUNT(*) AS n ${sql}`).get(...args).n;
-  const all = req.query.all === '1';
-  const page = all ? 1 : Math.max(1, parseInt(req.query.page, 10) || 1);
-  const rows = db.prepare(`SELECT c.id, c.email, c.name, c.picture, c.created_at, c.last_login_at, COALESCE(o.orders, 0) AS orders, COALESCE(o.paid_total, 0) AS paid_total, o.last_order_at ${sql}
-    ORDER BY c.last_login_at DESC, c.created_at DESC ${all ? '' : 'LIMIT ? OFFSET ?'}`).all(...args, ...(all ? [] : [PAGE_SIZE, (page - 1) * PAGE_SIZE]));
-  res.json({ page, pages: all ? 1 : Math.max(1, Math.ceil(total / PAGE_SIZE)), total, rows });
+  const allArgs = [...oargs, ...(camp ? [camp.id] : []), ...args];
+  const total = db.prepare(`SELECT COUNT(*) AS n ${sql}`).get(...allArgs).n;
+  const exp = req.query.export === '1';
+  const page = exp ? 1 : Math.max(1, parseInt(req.query.page, 10) || 1);
+  const rows = db.prepare(`SELECT c.id, c.email, c.name, c.picture, c.created_at, c.last_login_at, COALESCE(o.orders, 0) AS orders, COALESCE(o.paid_total, 0) AS paid_total, o.last_order_at${camp ? ', cc.first_seen_at AS joined_at' : ''} ${sql}
+    ORDER BY c.last_login_at DESC, c.created_at DESC ${exp ? '' : 'LIMIT ? OFFSET ?'}`).all(...allArgs, ...(exp ? [] : [PAGE_SIZE, (page - 1) * PAGE_SIZE]));
+  res.json({ campaign: camp ? campaignPublic(camp) : null, page, pages: exp ? 1 : Math.max(1, Math.ceil(total / PAGE_SIZE)), total, rows });
 });
 
 app.get('/api/admin/orders', requireAdmin, (req, res) => {

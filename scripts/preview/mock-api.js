@@ -156,7 +156,11 @@ async function api(path, opts = {}) {
     const id = 'g:' + g.sub;
     // ออเดอร์ที่สั่งไว้ก่อนล็อกอินในเบราว์เซอร์นี้ ติดไปกับบัญชี
     for (const o of d.orders) if (o.customer_id === 'me') o.customer_id = id;
-    d.customer = { id, email: g.email, name: g.name, picture: g.picture, created_at: (d.customer && d.customer.created_at) || pvNow(), last_login_at: pvNow() }; pvSave(d); return meView();
+    const fromCamp = body.campaign ? d.campaigns.find((c) => c.slug === String(body.campaign)) : null;
+    const camps = Object.assign({}, (d.customer && d.customer.campaigns) || {});
+    if (fromCamp && !camps[fromCamp.id]) camps[fromCamp.id] = pvNow();
+    for (const o of d.orders) if (o.customer_id === id && o.campaign_id && !camps[o.campaign_id]) camps[o.campaign_id] = o.created_at;
+    d.customer = { id, email: g.email, name: g.name, picture: g.picture, created_at: (d.customer && d.customer.created_at) || pvNow(), last_login_at: pvNow(), campaigns: camps }; pvSave(d); return meView();
   }
   if (p === '/api/auth/logout' && method === 'POST') { d.customer = null; pvSave(d); return meView(); }
   const admin = d.session ? d.users.find((u) => u.id === d.session && u.active) : null;
@@ -174,6 +178,7 @@ async function api(path, opts = {}) {
   if (p === '/api/config') return { payment_ready: true, slip_auto_verify: false };
   if (p === '/api/orders' && method === 'POST') {
     if (!d.customer) pvFail('กรุณาเข้าสู่ระบบด้วย Google ก่อนยืนยันคำสั่งซื้อ / Please sign in with Google first');
+    d.customer.campaigns = d.customer.campaigns || {}; if (!d.customer.campaigns[reqCamp.id]) d.customer.campaigns[reqCamp.id] = pvNow();
     const store = PREVIEW_STORES.find((s) => s.id === String(body.store_id)); if (!store) pvFail('กรุณาเลือกสาขาที่รับสินค้า');
     if (!Array.isArray(body.lines) || !body.lines.length) pvFail('ยังไม่มีรายการในตะกร้า');
     const camp = reqCamp; if (camp.orders_open === false) pvFail('แคมเปญนี้ปิดรับคำสั่งซื้อแล้ว / This campaign is closed');
@@ -233,12 +238,15 @@ async function api(path, opts = {}) {
   }
   if (p === '/api/admin/customers') {
     const cs = d.customer ? [d.customer] : [];
-    const qq = (q.get('q') || '').toLowerCase();
+    const qq = (q.get('q') || '').toLowerCase(); const cp = q.get('campaign') || '';
+    const camp = cp === 'all' ? null : (cp ? d.campaigns.find((c) => c.id === cp) : active);
     const rows = cs.filter((c) => !qq || c.email.toLowerCase().includes(qq) || (c.name || '').toLowerCase().includes(qq)).map((c) => {
-      const os = d.orders.filter((o) => o.customer_id === c.id && o.status !== 'cancelled');
-      return { id: c.id, email: c.email, name: c.name, picture: c.picture, created_at: c.created_at || pvNow(), last_login_at: c.last_login_at || pvNow(), orders: os.length, paid_total: os.filter((o) => ['paid', 'picked_up'].includes(o.status)).reduce((s, o) => s + o.total, 0), last_order_at: os.map((o) => o.created_at).sort().pop() || null };
-    });
-    return { page: 1, pages: 1, total: rows.length, rows };
+      const os = d.orders.filter((o) => o.customer_id === c.id && o.status !== 'cancelled' && (!camp || o.campaign_id === camp.id));
+      const joined = camp ? ((c.campaigns || {})[camp.id] || null) : null;
+      if (camp && !joined && !os.length) return null;
+      return { id: c.id, email: c.email, name: c.name, picture: c.picture, created_at: c.created_at || pvNow(), last_login_at: c.last_login_at || pvNow(), orders: os.length, paid_total: os.filter((o) => ['paid', 'picked_up'].includes(o.status)).reduce((s, o) => s + o.total, 0), last_order_at: os.map((o) => o.created_at).sort().pop() || null, joined_at: joined || (os.map((o) => o.created_at).sort()[0] || null) };
+    }).filter(Boolean);
+    return { campaign: camp ? pvCampaignPublic(camp) : null, page: 1, pages: 1, total: rows.length, rows };
   }
   if (p === '/api/admin/users' && method === 'GET') { need('accounts'); const order = { it_admin: 0, admin: 1, finance: 2 }; return d.users.slice().sort((a, b) => order[a.role] - order[b.role] || a.username.localeCompare(b.username)).map(pvUserView); }
   if (p === '/api/admin/users' && method === 'POST') {

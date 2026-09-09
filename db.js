@@ -92,6 +92,14 @@ for (const [col, ddl] of [['google_sub', 'TEXT'], ['email', 'TEXT'], ['name', 'T
   if (!db.prepare("SELECT 1 FROM pragma_table_info('customers') WHERE name = ?").get(col)) db.exec(`ALTER TABLE customers ADD COLUMN ${col} ${ddl}`);
 }
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_google ON customers(google_sub) WHERE google_sub IS NOT NULL');
+// ลูกค้าคนหนึ่งผูกกับแคมเปญที่เคยล็อกอิน/สั่งซื้อ (เช่น /jianchaxnavori/) ใช้แยกรายชื่อลูกค้าตามแคมเปญในหลังบ้าน
+db.exec(`CREATE TABLE IF NOT EXISTS customer_campaigns (
+  customer_id TEXT NOT NULL REFERENCES customers(id),
+  campaign_id TEXT NOT NULL,
+  first_seen_at TEXT DEFAULT (datetime('now','localtime')),
+  last_seen_at TEXT DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (customer_id, campaign_id)
+)`);
 
 // order_lines: Match Set columns (migration for databases created before sets existed)
 for (const [col, ddl] of [['set_id', "TEXT DEFAULT ''"], ['set_label', "TEXT DEFAULT ''"], ['set_name', "TEXT DEFAULT ''"], ['items_json', "TEXT DEFAULT ''"], ['pieces', 'INTEGER'], ['drink_pieces', 'INTEGER'], ['dessert_pieces', 'INTEGER']]) {

@@ -68,7 +68,7 @@ function ensureGis() {
   return _gis;
 }
 async function googleSignIn(credential) {
-  ME = await api('/api/auth/google', { method: 'POST', body: { credential } });
+  ME = await api('/api/auth/google', { method: 'POST', body: { credential, campaign: campaignSlug() || undefined } });
   refreshAccountSlot(); return ME;
 }
 async function signOut() { ME = await api('/api/auth/logout', { method: 'POST' }); refreshAccountSlot(); location.reload(); }
@@ -94,7 +94,7 @@ async function openLoginModal(onDone) {
     if (window.PREVIEW_MODE) {
       // preview: ทดลองล็อกอินด้วยอีเมลที่พิมพ์เอง (ไม่มีการตรวจสอบ ใช้ทดสอบ flow เท่านั้น)
       $('#gsi-btn').innerHTML = `<form id="demo-login" class="demo-login"><input name="email" type="email" placeholder="you@gmail.com" required><button class="btn" type="submit">ทดลองเข้าสู่ระบบ (preview)</button><small class="th">ของจริงจะเป็นปุ่ม Sign in with Google เมื่อตั้งค่า Client ID แล้ว</small></form>`;
-      $('#demo-login').addEventListener('submit', async (e) => { e.preventDefault(); try { ME = await api('/api/auth/google', { method: 'POST', body: { demo_email: new FormData(e.target).get('email') } }); refreshAccountSlot(); await done(); } catch (ex) { err.textContent = ex.message; } });
+      $('#demo-login').addEventListener('submit', async (e) => { e.preventDefault(); try { ME = await api('/api/auth/google', { method: 'POST', body: { demo_email: new FormData(e.target).get('email'), campaign: campaignSlug() || undefined } }); refreshAccountSlot(); await done(); } catch (ex) { err.textContent = ex.message; } });
     } else err.textContent = 'ยังไม่ได้ตั้งค่า Google login บนเซิร์ฟเวอร์ (GOOGLE_CLIENT_ID)';
     return;
   }
