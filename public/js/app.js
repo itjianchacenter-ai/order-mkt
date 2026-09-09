@@ -344,7 +344,7 @@ function orderCard(o, { light = false, open = false, extra = '', badge = '', asi
   }).join('');
   return `<div class="order" data-id="${esc(o.id)}">
     <button type="button" class="head ${light ? 'light' : ''}" aria-expanded="${open}">
-      <span><span class="t">Order Number: ${esc(o.order_number)}</span> ${badge}<br><span class="s"><b>Pick-up Location:</b> ${esc(o.store_name.replace(/^JIAN CHA - /, ''))}</span></span>
+      <span><span class="t">Order Number: ${esc(o.order_number)}</span> ${badge}<br><span class="s"><b>Pick-up Location:</b> ${esc(o.store_name.replace(/^(JIANCHA|JIAN CHA) - /, ''))}</span></span>
       <span class="amt">${aside}${money(o.total)} ฿ ${open ? ICONS.down : ICONS.right}</span>
     </button>
     <div class="body ${open ? '' : 'hidden'}">

@@ -41,7 +41,7 @@ function loadMenu() {
   return { banner: m.banner || '', sets: (m.sets || []).map(normSet).filter((x) => x.active), drinks: (m.drinks || []).map(norm).filter((x) => x.active), desserts: (m.desserts || []).map(norm).filter((x) => x.active) };
 }
 function loadStores() {
-  return readJson('stores.json', []).filter((s) => s.active !== false).map((s) => ({ id: String(s.id), brand: s.brand || 'JIAN CHA', name: s.name || '', map_url: s.map_url || '' }));
+  return readJson('stores.json', []).filter((s) => s.active !== false).map((s) => ({ id: String(s.id), brand: s.brand || 'JIANCHA', name: s.name || '', map_url: s.map_url || '' }));
 }
 
 // ─── Campaign design: promote images + Match Sets shown on the customer homepage ───
