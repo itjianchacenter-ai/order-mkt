@@ -379,7 +379,7 @@
   const toolbar = isPickup ? '' : isSlips ? `
     <div class="toolbar">
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <input class="search" id="q" placeholder="Order No. / Location" value="${esc(state.q)}">
+        <input class="search" id="q" placeholder="Order No. / Location / Email / Contact number" value="${esc(state.q)}">
         ${campaignSelect()}
         ${slipSummary()}
         <span id="stock-pill"></span>
@@ -390,7 +390,7 @@
       </div>
     </div>` : `
     <div class="toolbar">
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><input class="search" id="q" placeholder="Order No. / Location" value="${esc(state.q)}">${campaigns.length > 1 ? campaignSelect() : ''}</div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><input class="search" id="q" placeholder="Order No. / Location / Email / Contact number" value="${esc(state.q)}">${campaigns.length > 1 ? campaignSelect() : ''}</div>
       ${datePill}
     </div>`;
   app.innerHTML = `

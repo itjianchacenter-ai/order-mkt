@@ -29,6 +29,10 @@ function pvSave(d) { try { localStorage.setItem(PREVIEW_DB_KEY, JSON.stringify(d
 function pvReset() { try { localStorage.removeItem(PREVIEW_DB_KEY); localStorage.removeItem('jc_cart'); localStorage.removeItem('jc_store'); localStorage.removeItem('jc_note'); } catch (e) { /* ignore */ } }
 
 const PV_CAMPAIGN_ID = 'jiancha-x-navori';
+// บัญชีลูกค้าใน preview ใช้อีเมล Google เป็นตัวตน (id = 'acct:<email>') ล็อกอินซ้ำจากเครื่องไหน/แบบ demo หรือ Google จริงก็เห็นออเดอร์เดิม
+const PV_OWNER_EMAIL = 'whenwendy.yake@gmail.com';   // เจ้าของออเดอร์ทั้งหมดที่มีอยู่ก่อนแยกตามบัญชี
+const pvAcctId = (email) => 'acct:' + String(email || '').trim().toLowerCase();
+const pvOwnerRecord = () => ({ id: pvAcctId(PV_OWNER_EMAIL), email: PV_OWNER_EMAIL, name: PV_OWNER_EMAIL.split('@')[0], picture: '', created_at: pvNow(-9000), last_login_at: null, campaigns: { [PV_CAMPAIGN_ID]: pvNow(-9000) } });
 function pvSeed() {
   const day = pvNow().slice(0, 10).replace(/-/g, '');
   const SETS = PREVIEW_MENU.sets, ST = PREVIEW_STORES;
@@ -36,7 +40,7 @@ function pvSeed() {
     const ls = lines.map(([si, q]) => pvSetLine(SETS[si], q));
     const total = pvMoney(ls.reduce((s, l) => s + l.line_total, 0));
     return {
-      id: 'sample-' + i, order_number: day + String(i).padStart(5, '0'), customer_id: customer, campaign_id: PV_CAMPAIGN_ID, store_id: ST[store].id, store_name: `${ST[store].brand} - ${ST[store].name}`,
+      id: 'sample-' + i, order_number: day + String(i).padStart(5, '0'), customer_id: pvAcctId(PV_OWNER_EMAIL), campaign_id: PV_CAMPAIGN_ID, store_id: ST[store].id, store_name: `${ST[store].brand} - ${ST[store].name}`,
       total, status, note, created_at: pvNow(-minutesAgo), paid_at: ['paid', 'picked_up'].includes(status) ? pvNow(-minutesAgo + 6) : null,
       picked_up_at: status === 'picked_up' ? pvNow(-minutesAgo + 90) : null, cancelled_at: status === 'cancelled' ? pvNow(-minutesAgo + 30) : null,
       slip_url: slip ? pvSlipSvg(total) : '', slip_hash: slip ? 'seed' + i : '', slip_ref: slip && ['paid', 'picked_up'].includes(status) ? 'DEMO' + day + i : '', slip_amount: slip ? total : null,
@@ -60,12 +64,27 @@ function pvSeed() {
   ];
   const st = PREVIEW_MENU.stock || {}, pc = PREVIEW_MENU.promo_code || {};
   const campaigns = [{ id: PV_CAMPAIGN_ID, slug: 'jianchaxnavori', name: 'JIANCHA x NAVORI', active: true, orders_open: true, stock: { total: st.total ?? 1000, drink: st.drink ?? null, dessert: st.dessert ?? null }, promo_code: { from: pc.from || 2026090001, to: pc.to || 2026092000 }, created_at: pvNow(-9000) }];
-  return { orders, users, campaigns, session: null, counter: { day, seq: orders.length } };
+  return { orders, users, campaigns, customers: [pvOwnerRecord()], customer: null, session: null, owner_migrated: true, counter: { day, seq: orders.length } };
 }
 function pvSetLine(s, q) {
   return { set_id: s.id, set_label: s.label, set_name: s.name_en, items: s.items, name: `${s.label} · ${s.name_en}`, pieces: s.pieces, drink_pieces: s.drink_pieces, dessert_pieces: s.dessert_pieces, drink_id: '', drink_name: '', dessert_id: '', dessert_name: '', quantity: q, unit_price: s.price, line_total: pvMoney(s.price * q) };
 }
-function pvDb() { let d = pvLoad(); if (!d || !Array.isArray(d.orders) || !Array.isArray(d.users)) { d = pvSeed(); pvSave(d); } return d; }
+function pvDb() {
+  let d = pvLoad(); if (!d || !Array.isArray(d.orders) || !Array.isArray(d.users)) { d = pvSeed(); pvSave(d); }
+  if (!d.owner_migrated) {
+    // ข้อมูลเดิมในเบราว์เซอร์นี้: ออเดอร์ทั้งหมดย้ายไปอยู่กับบัญชี whenwendy.yake@gmail.com และเก็บทะเบียนลูกค้าถาวร (d.customers)
+    d.customers = Array.isArray(d.customers) ? d.customers : [];
+    if (d.customer && d.customer.email) { d.customer.id = pvAcctId(d.customer.email); if (!d.customers.some((c) => c.id === d.customer.id)) d.customers.push(d.customer); }
+    if (!d.customers.some((c) => c.id === pvAcctId(PV_OWNER_EMAIL))) d.customers.push(pvOwnerRecord());
+    for (const o of d.orders) o.customer_id = pvAcctId(PV_OWNER_EMAIL);
+    const owner = d.customers.find((c) => c.id === pvAcctId(PV_OWNER_EMAIL)); owner.campaigns = owner.campaigns || {};
+    for (const o of d.orders) if (o.campaign_id && !owner.campaigns[o.campaign_id]) owner.campaigns[o.campaign_id] = o.created_at;
+    if (d.customer) d.customer = d.customers.find((c) => c.id === d.customer.id) || null;
+    d.owner_migrated = true; pvSave(d);
+  }
+  return d;
+}
+function pvCustomerOf(d, id) { return (d.customers || []).find((c) => c.id === id) || null; }
 function pvNextNumber(d) {
   const day = pvNow().slice(0, 10).replace(/-/g, '');
   if (d.counter.day !== day) d.counter = { day, seq: 0 };
@@ -94,7 +113,7 @@ function pvCampaignView(c) { const dz = pvDesign(c); return { ...c, url: `/${c.s
 function pvCampaignName(d, id) { const c = d.campaigns.find((x) => x.id === id); return c ? c.name : ''; }
 function pvView(d, o, admin) {
   const v = { id: o.id, order_number: o.order_number, campaign_id: o.campaign_id, campaign_name: pvCampaignName(d, o.campaign_id), store_id: o.store_id, store_name: o.store_name, total: o.total, status: o.status, note: o.note, phone: o.phone || '', created_at: o.created_at, paid_at: o.paid_at, picked_up_at: o.picked_up_at, has_slip: Boolean(o.slip_url), slip_reason: o.slip_reason, lines: o.lines, promo_code: o.promo_code || null, code_available: ['paid', 'picked_up'].includes(o.status), payable: ['pending', 'slip_rejected'].includes(o.status) };
-  if (admin && d.customer && o.customer_id === d.customer.id) Object.assign(v, { customer_email: d.customer.email, customer_name: d.customer.name });
+  if (admin) { const c = pvCustomerOf(d, o.customer_id); Object.assign(v, { customer_email: c ? c.email : '', customer_name: c ? c.name : '' }); }
   if (admin) Object.assign(v, { customer_id: o.customer_id, slip_url: o.slip_url, slip_ref: o.slip_ref, slip_amount: o.slip_amount, slip_verified: o.slip_verified, cancelled_at: o.cancelled_at });
   return v;
 }
@@ -144,7 +163,8 @@ async function api(path, opts = {}) {
   const method = (opts.method || 'GET').toUpperCase();
   const body = opts.body instanceof FormData ? opts.body : (opts.body || {});
   const d = pvDb();
-  // ลูกค้าที่ล็อกอิน (Google) เก็บใน d.customer; ยังไม่ล็อกอิน = 'me' (ตัวตนของเบราว์เซอร์)
+  // ลูกค้าที่ล็อกอิน (Google) เก็บใน d.customer (อ้างอิงแถวเดียวกับทะเบียน d.customers); ยังไม่ล็อกอิน = 'me' (ตัวตนของเบราว์เซอร์)
+  if (d.customer) d.customer = pvCustomerOf(d, d.customer.id) || d.customer;
   const me = d.customer ? d.customer.id : 'me';
   const meView = () => ({ logged_in: Boolean(d.customer), login_required: true, google_client_id: (typeof PREVIEW_GOOGLE_CLIENT_ID === 'string' ? PREVIEW_GOOGLE_CLIENT_ID : ''), email: d.customer ? d.customer.email : '', name: d.customer ? d.customer.name : '', picture: d.customer ? d.customer.picture : '' });
   if (p === '/api/me') return meView();
@@ -153,14 +173,17 @@ async function api(path, opts = {}) {
     if (body.credential) { try { const payload = JSON.parse(atob(String(body.credential).split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); g = { sub: payload.sub, email: payload.email, name: payload.name || payload.email, picture: payload.picture || '' }; } catch (e) { pvFail('เข้าสู่ระบบด้วย Google ไม่สำเร็จ'); } }
     else if (body.demo_email) { const em = String(body.demo_email).trim().toLowerCase(); if (!/^[^@\s]+@[^@\s]+$/.test(em)) pvFail('อีเมลไม่ถูกต้อง'); g = { sub: 'demo:' + em, email: em, name: em.split('@')[0], picture: '' }; }
     if (!g) pvFail('เข้าสู่ระบบด้วย Google ไม่สำเร็จ');
-    const id = 'g:' + g.sub;
+    const id = pvAcctId(g.email);
     // ออเดอร์ที่สั่งไว้ก่อนล็อกอินในเบราว์เซอร์นี้ ติดไปกับบัญชี
     for (const o of d.orders) if (o.customer_id === 'me') o.customer_id = id;
     const fromCamp = body.campaign ? d.campaigns.find((c) => c.slug === String(body.campaign)) : null;
-    const camps = Object.assign({}, (d.customer && d.customer.campaigns) || {});
+    let acct = pvCustomerOf(d, id);
+    const camps = Object.assign({}, (acct && acct.campaigns) || {});
     if (fromCamp && !camps[fromCamp.id]) camps[fromCamp.id] = pvNow();
     for (const o of d.orders) if (o.customer_id === id && o.campaign_id && !camps[o.campaign_id]) camps[o.campaign_id] = o.created_at;
-    d.customer = { id, email: g.email, name: g.name, picture: g.picture, created_at: (d.customer && d.customer.created_at) || pvNow(), last_login_at: pvNow(), campaigns: camps }; pvSave(d); return meView();
+    if (!acct) { acct = { id, created_at: pvNow() }; d.customers.push(acct); }
+    Object.assign(acct, { email: g.email, name: g.name || acct.name, picture: g.picture || acct.picture || '', last_login_at: pvNow(), campaigns: camps });
+    d.customer = acct; pvSave(d); return meView();
   }
   if (p === '/api/auth/logout' && method === 'POST') { d.customer = null; pvSave(d); return meView(); }
   const admin = d.session ? d.users.find((u) => u.id === d.session && u.active) : null;
@@ -195,7 +218,8 @@ async function api(path, opts = {}) {
     const o = { promo_code: null, id: pvUuid(), order_number: pvNextNumber(d), customer_id: me, campaign_id: camp.id, store_id: store.id, store_name: `${store.brand} - ${store.name}`, total, status: total > 0 ? 'pending' : 'paid', note: String(body.note || '').slice(0, 500), phone: String(body.phone || '').replace(/[^\d+]/g, '').slice(0, 20), created_at: pvNow(), paid_at: total > 0 ? null : pvNow(), picked_up_at: null, cancelled_at: null, slip_url: '', slip_hash: '', slip_ref: '', slip_amount: null, slip_reason: '', slip_verified: 0, lines };
     d.orders.unshift(o); pvSave(d); return pvView(d, o);
   }
-  if (p === '/api/orders') return d.orders.filter((o) => o.customer_id === me).map((o) => pvView(d, o));
+  // ประวัติการสั่งซื้อแยกตามบัญชี Google: ยังไม่ล็อกอิน = ไม่มีออเดอร์
+  if (p === '/api/orders') return d.customer ? d.orders.filter((o) => o.customer_id === me).map((o) => pvView(d, o)) : [];
   if ((m = p.match(/^\/api\/orders\/([^/]+)\/qr$/))) {
     const o = own(m[1]); if (!['pending', 'slip_rejected'].includes(o.status)) pvFail('คำสั่งซื้อนี้ไม่ได้อยู่ในสถานะรอชำระเงิน'); if (!(o.total > 0)) pvFail('ยอดคำสั่งซื้อเป็น 0 ไม่ต้องชำระเงิน');
     return { qr_data_url: pvQrDataUrl(o.total), amount: o.total };
@@ -238,7 +262,7 @@ async function api(path, opts = {}) {
     admin.password = body.password; pvSave(d); return { ok: true };
   }
   if (p === '/api/admin/customers') {
-    const cs = d.customer ? [d.customer] : [];
+    const cs = d.customers || [];
     const qq = (q.get('q') || '').toLowerCase(); const cp = q.get('campaign') || '';
     const camp = cp === 'all' ? null : (cp ? d.campaigns.find((c) => c.id === cp) : active);
     const rows = cs.filter((c) => !qq || c.email.toLowerCase().includes(qq) || (c.name || '').toLowerCase().includes(qq)).map((c) => {
@@ -304,7 +328,8 @@ async function api(path, opts = {}) {
   }
   if (p === '/api/admin/orders') {
     const s = (q.get('q') || '').toLowerCase(), date = q.get('date') || '', store = q.get('store') || '', status = (q.get('status') || '').split(',').filter(Boolean), camp = q.get('campaign') || '';
-    let rows = d.orders.filter((o) => (!s || o.order_number.includes(s) || o.store_name.toLowerCase().includes(s)) && (!date || o.created_at.slice(0, 10) === date) && (!store || o.store_id === store) && (!status.length || status.includes(o.status)) && (!camp || o.campaign_id === camp));
+    const emailOf = (o) => { const c = pvCustomerOf(d, o.customer_id); return c ? `${c.email} ${c.name || ''}`.toLowerCase() : ''; };
+    let rows = d.orders.filter((o) => (!s || o.order_number.includes(s) || o.store_name.toLowerCase().includes(s) || (o.phone || '').includes(s) || emailOf(o).includes(s)) && (!date || o.created_at.slice(0, 10) === date) && (!store || o.store_id === store) && (!status.length || status.includes(o.status)) && (!camp || o.campaign_id === camp));
     rows.sort((a, b) => (b.created_at + b.order_number).localeCompare(a.created_at + a.order_number));
     const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE)); const page = Math.min(pages, Math.max(1, parseInt(q.get('page'), 10) || 1));
     return { page, pages, total: rows.length, rows: rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((o) => pvView(d, o, true)) };

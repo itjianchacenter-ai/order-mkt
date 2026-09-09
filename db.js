@@ -96,6 +96,8 @@ for (const [col, ddl] of [['google_sub', 'TEXT'], ['email', 'TEXT'], ['name', 'T
 }
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_google ON customers(google_sub) WHERE google_sub IS NOT NULL');
 // ลูกค้าคนหนึ่งผูกกับแคมเปญที่เคยล็อกอิน/สั่งซื้อ (เช่น /jianchaxnavori/) ใช้แยกรายชื่อลูกค้าตามแคมเปญในหลังบ้าน
+// meta: one-off migration flags
+db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)');
 db.exec(`CREATE TABLE IF NOT EXISTS customer_campaigns (
   customer_id TEXT NOT NULL REFERENCES customers(id),
   campaign_id TEXT NOT NULL,
@@ -103,6 +105,22 @@ db.exec(`CREATE TABLE IF NOT EXISTS customer_campaigns (
   last_seen_at TEXT DEFAULT (datetime('now','localtime')),
   PRIMARY KEY (customer_id, campaign_id)
 )`);
+
+// ออเดอร์เดิมที่สั่งไว้ก่อนมี Google login (ไม่ผูกกับบัญชี Google) → ย้ายไปอยู่กับบัญชีเจ้าของ (LEGACY_ORDERS_OWNER, ค่าเริ่มต้น whenwendy.yake@gmail.com)
+// ทำครั้งเดียว: สร้างแถวลูกค้าแบบรอยืนยัน (email ตั้งไว้, google_sub ว่าง) แล้วเมื่อเจ้าของล็อกอินด้วย Google อีเมลนี้ server.js จะผูกบัญชีให้อัตโนมัติ
+const LEGACY_ORDERS_OWNER = (process.env.LEGACY_ORDERS_OWNER || 'whenwendy.yake@gmail.com').trim().toLowerCase();
+if (LEGACY_ORDERS_OWNER && !db.prepare("SELECT 1 FROM meta WHERE key = 'legacy_orders_owner'").get()) {
+  db.transaction(() => {
+    let owner = db.prepare('SELECT id FROM customers WHERE lower(email) = ? ORDER BY google_sub IS NULL LIMIT 1').get(LEGACY_ORDERS_OWNER);
+    const orphan = db.prepare('SELECT COUNT(*) AS n FROM orders WHERE customer_id IN (SELECT id FROM customers WHERE google_sub IS NULL) OR customer_id NOT IN (SELECT id FROM customers)').get().n;
+    if (orphan > 0) {
+      if (!owner) { owner = { id: require('crypto').randomUUID() }; db.prepare('INSERT INTO customers(id, email, name) VALUES (?, ?, ?)').run(owner.id, LEGACY_ORDERS_OWNER, LEGACY_ORDERS_OWNER.split('@')[0]); }
+      db.prepare('UPDATE orders SET customer_id = ? WHERE customer_id IN (SELECT id FROM customers WHERE google_sub IS NULL AND id <> ?) OR customer_id NOT IN (SELECT id FROM customers)').run(owner.id, owner.id);
+      for (const r of db.prepare('SELECT DISTINCT campaign_id FROM orders WHERE customer_id = ? AND campaign_id IS NOT NULL').all(owner.id)) db.prepare('INSERT OR IGNORE INTO customer_campaigns(customer_id, campaign_id) VALUES (?, ?)').run(owner.id, r.campaign_id);
+    }
+    db.prepare("INSERT INTO meta(key, value) VALUES ('legacy_orders_owner', ?)").run(LEGACY_ORDERS_OWNER);
+  })();
+}
 
 // order_lines: Match Set columns (migration for databases created before sets existed)
 for (const [col, ddl] of [['set_id', "TEXT DEFAULT ''"], ['set_label', "TEXT DEFAULT ''"], ['set_name', "TEXT DEFAULT ''"], ['items_json', "TEXT DEFAULT ''"], ['pieces', 'INTEGER'], ['drink_pieces', 'INTEGER'], ['dessert_pieces', 'INTEGER']]) {
