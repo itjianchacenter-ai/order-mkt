@@ -19,7 +19,7 @@
     <div class="summary">
       <div>
         <div class="panel" style="padding:8px 0"><ul class="cart-table" id="lines"></ul></div>
-        <div class="notebox telbox"><label for="phone"><b>Contact number</b> <span class="th">(เบอร์ติดต่อผู้รับขนม):</span></label><input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="08x-xxx-xxxx" maxlength="20"></div>
+        <div id="contact-box"></div>
       </div>
       <div>
         <div class="sumbox bordered">
@@ -48,8 +48,7 @@
   async function refreshStock() { try { stock = await api(withCampaign('/api/stock')); } catch (e) { /* keep last */ } render(); }
   const closed = menu.campaign && menu.campaign.orders_open === false;
   if (closed) $('#stock-err').textContent = 'แคมเปญนี้ปิดรับคำสั่งซื้อแล้ว / This campaign is closed';
-  $('#phone').value = getPhone();
-  $('#phone').addEventListener('input', (e) => setPhone(e.target.value));
+  $('#contact-box').innerHTML = contactBox(); bindContactBox();
   bindMatchControls($('#matches'), render, { getStock, errEl: $('#stock-err'), map });
   function render() {
     const cart = loadCart(); const storeId = getStore(); const store = stores.find((s) => s.id === storeId);
@@ -64,10 +63,8 @@
   }
   render();
   $('#confirm').addEventListener('click', () => {
-    const phone = $('#phone').value.trim();
-    if (!validPhone(phone)) { $('#err').textContent = 'กรุณาใส่เบอร์ติดต่อของผู้รับขนม (เบอร์มือถือ 10 หลัก) / Please enter a valid phone number'; $('#phone').focus(); return; }
     if (!getStore()) { $('#err').textContent = 'กรุณาเลือกสาขาที่รับสินค้าที่หน้าแรก / Please choose a pick-up location on the campaign page'; return; }
-    submitOrder({ storeId: getStore(), note: getNote(), phone, errEl: $('#err'), btn: $('#confirm'), onFail: refreshStock });
+    submitOrder({ storeId: getStore(), note: getNote(), phone: $('#phone').value.trim(), errEl: $('#err'), btn: $('#confirm'), onFail: refreshStock });
   });
 })();
 </script>

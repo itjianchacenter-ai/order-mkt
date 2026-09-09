@@ -178,6 +178,7 @@ async function api(path, opts = {}) {
   if (p === '/api/config') return { payment_ready: true, slip_auto_verify: false };
   if (p === '/api/orders' && method === 'POST') {
     if (!d.customer) pvFail('กรุณาเข้าสู่ระบบด้วย Google ก่อนยืนยันคำสั่งซื้อ / Please sign in with Google first');
+    if (!/^(\+66|0)\d{8,9}$/.test(String(body.phone || '').replace(/[^\d+]/g, ''))) pvFail('กรุณาใส่เบอร์ติดต่อผู้รับขนม (เบอร์มือถือ 10 หลัก) / Contact number is required');
     d.customer.campaigns = d.customer.campaigns || {}; if (!d.customer.campaigns[reqCamp.id]) d.customer.campaigns[reqCamp.id] = pvNow();
     const store = PREVIEW_STORES.find((s) => s.id === String(body.store_id)); if (!store) pvFail('กรุณาเลือกสาขาที่รับสินค้า');
     if (!Array.isArray(body.lines) || !body.lines.length) pvFail('ยังไม่มีรายการในตะกร้า');
