@@ -126,7 +126,7 @@
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
           <input class="search" id="q" placeholder="Email / ชื่อ …" value="${esc(state.q)}">
           ${campSelect}
-          <span class="pill" id="cust-count">${ICONS.users} Customer</span>
+          <span class="pill" id="cust-count">${ICONS.customer} Customer</span>
         </div>
         <button type="button" class="pill" id="cust-csv">${ICONS.doc} Download CSV</button>
       </div>
@@ -146,7 +146,7 @@
       if (!alive()) return;
       state.page = data.page;
       $('#cust-tbl tbody').innerHTML = data.rows.map(row).join('') || `<tr><td colspan="7" class="empty">ยังไม่มีลูกค้าที่ล็อกอิน${campaign ? 'ในแคมเปญ ' + esc(campaign.name) : ''} / No customers yet</td></tr>`;
-      $('#cust-count').innerHTML = `${ICONS.users} Customer <b>${data.total}</b>${campaign ? ` <span class="th">· ${esc(campaign.name)}</span>` : ' <span class="th">· ทุกแคมเปญ</span>'}`;
+      $('#cust-count').innerHTML = `${ICONS.customer} Customer <b>${data.total}</b>${campaign ? ` <span class="th">· ${esc(campaign.name)}</span>` : ' <span class="th">· ทุกแคมเปญ</span>'}`;
       $('#pg').textContent = `${data.page} / ${data.pages}`; $('#prev').disabled = data.page <= 1; $('#next').disabled = data.page >= data.pages;
     }
     $('#campaign-select').addEventListener('change', (e) => go({ view: 'customers', campaign: e.target.value, q: state.q }));
