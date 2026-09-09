@@ -37,7 +37,7 @@
         <tr><th>Date <span class="th">/ วันที่สั่ง</span></th><td>${fmtDateTime(o.created_at)}</td></tr>
         <tr><th>Pick-up Location <span class="th">/ สถานที่รับของ</span></th><td><b>${esc(o.store_name)}</b></td></tr>
         <tr><th>Status <span class="th">/ สถานะ</span></th><td>${en} <span class="th">(${th})</span>${o.paid_at ? ' · ' + fmtDateTime(o.paid_at) : ''}</td></tr>
-        ${o.phone ? `<tr><th>Tel <span class="th">/ เบอร์ผู้รับ</span></th><td>${esc(o.phone)}</td></tr>` : ''}
+        ${o.phone ? `<tr><th>Contact number <span class="th">/ เบอร์ผู้รับ</span></th><td>${esc(o.phone)}</td></tr>` : ''}
         ${o.note ? `<tr><th>หมายเหตุ</th><td>${esc(o.note)}</td></tr>` : ''}
         ${o.promo_code ? `<tr><th>Promotion code <span class="th">/ รหัสโปรโมชัน (POS)</span></th><td class="mono">${esc(o.promo_code)}</td></tr>` : ''}
       </table>

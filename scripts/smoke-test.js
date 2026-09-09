@@ -219,6 +219,30 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     r = await call('customer', 'GET', '/api/stock'); check('cancelled order frees stock', r.json.remaining.total === 990, r.json);
     r = await call('it', 'GET', '/api/admin/summary?campaign=jiancha-x-navori'); check('summary per campaign', r.status === 200 && r.json.stock.remaining.total === 990);
 
+    // ── ออเดอร์แยกตามบัญชี Google + หลังบ้านเห็นอีเมล/เบอร์ + บัญชีที่เตรียมไว้ล่วงหน้าด้วยอีเมล ──
+    {
+      const { db } = require('../db');
+      const placeholderId = 'pre-' + Date.now();
+      db.prepare('INSERT INTO customers(id, email, name) VALUES (?, ?, ?)').run(placeholderId, 'wendy@gmail.com', 'wendy');
+      db.prepare('UPDATE orders SET customer_id = ? WHERE id = ?').run(placeholderId, order2.id);
+      r = await call('customer', 'GET', '/api/orders'); check('order moved to the pre-assigned account leaves alice history', !r.json.some((o) => o.id === order2.id));
+      r = await call('it', 'GET', `/api/admin/orders/${order2.id}`); check('back-office shows google account email + contact number for the order', r.json.customer_email === 'wendy@gmail.com' && r.json.phone === '0812345678', r.json);
+      r = await call('it', 'GET', '/api/admin/orders?q=wendy@gmail'); check('back-office search by google email', r.json.rows.some((o) => o.id === order2.id) && r.json.rows.every((o) => o.customer_email === 'wendy@gmail.com'), r.json.total);
+      r = await call('it', 'GET', '/api/admin/orders?q=0812345678'); check('back-office search by contact number', r.json.rows.some((o) => o.id === order2.id));
+      r = await call('wendy', 'GET', '/api/orders'); check('not signed in = no order history', r.json.length === 0);
+      r = await call('wendy', 'POST', '/api/auth/google', { credential: 'wendy' }); check('pre-assigned email claims its account on first google login', r.json.logged_in === true && r.json.email === 'wendy@gmail.com');
+      r = await call('wendy', 'GET', '/api/orders'); check('claimed account sees the pre-assigned order', r.json.length === 1 && r.json[0].id === order2.id, r.json.map((o) => o.id));
+      check('placeholder row became the google account (no duplicate customer)', db.prepare('SELECT COUNT(*) AS n FROM customers WHERE email = ?').get('wendy@gmail.com').n === 1 && db.prepare('SELECT google_sub FROM customers WHERE id = ?').get(placeholderId).google_sub === 'sub-wendy');
+      // db.js migration: ออเดอร์เดิมที่ไม่ผูกบัญชี Google → บัญชีเจ้าของ (LEGACY_ORDERS_OWNER) ทำครั้งเดียว
+      const { execFileSync } = require('child_process'); const mdb = process.env.DB_PATH + '-legacy.db';
+      const runDb = (js) => execFileSync(process.execPath, ['-e', `const { db } = require(${JSON.stringify(path.join(__dirname, '..', 'db.js'))}); ${js}`], { env: { ...process.env, DB_PATH: mdb, LEGACY_ORDERS_OWNER: 'owner@gmail.com' }, encoding: 'utf8' }).trim();
+      runDb(`db.exec("DELETE FROM meta WHERE key = 'legacy_orders_owner'; INSERT INTO customers(id) VALUES ('anon1'),('anon2'); INSERT INTO customers(id, google_sub, email) VALUES ('g1','sub-g1','g1@gmail.com'); INSERT INTO orders(id, order_number, customer_id, campaign_id, store_id, store_name, total) VALUES ('o1','1',  'anon1','jiancha-x-navori','s','S',1),('o2','2','anon2','jiancha-x-navori','s','S',1),('o3','3','g1','jiancha-x-navori','s','S',1)")`);
+      const out = runDb(`const o = db.prepare("SELECT id FROM customers WHERE email = 'owner@gmail.com' AND google_sub IS NULL").get(); console.log(JSON.stringify({ owner: Boolean(o), moved: o ? db.prepare('SELECT group_concat(id) AS ids FROM (SELECT id FROM orders WHERE customer_id = ? ORDER BY id)').get(o.id).ids : '', g1: db.prepare("SELECT customer_id FROM orders WHERE id = 'o3'").get().customer_id, flag: db.prepare("SELECT value FROM meta WHERE key = 'legacy_orders_owner'").get().value, camp: o ? db.prepare('SELECT COUNT(*) AS n FROM customer_campaigns WHERE customer_id = ?').get(o.id).n : 0 }))`);
+      const mig = JSON.parse(out);
+      check('legacy migration: orders without google account move to the owner email (once), google-owned orders stay', mig.owner && mig.moved === 'o1,o2' && mig.g1 === 'g1' && mig.flag === 'owner@gmail.com' && mig.camp === 1, mig);
+      for (const suf of ['', '-wal', '-shm']) { try { fs.unlinkSync(mdb + suf); } catch (e) { /* ignore */ } }
+    }
+
     r = await call('it', 'POST', '/api/admin/logout'); r = await call('it', 'GET', '/api/admin/orders'); check('logout works', r.status === 401);
     r = await fetch(base + '/backend'); check('back-office served at /backend', r.status === 200 && /JIANCHA Page/.test(await r.text()));
     r = await fetch(base + '/backend/'); check('back-office served at /backend/', r.status === 200 && /JIANCHA Page/.test(await r.text()));

@@ -349,8 +349,8 @@ function orderCard(o, { light = false, open = false, extra = '', badge = '', asi
     </button>
     <div class="body ${open ? '' : 'hidden'}">
       <table>${rows}</table>
-      ${o.customer_email ? `<div class="meta"><span>${ICONS.user} <b>${esc(o.customer_name || '')}</b> ${esc(o.customer_email)}</span></div>` : ''}
-      ${o.phone ? `<div class="meta"><span><b>Tel:</b> ${esc(o.phone)}</span></div>` : ''}
+      ${o.customer_email ? `<div class="meta"><span>${ICONS.user} <b>Google account:</b> ${esc(o.customer_email)}${o.customer_name && o.customer_name !== o.customer_email ? ` (${esc(o.customer_name)})` : ''}</span></div>` : ''}
+      ${o.phone || light ? `<div class="meta"><span><b>Contact number:</b> ${o.phone ? esc(o.phone) : '-'}</span></div>` : ''}
       ${o.note ? `<div class="meta"><span><b>หมายเหตุ:</b> ${esc(o.note)}</span></div>` : ''}
       <div class="meta"><span>${fmtDateTime(o.created_at)}</span>${statusPill(o.status)}${o.slip_reason && ['pending', 'slip_uploaded', 'slip_rejected'].includes(o.status) && o.has_slip ? `<span>${esc(o.slip_reason)}</span>` : ''}</div>
       ${extra}

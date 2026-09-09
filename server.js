@@ -189,6 +189,8 @@ app.post('/api/auth/google', async (req, res) => {
   let g; try { g = await verifyGoogleToken(req.body && req.body.credential); } catch (e) { return res.status(401).json({ error: 'เข้าสู่ระบบด้วย Google ไม่สำเร็จ กรุณาลองใหม่ / Google sign-in failed' }); }
   const anon = req.customerId;
   let acct = db.prepare('SELECT id FROM customers WHERE google_sub = ?').get(g.sub);
+  // บัญชีที่เตรียมไว้ล่วงหน้าด้วยอีเมล (เช่น เจ้าของออเดอร์เดิม) ยังไม่เคยล็อกอิน → ผูกกับ Google account นี้
+  if (!acct && g.email) acct = db.prepare('SELECT id FROM customers WHERE google_sub IS NULL AND lower(email) = ? ORDER BY created_at LIMIT 1').get(String(g.email).toLowerCase()) || null;
   const tx = db.transaction(() => {
     if (!acct) {
       // บัญชีใหม่: ใช้แถวลูกค้าของเบราว์เซอร์นี้เป็นบัญชี (ออเดอร์ที่สั่งไว้ก่อนล็อกอินติดมาด้วย)
@@ -346,7 +348,8 @@ function orderView(o, { admin = false } = {}) {
       return { set_id: l.set_id || '', set_label: l.set_label || '', set_name: l.set_name || '', items, name, pieces: l.pieces ?? 1, drink_id: l.drink_id, drink_name: l.drink_name, dessert_id: l.dessert_id, dessert_name: l.dessert_name, quantity: l.quantity, unit_price: l.unit_price, line_total: l.line_total };
     }),
   };
-  if (admin) { const c = customerRow(o.customer_id); Object.assign(v, { customer_email: c && c.google_sub ? c.email : '', customer_name: c && c.google_sub ? c.name : '' }); }
+  // หลังบ้านเห็นบัญชี Google (อีเมล/ชื่อ) ของผู้สั่ง เผื่อต้องติดต่อ (บัญชีที่เตรียมไว้ล่วงหน้ายังไม่ล็อกอินก็แสดงอีเมล)
+  if (admin) { const c = customerRow(o.customer_id); Object.assign(v, { customer_email: (c && c.email) || '', customer_name: (c && c.name) || '' }); }
   if (admin) Object.assign(v, { customer_id: o.customer_id, slip_url: o.slip_path ? `/uploads/${path.basename(o.slip_path)}` : '', slip_ref: o.slip_ref, slip_amount: o.slip_amount, slip_verified: o.slip_verified, cancelled_at: o.cancelled_at });
   return v;
 }
@@ -357,6 +360,8 @@ function ownOrderOr404(req, res) {
 }
 
 app.get('/api/orders', (req, res) => {
+  // ประวัติการสั่งซื้อแยกตามบัญชี Google: ยังไม่ล็อกอิน (เมื่อเปิดใช้ login) = ไม่มีออเดอร์
+  if (loginRequired() && !customerLoggedIn(req.customerId)) return res.json([]);
   const ids = db.prepare('SELECT id FROM orders WHERE customer_id = ? ORDER BY created_at DESC, order_number DESC LIMIT 100').all(req.customerId);
   res.json(ids.map(({ id }) => orderView(getOrder(id))));
 });
@@ -614,7 +619,8 @@ app.get('/api/admin/orders', requireAdmin, (req, res) => {
   const campaign = String(req.query.campaign || '').trim();
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const where = []; const args = [];
-  if (q) { where.push('(order_number LIKE ? OR store_name LIKE ?)'); args.push(`%${q}%`, `%${q}%`); }
+  // ค้นหาได้ทั้งเลขออเดอร์ สาขา เบอร์ติดต่อ และอีเมล/ชื่อบัญชี Google ของผู้สั่ง
+  if (q) { where.push('(order_number LIKE ? OR store_name LIKE ? OR phone LIKE ? OR customer_id IN (SELECT id FROM customers WHERE email LIKE ? OR name LIKE ?))'); args.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`); }
   if (date) { where.push("substr(created_at, 1, 10) = ?"); args.push(date); }
   if (store) { where.push('store_id = ?'); args.push(store); }
   if (status) { where.push(`status IN (${status.split(',').map(() => '?').join(',')})`); args.push(...status.split(',')); }
