@@ -23,6 +23,7 @@ const ICONS = {
   check: '<svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.2l-3.5-3.5L4 14.2l5 5 11-11-1.4-1.4z"/></svg>',
   brush: '<svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M20.7 3.3a1 1 0 0 0-1.4 0L9.5 13.1l1.4 1.4 9.8-9.8a1 1 0 0 0 0-1.4zM8.2 14.4a3.3 3.3 0 0 0-3.3 3.1c-.1 1.2-.6 2-1.9 2.5.9.7 2.3 1 3.6 1a3.7 3.7 0 0 0 3.7-3.6l-2.1-3z"/></svg>',
   google: '<svg class="ic" viewBox="0 0 24 24"><path fill="#4285F4" d="M21.6 12.2c0-.7-.1-1.4-.2-2H12v3.9h5.4a4.6 4.6 0 0 1-2 3v2.5h3.2c1.9-1.7 3-4.3 3-7.4z"/><path fill="#34A853" d="M12 22c2.7 0 5-.9 6.6-2.4l-3.2-2.5c-.9.6-2 1-3.4 1-2.6 0-4.8-1.8-5.6-4.1H3.1v2.6A10 10 0 0 0 12 22z"/><path fill="#FBBC05" d="M6.4 14a6 6 0 0 1 0-3.9V7.5H3.1a10 10 0 0 0 0 9l3.3-2.5z"/><path fill="#EA4335" d="M12 6c1.5 0 2.8.5 3.8 1.5l2.8-2.8A10 10 0 0 0 3.1 7.5L6.4 10C7.2 7.8 9.4 6 12 6z"/></svg>',
+  users: '<svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M9 3a4 4 0 1 1 0 8 4 4 0 0 1 0-8zm7 1a3 3 0 1 1 0 6 3 3 0 0 1 0-6zM9 13c4.4 0 8 2 8 4.5V21H1v-3.5C1 15 4.6 13 9 13zm7 .5c3.4 0 6 1.6 6 3.7V21h-3.5v-3.5c0-1.4-.7-2.7-1.9-3.7l-.6-.3z"/></svg>',
   menu: '<svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M2 4h20v3H2V4zm0 6.5h20v3H2v-3zM2 17h20v3H2v-3z"/></svg>',
   logout: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h5"/><path d="M15 8l4 4-4 4"/><path d="M9 12h10"/></svg>',
   upload: '<svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l5 5-1.4 1.4L13 6.8V16h-2V6.8L8.4 9.4 7 8l5-5zM4 18h16v3H4v-3z"/></svg>',
@@ -154,6 +155,7 @@ function renderHeader(active, { admin = false, role = '', user = null, hideNav =
     items.push(mi('orders', ICONS.doc, 'Order'));
     items.push(mi('slips', ICONS.slip, 'Slip Issue'));
     items.push(mi('pickup', ICONS.store, 'Pick-up Order'));
+    items.push(mi('customers', ICONS.users, 'Customer'));
     if (user) items.push(`<button type="button" class="mi" id="logout" title="${esc(user.username)}">${ICONS.logout}<span>Logout</span></button>`);
     return `<nav class="nav burger" id="burger">
       <button type="button" class="burger-btn" id="burger-btn" aria-label="Menu" aria-haspopup="true" aria-expanded="false" aria-controls="burger-menu">${ICONS.menu}</button>

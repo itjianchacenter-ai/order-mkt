@@ -156,7 +156,7 @@ async function api(path, opts = {}) {
     const id = 'g:' + g.sub;
     // ออเดอร์ที่สั่งไว้ก่อนล็อกอินในเบราว์เซอร์นี้ ติดไปกับบัญชี
     for (const o of d.orders) if (o.customer_id === 'me') o.customer_id = id;
-    d.customer = { id, email: g.email, name: g.name, picture: g.picture }; pvSave(d); return meView();
+    d.customer = { id, email: g.email, name: g.name, picture: g.picture, created_at: (d.customer && d.customer.created_at) || pvNow(), last_login_at: pvNow() }; pvSave(d); return meView();
   }
   if (p === '/api/auth/logout' && method === 'POST') { d.customer = null; pvSave(d); return meView(); }
   const admin = d.session ? d.users.find((u) => u.id === d.session && u.active) : null;
@@ -230,6 +230,15 @@ async function api(path, opts = {}) {
   if (p === '/api/admin/me/password' && method === 'POST') {
     if (admin.password !== body.current) pvFail('รหัสผ่านเดิมไม่ถูกต้อง'); if (String(body.password || '').length < 6) pvFail('รหัสผ่านใหม่ต้องยาวอย่างน้อย 6 ตัวอักษร');
     admin.password = body.password; pvSave(d); return { ok: true };
+  }
+  if (p === '/api/admin/customers') {
+    const cs = d.customer ? [d.customer] : [];
+    const qq = (q.get('q') || '').toLowerCase();
+    const rows = cs.filter((c) => !qq || c.email.toLowerCase().includes(qq) || (c.name || '').toLowerCase().includes(qq)).map((c) => {
+      const os = d.orders.filter((o) => o.customer_id === c.id && o.status !== 'cancelled');
+      return { id: c.id, email: c.email, name: c.name, picture: c.picture, created_at: c.created_at || pvNow(), last_login_at: c.last_login_at || pvNow(), orders: os.length, paid_total: os.filter((o) => ['paid', 'picked_up'].includes(o.status)).reduce((s, o) => s + o.total, 0), last_order_at: os.map((o) => o.created_at).sort().pop() || null };
+    });
+    return { page: 1, pages: 1, total: rows.length, rows };
   }
   if (p === '/api/admin/users' && method === 'GET') { need('accounts'); const order = { it_admin: 0, admin: 1, finance: 2 }; return d.users.slice().sort((a, b) => order[a.role] - order[b.role] || a.username.localeCompare(b.username)).map(pvUserView); }
   if (p === '/api/admin/users' && method === 'POST') {

@@ -283,6 +283,17 @@ body.lb-lock{overflow:hidden}
 .cform input:disabled{background:var(--panel);color:var(--muted)}
 .cform .chk{display:flex;align-items:center;gap:8px;margin-top:14px;font-weight:500}
 .cform .actions{margin-top:16px;display:flex;gap:10px;flex-wrap:wrap}
+/* ตารางลูกค้า (หลังบ้าน) */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r-card);background:#fff;margin-bottom:16px}
+.jc-tbl{width:100%;border-collapse:collapse;font-size:14px}
+.jc-tbl th,.jc-tbl td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+.jc-tbl th{font-size:12px;letter-spacing:.3px;text-transform:uppercase;color:#555;background:#fafafa}
+.jc-tbl tr:last-child td{border-bottom:0}
+.jc-tbl .num{text-align:right}
+.jc-tbl .who{display:flex;align-items:center;gap:8px}
+.jc-tbl .who .avatar{width:26px;height:26px;border-radius:50%;object-fit:cover}
+.jc-tbl .mono a{color:inherit}
+.jc-tbl td.empty{text-align:center;color:#777;padding:28px}
 .fin-pill{display:inline-block;background:var(--tag);border-radius:var(--r-pill);padding:3px 12px;font-size:13px;font-weight:500;vertical-align:middle;margin-left:8px}
 .fin-pill.st-slip_uploaded{background:#d32f2f;color:#fff;font-weight:700}
 .fin-pill.st-paid{background:#1e8e3e;color:#fff;font-weight:700}

@@ -569,6 +569,24 @@ app.post('/api/admin/design/upload', requirePerm('campaigns'), designUpload.sing
 
 // Orders
 const PAGE_SIZE = 20; // รายการออเดอร์หลังบ้าน หน้าละ 20
+// ─── Customers (ลูกค้าที่ล็อกอินด้วย Google) ───
+// GET /api/admin/customers?q=&page=&all=1 → { page, pages, total, rows: [{ id, email, name, picture, created_at, last_login_at, orders, paid_total, last_order_at }] }
+app.get('/api/admin/customers', requireAdmin, (req, res) => {
+  const q = String(req.query.q || '').trim().toLowerCase();
+  const where = ['c.google_sub IS NOT NULL']; const args = [];
+  if (q) { where.push('(lower(c.email) LIKE ? OR lower(c.name) LIKE ?)'); args.push(`%${q}%`, `%${q}%`); }
+  const sql = `FROM customers c
+    LEFT JOIN (SELECT customer_id, COUNT(*) AS orders, SUM(CASE WHEN status IN ('paid','picked_up') THEN total ELSE 0 END) AS paid_total, MAX(created_at) AS last_order_at
+               FROM orders WHERE status <> 'cancelled' GROUP BY customer_id) o ON o.customer_id = c.id
+    WHERE ${where.join(' AND ')}`;
+  const total = db.prepare(`SELECT COUNT(*) AS n ${sql}`).get(...args).n;
+  const all = req.query.all === '1';
+  const page = all ? 1 : Math.max(1, parseInt(req.query.page, 10) || 1);
+  const rows = db.prepare(`SELECT c.id, c.email, c.name, c.picture, c.created_at, c.last_login_at, COALESCE(o.orders, 0) AS orders, COALESCE(o.paid_total, 0) AS paid_total, o.last_order_at ${sql}
+    ORDER BY c.last_login_at DESC, c.created_at DESC ${all ? '' : 'LIMIT ? OFFSET ?'}`).all(...args, ...(all ? [] : [PAGE_SIZE, (page - 1) * PAGE_SIZE]));
+  res.json({ page, pages: all ? 1 : Math.max(1, Math.ceil(total / PAGE_SIZE)), total, rows });
+});
+
 app.get('/api/admin/orders', requireAdmin, (req, res) => {
   const q = String(req.query.q || '').trim();
   const date = String(req.query.date || '').trim();      // YYYY-MM-DD

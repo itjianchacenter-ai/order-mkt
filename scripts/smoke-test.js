@@ -173,6 +173,9 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     r = await call('it', 'GET', '/api/admin/campaigns/jiancha-x-summer/design'); check('other campaign still on template', r.json.design.sets.length === 2 && r.json.design.promote_images.length === TEMPLATE_BANNERS);
 
     // ── campaign URLs: /<slug>/ shows that campaign; orders can name the campaign ──
+    r = await call('mkt', 'GET', '/api/admin/customers'); check('admin customer list has the google customer', r.status === 200 && r.json.total === 1 && r.json.rows[0].email === 'alice@gmail.com' && r.json.rows[0].orders >= 1, r.json);
+    r = await call('mkt', 'GET', '/api/admin/customers?q=nobody'); check('customer search filters', r.json.total === 0);
+    r = await call('customer', 'GET', '/api/admin/customers'); check('customer list needs admin', r.status === 401);
     r = await call('it', 'GET', '/api/admin/campaigns'); check('campaign slug + url', r.json.find((c) => c.id === 'jiancha-x-navori').slug === 'jianchaxnavori' && r.json.find((c) => c.id === 'jiancha-x-summer').slug === 'jianchaxsummer' && r.json[0].url === `/${r.json[0].slug}/`, r.json.map((c) => c.slug));
     r = await fetch(base + '/jianchaxnavori/'); check('campaign page served', r.status === 200 && /Match Sets|id="sets"/.test(await r.text()));
     r = await fetch(base + '/jianchaxnavori', { redirect: 'manual' }); check('campaign page redirects to trailing slash', r.status === 301 && r.headers.get('location') === '/jianchaxnavori/');
