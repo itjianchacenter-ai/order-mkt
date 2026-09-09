@@ -18,6 +18,12 @@ svg.ic,img.ic{width:18px;height:18px;flex:none;vertical-align:-3px;object-fit:co
 .site-head{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:28px}
 .brand{display:flex;align-items:center;gap:12px;text-decoration:none}
 .brand b{font-size:28px;font-weight:800;letter-spacing:-.5px;white-space:nowrap}
+/* โลโก้ JIANCHA (ตัวอักษร) x NAVORI แทนข้อความในหัวเว็บลูกค้า */
+.brand-logos{display:inline-flex;align-items:center;gap:12px}
+.brand-logos img{display:block;height:26px;width:auto}
+.brand-logos .lg-navori{height:22px}
+.brand-logos .x{font-size:22px;font-weight:800;line-height:1}
+@media (max-width:700px){.brand-logos img{height:22px}.brand-logos .lg-navori{height:19px}.brand-logos{gap:8px}}
 .brand .tag{background:var(--tag);border-radius:var(--r-pill);padding:2px 10px;font-size:11px;font-weight:800;letter-spacing:.3px}
 .nav{display:flex;gap:10px;flex-wrap:wrap}
 .pill{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:var(--r-pill);background:var(--white);padding:8px 14px;font-weight:500;text-decoration:none;position:relative;white-space:nowrap}

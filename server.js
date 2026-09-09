@@ -41,7 +41,7 @@ function loadMenu() {
   return { banner: m.banner || '', sets: (m.sets || []).map(normSet).filter((x) => x.active), drinks: (m.drinks || []).map(norm).filter((x) => x.active), desserts: (m.desserts || []).map(norm).filter((x) => x.active) };
 }
 function loadStores() {
-  return readJson('stores.json', []).filter((s) => s.active !== false).map((s) => ({ id: String(s.id), brand: s.brand || 'JIAN CHA', name: s.name || '', map_url: s.map_url || '' }));
+  return readJson('stores.json', []).filter((s) => s.active !== false).map((s) => ({ id: String(s.id), brand: s.brand || 'JIANCHA', name: s.name || '', map_url: s.map_url || '' }));
 }
 
 // ─── Campaign design: promote images + Match Sets shown on the customer homepage ───
@@ -254,7 +254,7 @@ function userView(u) { return { id: u.id, username: u.username, role: u.role, di
 function permissionsOf(u) { const p = {}; for (const k of Object.keys(PERMS)) p[k] = can(u, k); return p; }
 
 // ─── Static pages ───
-app.get('/backend', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'admin-page.html')));   // หลังบ้าน JIAN CHA Page
+app.get('/backend', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'admin-page.html')));   // หลังบ้าน JIANCHA Page
 app.get('/admin-page', (req, res) => res.redirect(301, '/backend' + (req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '')));   // ลิงก์เก่า
 app.get('/', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'landing.html')));   // "Order with us" -> active campaign page
 app.use(express.static(PUBLIC_DIR, { extensions: ['html'], index: false }));

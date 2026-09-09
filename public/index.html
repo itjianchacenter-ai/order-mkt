@@ -65,7 +65,11 @@
   const closed = menu.campaign && menu.campaign.orders_open === false;
   if (closed) $('#stock-err').textContent = 'แคมเปญนี้ปิดรับคำสั่งซื้อแล้ว / This campaign is closed';
   renderHero($('#hero'), menu.banners && menu.banners.length ? menu.banners : [menu.banner]);
-  if (menu.campaign && menu.campaign.name) { const b = $('.brand b'); if (b) b.textContent = menu.campaign.name; document.title = menu.campaign.name + ' | Order'; }
+  if (menu.campaign && menu.campaign.name) {
+    // แคมเปญอื่นที่ไม่ใช่ JIANCHA x NAVORI ใช้ชื่อเป็นข้อความแทนโลโก้
+    if (menu.campaign.name.toUpperCase().replace(/\s+/g, '') !== 'JIANCHAXNAVORI') { const br = $('.brand'); if (br) br.innerHTML = `<b>${esc(menu.campaign.name)}</b>`; }
+    document.title = menu.campaign.name + ' | Order';
+  }
 
   // One card per Match Set. Ticking the circle puts the set in the order; − / + change the quantity.
   const setCard = (s) => {

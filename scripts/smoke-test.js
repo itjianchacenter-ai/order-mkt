@@ -69,7 +69,7 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     r = await call('customer2', 'POST', '/api/auth/logout'); check('logout', r.json.logged_in === false);
     r = await call('customer2', 'GET', '/api/orders'); check('after logout the browser has no orders', r.json.length === 0);
     r = await call('customer2', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', lines: [{ set_id: A, quantity: 1 }] }); check('after logout ordering needs login again', r.status === 401);
-    check('order lines + total', order.lines.length === 2 && order.total === 2 * 215 + 245 && order.lines[0].name === 'SET A · Menu Name' && order.lines[0].items.length === 3 && order.store_name === 'JIAN CHA - Central World', order);
+    check('order lines + total', order.lines.length === 2 && order.total === 2 * 215 + 245 && order.lines[0].name === 'SET A · Menu Name' && order.lines[0].items.length === 3 && order.store_name === 'JIANCHA - Central World', order);
     r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', lines: [{ set_id: B, quantity: 1 }] });
     check('order numbers increment', r.json.order_number === String(BigInt(order.order_number) + 1n), r.json.order_number);
     const order2 = r.json;
@@ -220,8 +220,8 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     r = await call('it', 'GET', '/api/admin/summary?campaign=jiancha-x-navori'); check('summary per campaign', r.status === 200 && r.json.stock.remaining.total === 990);
 
     r = await call('it', 'POST', '/api/admin/logout'); r = await call('it', 'GET', '/api/admin/orders'); check('logout works', r.status === 401);
-    r = await fetch(base + '/backend'); check('back-office served at /backend', r.status === 200 && /JIAN CHA Page/.test(await r.text()));
-    r = await fetch(base + '/backend/'); check('back-office served at /backend/', r.status === 200 && /JIAN CHA Page/.test(await r.text()));
+    r = await fetch(base + '/backend'); check('back-office served at /backend', r.status === 200 && /JIANCHA Page/.test(await r.text()));
+    r = await fetch(base + '/backend/'); check('back-office served at /backend/', r.status === 200 && /JIANCHA Page/.test(await r.text()));
     r = await fetch(base + '/admin-page?view=orders', { redirect: 'manual' }); check('old /admin-page redirects to /backend', r.status === 301 && r.headers.get('location') === '/backend?view=orders');
     r = await fetch(base + '/cart'); check('extensionless page served', r.status === 200);
     r = await fetch(base + '/'); check('root is the Order with us landing', r.status === 200 && /Order with us/.test(await r.text()));

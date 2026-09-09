@@ -34,7 +34,7 @@ const ICONS = {
 
 /* Campaign pages live at /<slug>/ (e.g. /jianchaxnavori/). The root shows the active campaign. */
 const KNOWN_PAGES = ['', 'index', 'index.html', 'cart', 'orders', 'stores', 'pay', 'receipt', 'backend', 'admin-page'];
-const ADMIN_PATH = '/backend'; // หลังบ้าน JIAN CHA Page (เดิม /admin-page ยัง redirect มาที่นี่)
+const ADMIN_PATH = '/backend'; // หลังบ้าน JIANCHA Page (เดิม /admin-page ยัง redirect มาที่นี่)
 function campaignSlug() {
   const seg = (location.pathname.split('/')[1] || '').toLowerCase().replace(/\.html$/, '');
   return KNOWN_PAGES.includes(seg) ? '' : seg.replace(/[^a-z0-9]/g, '');
@@ -152,8 +152,8 @@ const ROLE_TAG = { it_admin: 'IT-ADMIN', admin: 'ADMIN', finance: 'FINANCE' };
 function renderHeader(active, { admin = false, role = '', user = null, hideNav = false } = {}) {
   const el = $('#site-head'); if (!el) return;
   const brand = admin
-    ? `<a class="brand" href="${ADMIN_PATH}"><b>JIAN CHA Page</b>${role ? `<span class="tag">${ROLE_TAG[role] || role.toUpperCase()}</span>` : ''}</a>`
-    : `<a class="brand" href="${H()}/"><b>JIANCHA x NAVORI</b></a>`;
+    ? `<a class="brand" href="${ADMIN_PATH}"><b>JIANCHA Page</b>${role ? `<span class="tag">${ROLE_TAG[role] || role.toUpperCase()}</span>` : ''}</a>`
+    : `<a class="brand" href="${H()}/" aria-label="JIANCHA x NAVORI"><span class="brand-logos"><img class="lg-jiancha" src="/img/logo-jiancha.png" alt="JIANCHA"><b class="x">x</b><img class="lg-navori" src="/img/logo-navori.png" alt="NAVORI"></span></a>`;
   // Back-office menu: a hamburger button (top-right) that opens a stacked list of wide buttons, icon left + label centred.
   const mi = (view, icon, label) => `<a class="mi ${active === view ? 'on' : ''}" href="${ADMIN_PATH}?view=${view}">${icon}<span>${label}</span></a>`;
   const adminNav = () => {
@@ -344,7 +344,7 @@ function orderCard(o, { light = false, open = false, extra = '', badge = '', asi
   }).join('');
   return `<div class="order" data-id="${esc(o.id)}">
     <button type="button" class="head ${light ? 'light' : ''}" aria-expanded="${open}">
-      <span><span class="t">Order Number: ${esc(o.order_number)}</span> ${badge}<br><span class="s"><b>Pick-up Location:</b> ${esc(o.store_name.replace(/^JIAN CHA - /, ''))}</span></span>
+      <span><span class="t">Order Number: ${esc(o.order_number)}</span> ${badge}<br><span class="s"><b>Pick-up Location:</b> ${esc(o.store_name.replace(/^(JIANCHA|JIAN CHA) - /, ''))}</span></span>
       <span class="amt">${aside}${money(o.total)} ฿ ${open ? ICONS.down : ICONS.right}</span>
     </button>
     <div class="body ${open ? '' : 'hidden'}">
