@@ -157,7 +157,7 @@ function applyCampaignBrand(name) {
 function renderHeader(active, { admin = false, role = '', user = null, hideNav = false } = {}) {
   const el = $('#site-head'); if (!el) return;
   const brand = admin
-    ? `<a class="brand" href="${ADMIN_PATH}"><b>JIANCHA Page</b>${role ? `<span class="tag">${ROLE_TAG[role] || role.toUpperCase()}</span>` : ''}</a>`
+    ? `<a class="brand" href="${ADMIN_PATH}" aria-label="JIANCHA Page"><img class="lg-admin" src="/img/logo-jiancha.png" alt="JIANCHA">${role ? `<span class="tag">${ROLE_TAG[role] || role.toUpperCase()}</span>` : ''}</a>`
     : `<a class="brand" href="${H()}/" aria-label="JIANCHA x NAVORI"><span class="brand-logos"><img class="lg-jiancha" src="/img/logo-jiancha.png" alt="JIANCHA"><b class="x">x</b><img class="lg-navori" src="/img/logo-navori.png" alt="NAVORI"></span></a>`;
   // Back-office menu: a hamburger button (top-right) that opens a stacked list of wide buttons, icon left + label centred.
   const mi = (view, icon, label) => `<a class="mi ${active === view ? 'on' : ''}" href="${ADMIN_PATH}?view=${view}">${icon}<span>${label}</span></a>`;
