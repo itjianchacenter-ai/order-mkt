@@ -55,7 +55,7 @@ function pvSeed() {
     mk(5, { customer: 'c4', store: 2, lines: [[0, 3]], status: 'pending', minutesAgo: 95 }),
     mk(6, { customer: 'c5', store: 4, lines: [[1, 2], [0, 1]], status: 'cancelled', minutesAgo: 80 }),
     mk(7, { customer: 'c6', store: 2, lines: [[0, 1], [1, 1]], status: 'slip_uploaded', minutesAgo: 25, slip: true, note: 'รับ 18:00' }),
-    mk(8, { customer: 'c7', store: 5, lines: [[0, 2]], status: 'slip_rejected', minutesAgo: 60, slip: true, reason: 'ยอดโอนไม่ตรง กรุณาอัปโหลดสลิปใหม่' }),
+    mk(8, { customer: 'c7', store: 4, lines: [[0, 2]], status: 'slip_rejected', minutesAgo: 60, slip: true, reason: 'ยอดโอนไม่ตรง กรุณาอัปโหลดสลิปใหม่' }),
   ];
   const users = [
     { id: 'u-it', username: 'it-admin', password: 'jiancha2026', role: 'it_admin', display_name: 'IT - Admin', department: 'IT', active: true, created_at: pvNow(-9000) },

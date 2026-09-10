@@ -317,7 +317,7 @@ function renderHero(el, banners) {
 
 /* pick-up chips */
 function storeChips(stores, selected) {
-  return stores.map((s) => `<button type="button" class="pill ${s.id === selected ? 'on' : ''}" data-store="${esc(s.id)}"><b>${esc(s.brand)}</b>&nbsp;- ${esc(s.name)}</button>`).join('');
+  return stores.map((s) => `<button type="button" class="pill ${s.id === selected ? 'on' : ''}" data-store="${esc(s.id)}">${esc(s.name)}</button>`).join('');
 }
 
 /* submit the cart as an order, then go to the payment page */
