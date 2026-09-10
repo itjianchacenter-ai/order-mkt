@@ -316,8 +316,10 @@ function renderHero(el, banners) {
 }
 
 /* pick-up chips */
+/* "โลโก้ JIANCHA - ชื่อสาขา" (ใช้ในปุ่มเลือกสาขาและ Order Summary) */
+const storeLabel = (s) => `<img class="brand-lg" src="/img/logo-jiancha.png" alt="${esc(s.brand)}"> - ${esc(s.name)}`;
 function storeChips(stores, selected) {
-  return stores.map((s) => `<button type="button" class="pill ${s.id === selected ? 'on' : ''}" data-store="${esc(s.id)}"><img class="brand-lg" src="/img/logo-jiancha.png" alt="${esc(s.brand)}"> - ${esc(s.name)}</button>`).join('');
+  return stores.map((s) => `<button type="button" class="pill ${s.id === selected ? 'on' : ''}" data-store="${esc(s.id)}">${storeLabel(s)}</button>`).join('');
 }
 
 /* submit the cart as an order, then go to the payment page */
