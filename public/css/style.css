@@ -13,6 +13,8 @@ input,textarea,select{font:inherit;color:inherit}
 @media (max-width:700px){.wrap{padding:16px 16px 48px}}
 svg.ic,img.ic{width:18px;height:18px;flex:none;vertical-align:-3px;object-fit:contain}
 .label svg.ic,.label img.ic{width:22px;height:22px}
+img.ic.wide{width:auto;height:18px}
+.label img.ic.wide{width:auto;height:24px}
 
 /* header */
 .site-head{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:28px}
