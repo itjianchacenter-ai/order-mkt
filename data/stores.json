@@ -7,17 +7,10 @@
     "active": true
   },
   {
-    "id": "groove",
-    "brand": "JIANCHA",
-    "name": "Groove",
-    "map_url": "https://www.google.com/maps/search/?api=1&query=JIAN+CHA+Groove+CentralWorld",
-    "active": true
-  },
-  {
     "id": "central-world",
     "brand": "JIANCHA",
-    "name": "Central World",
-    "map_url": "https://www.google.com/maps/search/?api=1&query=JIAN+CHA+CentralWorld",
+    "name": "Central World Groove",
+    "map_url": "https://www.google.com/maps/search/?api=1&query=JIAN+CHA+Groove+CentralWorld",
     "active": true
   },
   {
