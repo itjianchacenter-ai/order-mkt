@@ -41,27 +41,30 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     let r = await call('customer', 'GET', '/api/menu');
     check('menu loads with sets + campaign + stock', r.status === 200 && r.json.sets.length === 2 && r.json.sets[0].label === 'SET A' && r.json.sets[0].items.length === 3 && r.json.campaign.name === 'JIANCHA x NAVORI' && r.json.stock.limits.total === 1000, r.json.sets);
     const menu = r.json; const A = menu.sets[0].id, B = menu.sets[1].id; // SET A 289 · SET B 299, each set = 1 unit of stock
+    check('menu carries pick-up times', Array.isArray(menu.pickup_times) && menu.pickup_times.join('|') === '10:00-11:00 A.M.|13:00-15:00 P.M.|17:00-22:00 P.M.', menu.pickup_times);
     check('menu carries pick-up dates', Array.isArray(menu.pickup_dates) && menu.pickup_dates.join() === '2026-09-25,2026-09-26,2026-09-27' && menu.sets[0].price === 289 && menu.sets[1].price === 299 && menu.sets[0].items[0].name_th === 'เผือกโมจิ', menu.pickup_dates);
     r = await call('customer', 'GET', '/api/stores'); check('stores load (5 branches: Central World Groove merged, Emsphere)', r.status === 200 && r.json.length === 5 && r.json.some((x) => x.name === 'Emsphere') && r.json.some((x) => x.name === 'Central World Groove') && !r.json.some((x) => x.name === 'Groove'));
     const storeId = r.json[1].id; // central-world (Central World Groove)
 
     // ── customer: Google login required before ordering ──
     r = await call('customer', 'GET', '/api/me'); check('me: not logged in, login required', r.json.logged_in === false && r.json.login_required === true && r.json.google_client_id === 'test-client-id');
-    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', lines: [{ set_id: A, quantity: 1 }] }); check('order without login rejected (401)', r.status === 401 && r.json.login_required === true, r.json);
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 P.M.', lines: [{ set_id: A, quantity: 1 }] }); check('order without login rejected (401)', r.status === 401 && r.json.login_required === true, r.json);
     r = await call('customer', 'POST', '/api/auth/google', { credential: 'bad' }); check('bad google token rejected', r.status === 401);
     r = await call('customer', 'POST', '/api/auth/google', { credential: 'alice@wrong' }); check('token for another client id rejected', r.status === 401);
     r = await call('customer', 'POST', '/api/auth/google', { credential: 'alice', campaign: 'jianchaxnavori' }); check('google login ok', r.status === 200 && r.json.logged_in === true && r.json.email === 'alice@gmail.com' && r.json.name === 'Test alice', r.json);
     r = await call('customer', 'GET', '/api/me'); check('me: logged in', r.json.logged_in === true && r.json.email === 'alice@gmail.com');
 
     // ── customer: ordering ──
-    r = await call('customer', 'POST', '/api/orders', { store_id: '', phone: '0812345678', pickup_date: '2026-09-26', lines: [{ set_id: A, quantity: 1 }] }); check('order without store rejected', r.status === 400);
-    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', lines: [] }); check('order without lines rejected', r.status === 400);
-    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', lines: [{ set_id: 'nope', quantity: 1 }] }); check('unknown set rejected', r.status === 400);
+    r = await call('customer', 'POST', '/api/orders', { store_id: '', phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 P.M.', lines: [{ set_id: A, quantity: 1 }] }); check('order without store rejected', r.status === 400);
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 P.M.', lines: [] }); check('order without lines rejected', r.status === 400);
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 P.M.', lines: [{ set_id: 'nope', quantity: 1 }] }); check('unknown set rejected', r.status === 400);
     r = await call('customer', 'POST', '/api/orders', { store_id: storeId, lines: [{ set_id: A, quantity: 1 }] }); check('order without contact number rejected', r.status === 400 && r.json.field === 'phone', r.json);
     r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '12345', lines: [{ set_id: A, quantity: 1 }] }); check('order with bad contact number rejected', r.status === 400 && r.json.field === 'phone');
     r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', lines: [{ set_id: A, quantity: 1 }] }); check('order without pick-up date rejected', r.status === 400 && r.json.field === 'pickup_date', r.json);
-    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-28', lines: [{ set_id: A, quantity: 1 }] }); check('order with a date outside the campaign list rejected', r.status === 400 && r.json.field === 'pickup_date', r.json);
-    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, note: 'no sugar', phone: '081-234-5678', pickup_date: '2026-09-26', lines: [{ set_id: A, quantity: 2 }, { set_id: B, quantity: 1 }] });
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-28', pickup_time: '13:00-15:00 P.M.', lines: [{ set_id: A, quantity: 1 }] }); check('order with a date outside the campaign list rejected', r.status === 400 && r.json.field === 'pickup_date', r.json);
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', lines: [{ set_id: A, quantity: 1 }] }); check('order without pick-up time rejected', r.status === 400 && r.json.field === 'pickup_time', r.json);
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '09:00-10:00 A.M.', lines: [{ set_id: A, quantity: 1 }] }); check('order with a time outside the campaign list rejected', r.status === 400 && r.json.field === 'pickup_time', r.json);
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, note: 'no sugar', phone: '081-234-5678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 P.M.', lines: [{ set_id: A, quantity: 2 }, { set_id: B, quantity: 1 }] });
     check('order created', r.status === 201 && /^\d{13}$/.test(r.json.order_number) && r.json.campaign_id === 'jiancha-x-navori', r.json);
     const order = r.json;
     check('phone kept (digits only)', r.json.phone === '0812345678', r.json.phone);
@@ -71,9 +74,9 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     r = await call('customer2', 'GET', '/api/orders'); check('order history follows the google account', r.json.some((o) => o.id === order.id), r.json.map((o) => o.id));
     r = await call('customer2', 'POST', '/api/auth/logout'); check('logout', r.json.logged_in === false);
     r = await call('customer2', 'GET', '/api/orders'); check('after logout the browser has no orders', r.json.length === 0);
-    r = await call('customer2', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', lines: [{ set_id: A, quantity: 1 }] }); check('after logout ordering needs login again', r.status === 401);
-    check('order lines + total', order.lines.length === 2 && order.total === 2 * 289 + 299 && order.pickup_date === '2026-09-26' && order.lines[0].name === 'SET A · Mooncake Set with Pomegranate Iced Tea' && order.lines[0].items.length === 3 && order.store_name === 'JIANCHA - Central World Groove', order);
-    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', lines: [{ set_id: B, quantity: 1 }] });
+    r = await call('customer2', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 P.M.', lines: [{ set_id: A, quantity: 1 }] }); check('after logout ordering needs login again', r.status === 401);
+    check('order lines + total', order.lines.length === 2 && order.total === 2 * 289 + 299 && order.pickup_date === '2026-09-26' && order.pickup_time === '13:00-15:00 P.M.' && order.lines[0].name === 'SET A · Mooncake Set with Pomegranate Iced Tea' && order.lines[0].items.length === 3 && order.store_name === 'JIANCHA - Central World Groove', order);
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 P.M.', lines: [{ set_id: B, quantity: 1 }] });
     check('order numbers increment', r.json.order_number === String(BigInt(order.order_number) + 1n), r.json.order_number);
     const order2 = r.json;
     r = await call('customer', 'GET', '/api/orders'); check('history lists own orders', r.status === 200 && r.json.length === 2);
@@ -150,7 +153,7 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     r = await call('it', 'POST', '/api/admin/campaigns', { name: 'JIANCHA x SUMMER', promo_from: 5, promo_to: 1 }); check('bad promo range rejected', r.status === 400);
     r = await call('it', 'PATCH', `/api/admin/campaigns/${camp2.id}`, { active: true }); check('campaign activated', r.json.active === true);
     r = await call('customer', 'GET', '/api/menu'); check('customer site follows active campaign', r.json.campaign.id === camp2.id && r.json.stock.limits.total === 500 && r.json.stock.used.total === 0);
-    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', lines: [{ set_id: A, quantity: 1 }] }); check('order lands in new campaign', r.json.campaign_id === camp2.id);
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 P.M.', lines: [{ set_id: A, quantity: 1 }] }); check('order lands in new campaign', r.json.campaign_id === camp2.id);
     r = await call('it', 'PATCH', '/api/admin/campaigns/jiancha-x-navori', { active: true }); check('switch back', r.json.active === true);
     r = await call('it', 'GET', '/api/admin/campaigns'); check('exactly one active', r.json.filter((c) => c.active).length === 1);
 
@@ -170,9 +173,9 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     dz.sets.push({ id: 'C', label: 'SET C', name_en: 'Third', name_th: 'สาม', price: 99, items: [{ name_en: 'Tea', kind: 'drink' }], pieces: 2 });
     r = await call('it', 'PUT', '/api/admin/campaigns/jiancha-x-navori/design', dz); check('design saved + sanitized', r.status === 200 && r.json.design.promote_images.length === 1 && r.json.design.sets.length === 3 && r.json.design.sets[2].drink_pieces === 1 && r.json.campaign.cover === bannerUrl && r.json.campaign.set_count === 3, r.json);
     r = await call('customer', 'GET', '/api/menu'); check('homepage follows the design', r.json.banners.length === 1 && r.json.banner === bannerUrl && r.json.sets.length === 3 && r.json.sets[0].price === 300 && r.json.sets[0].image === bannerUrl, r.json);
-    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', lines: [{ set_id: 'C', quantity: 1 }] }); check('order a designed set (2 pieces)', r.status === 201 && r.json.total === 99 && r.json.lines[0].pieces === 2 && r.json.lines[0].name === 'SET C · Third', r.json);
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 P.M.', lines: [{ set_id: 'C', quantity: 1 }] }); check('order a designed set (2 pieces)', r.status === 201 && r.json.total === 99 && r.json.lines[0].pieces === 2 && r.json.lines[0].name === 'SET C · Third', r.json);
     const orderC = r.json;
-    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', lines: [{ set_id: 'Z', quantity: 1 }] }); check('unknown set rejected', r.status === 400);
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 P.M.', lines: [{ set_id: 'Z', quantity: 1 }] }); check('unknown set rejected', r.status === 400);
     dz.sets = dz.sets.filter((x) => x.id !== 'C'); r = await call('it', 'PUT', '/api/admin/campaigns/jiancha-x-navori/design', dz);
     r = await call('customer', 'GET', `/api/orders/${orderC.id}`); check('old order keeps its set snapshot', r.json.lines[0].name === 'SET C · Third');
     r = await call('fin', 'POST', `/api/admin/orders/${orderC.id}/status`, { status: 'cancelled' }); check('cleanup: cancel designed-set order', r.json.status === 'cancelled');
@@ -196,26 +199,26 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     r = await fetch(base + '/no-such-campaign/'); check('unknown campaign 404', r.status === 404);
     r = await call('customer', 'GET', '/api/menu?campaign=jianchaxsummer'); check('menu for a campaign by slug', r.json.campaign.id === 'jiancha-x-summer' && r.json.campaign.url === '/jianchaxsummer/' && r.json.stock.limits.total === 500, r.json.campaign);
     r = await call('customer', 'GET', '/api/menu'); check('root menu is the active campaign', r.json.campaign.id === 'jiancha-x-navori');
-    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', campaign: 'jianchaxsummer', lines: [{ set_id: A, quantity: 1 }] }); check('order into a campaign by slug', r.status === 201 && r.json.campaign_id === 'jiancha-x-summer', r.json);
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 P.M.', campaign: 'jianchaxsummer', lines: [{ set_id: A, quantity: 1 }] }); check('order into a campaign by slug', r.status === 201 && r.json.campaign_id === 'jiancha-x-summer', r.json);
     r = await call('fin', 'POST', `/api/admin/orders/${r.json.id}/status`, { status: 'cancelled' });
     r = await call('it', 'PATCH', '/api/admin/campaigns/jiancha-x-summer', { slug: 'jianchaxnavori' }); check('duplicate slug rejected', r.status === 409);
     r = await call('it', 'PATCH', '/api/admin/campaigns/jiancha-x-summer', { slug: 'Summer 2026!', orders_open: false }); check('slug normalized + orders closed', r.status === 200 && r.json.slug === 'summer2026' && r.json.orders_open === false, r.json);
     r = await fetch(base + '/summer2026/'); check('renamed campaign page served', r.status === 200);
-    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', campaign: 'summer2026', lines: [{ set_id: A, quantity: 1 }] }); check('closed campaign refuses orders', r.status === 400 && /ปิดรับ/.test(r.json.error));
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 P.M.', campaign: 'summer2026', lines: [{ set_id: A, quantity: 1 }] }); check('closed campaign refuses orders', r.status === 400 && /ปิดรับ/.test(r.json.error));
     r = await call('customer', 'GET', '/api/menu?campaign=summer2026'); check('closed flag visible to customers', r.json.campaign.orders_open === false);
     r = await call('it', 'POST', '/api/admin/campaigns', { name: 'JIANCHA x SUMMER', slug: 'x' }); check('too-short slug rejected', r.status === 400);
 
     // ── stock (campaign jiancha-x-navori: 1000 sets; 4 used above: A×2 + B×1 + B×1) ──
     r = await call('customer', 'GET', '/api/stock'); check('stock view', r.json.limits.total === 1000 && r.json.used.total === 4 && r.json.remaining.total === 996 && r.json.used.drink === 4 && r.json.used.dessert === 8, r.json);
     const big = (n) => Array.from({ length: n }, () => ({ set_id: A, quantity: 99 }));
-    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', lines: big(11) }); check('order above stock rejected', r.status === 409 && /เหลือเพียง 996/.test(r.json.error), r.json);
-    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', lines: big(10) }); check('order within stock accepted', r.status === 201, r.json);
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 P.M.', lines: big(11) }); check('order above stock rejected', r.status === 409 && /เหลือเพียง 996/.test(r.json.error), r.json);
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 P.M.', lines: big(10) }); check('order within stock accepted', r.status === 201, r.json);
     const bigOrder = r.json;
     r = await call('customer', 'GET', '/api/stock'); check('stock reserved by pending order', r.json.remaining.total === 6, r.json);
-    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', lines: [{ set_id: B, quantity: 7 }] }); check('7 sets vs 6 left rejected', r.status === 409, r.json);
-    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', lines: [{ set_id: B, quantity: 6 }] }); check('last 6 sets accepted', r.status === 201, r.json);
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 P.M.', lines: [{ set_id: B, quantity: 7 }] }); check('7 sets vs 6 left rejected', r.status === 409, r.json);
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 P.M.', lines: [{ set_id: B, quantity: 6 }] }); check('last 6 sets accepted', r.status === 201, r.json);
     r = await call('customer', 'GET', '/api/menu'); check('menu reports sold out', r.json.stock.sold_out === true && r.json.stock.remaining.total === 0, r.json.stock);
-    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', lines: [{ set_id: A, quantity: 1 }] }); check('sold out rejected', r.status === 409 && /หมดแล้ว/.test(r.json.error), r.json);
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 P.M.', lines: [{ set_id: A, quantity: 1 }] }); check('sold out rejected', r.status === 409 && /หมดแล้ว/.test(r.json.error), r.json);
     r = await call('it', 'POST', `/api/admin/orders/${bigOrder.id}/status`, { status: 'paid' });
     r = await call('it', 'POST', `/api/orders/${bigOrder.id}/code`); check('it-admin can issue code, unique', r.status === 200 && r.json.promo_code !== code1, r.json);
     r = await call('fin', 'POST', `/api/admin/orders/${bigOrder.id}/status`, { status: 'cancelled' }); check('finance cancels big order', r.json.status === 'cancelled');

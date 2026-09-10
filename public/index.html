@@ -29,6 +29,11 @@
     <div class="chips" id="dates"></div>
   </section>
 
+  <section class="section" id="sec-times" hidden>
+    <div class="label" id="lbl-time"></div><span class="lbl-sub th">เวลาที่รับของ</span>
+    <div class="chips" id="times"></div>
+  </section>
+
   <section class="section">
     <div class="label" id="lbl-summary"></div>
     <div class="summary">
@@ -47,6 +52,7 @@
           <hr>
           <div class="store" id="store-name">-</div>
           <div class="pickup-date" id="pickup-name" hidden></div>
+          <div class="pickup-date" id="pickup-time-name" hidden></div>
           <hr>
         </div>
         <button type="button" class="confirm" id="confirm"><b>Confirm</b><small class="th">ยืนยันคำสั่งซื้อ</small></button>
@@ -62,6 +68,7 @@
   $('#lbl-sets').innerHTML = ICONS.match + ' Match Sets';
   $('#lbl-pickup').innerHTML = ICONS.pin + ' Pick-up Location';
   $('#lbl-date').innerHTML = ICONS.cal + ' Pick-up Date';
+  $('#lbl-time').innerHTML = ICONS.clock + ' Pick-up Time';
   $('#lbl-summary').innerHTML = ICONS.tag + ' Order Summary';
   $('#contact-box').innerHTML = contactBox(); bindContactBox();
 
@@ -71,6 +78,9 @@
   const pickupDates = menu.pickup_dates || [];
   if (getPickup() && !pickupDates.includes(getPickup())) setPickup('');
   $('#sec-dates').hidden = !pickupDates.length;
+  const pickupTimes = menu.pickup_times || [];
+  if (getPickupTime() && !pickupTimes.includes(getPickupTime())) setPickupTime('');
+  $('#sec-times').hidden = !pickupTimes.length;
   let stock = menu.stock; const getStock = () => stock;
   async function refreshStock() { try { stock = await api(withCampaign('/api/stock')); } catch (e) { /* keep last */ } render(); }
   const closed = menu.campaign && menu.campaign.orders_open === false;
@@ -130,6 +140,7 @@
   $('#note').addEventListener('input', (e) => setNote(e.target.value));
   $('#stores').addEventListener('click', (e) => { const b = e.target.closest('[data-store]'); if (b) { setStore(b.dataset.store); render(); } });
   $('#dates').addEventListener('click', (e) => { const b = e.target.closest('[data-date]'); if (b) { setPickup(b.dataset.date); $('#err').textContent = ''; render(); } });
+  $('#times').addEventListener('click', (e) => { const b = e.target.closest('[data-time]'); if (b) { setPickupTime(b.dataset.time); $('#err').textContent = ''; render(); } });
 
   function render() {
     const cart = loadCart(); const storeId = getStore(); const store = stores.find((s) => s.id === storeId);
@@ -138,6 +149,7 @@
     sets.innerHTML = (menu.sets || []).map(setCard).join('') || '<div class="empty">ยังไม่มีเซ็ตเมนู</div>';
     $('#stores').innerHTML = storeChips(stores, storeId);
     $('#dates').innerHTML = pickupChips(pickupDates, getPickup());
+    $('#times').innerHTML = timeChips(pickupTimes, getPickupTime());
     const lines = cart.map((l) => `<li><span>${esc(lineName(l, map))}</span><span class="n">x ${l.quantity}</span><span class="p">${money(linePrice(l, map) * l.quantity)} ฿</span></li>`);
     // แสดงเฉพาะรายการที่มีจริง (เหมือนหน้า Cart) ไม่เติมแถวว่าง
     $('#lines').innerHTML = lines.join('') || '<li><span class="empty">ยังไม่มีรายการ</span></li>';
@@ -146,10 +158,12 @@
     $('#store-name').innerHTML = store ? storeLabel(store) : '-';
     const pd = $('#pickup-name'); pd.hidden = !pickupDates.length;
     pd.textContent = getPickup() ? `Pick-up Date - ${fmtPickupDate(getPickup()).en}` : 'Pick-up Date - ยังไม่ได้เลือกวันที่รับของ';
+    const pt = $('#pickup-time-name'); pt.hidden = !pickupTimes.length;
+    pt.textContent = getPickupTime() ? `Pick-up Time - ${getPickupTime()}` : 'Pick-up Time - ยังไม่ได้เลือกเวลาที่รับของ';
     updateCartBadge();
   }
   render();
-  $('#confirm').addEventListener('click', () => submitOrder({ storeId: getStore(), note: $('#note').value, phone: $('#phone').value.trim(), pickupDate: getPickup(), pickupDates, errEl: $('#err'), btn: $('#confirm'), onFail: refreshStock }));
+  $('#confirm').addEventListener('click', () => submitOrder({ storeId: getStore(), note: $('#note').value, phone: $('#phone').value.trim(), pickupDate: getPickup(), pickupDates, pickupTime: getPickupTime(), pickupTimes, errEl: $('#err'), btn: $('#confirm'), onFail: refreshStock }));
 })();
 </script>
 </body>
