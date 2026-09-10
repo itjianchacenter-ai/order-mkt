@@ -143,7 +143,7 @@
     $('#lines').innerHTML = lines.join('') || '<li><span class="empty">ยังไม่มีรายการ</span></li>';
     const total = cart.reduce((s, l) => s + linePrice(l, map) * l.quantity, 0);
     $('#total').textContent = money(total) + ' ฿';
-    $('#store-name').textContent = store ? `${store.brand} - ${store.name}` : '-';
+    $('#store-name').innerHTML = store ? storeLabel(store) : '-';
     const pd = $('#pickup-name'); pd.hidden = !pickupDates.length;
     pd.textContent = getPickup() ? `Pick-up Date - ${fmtPickupDate(getPickup()).en}` : 'Pick-up Date - ยังไม่ได้เลือกวันที่รับของ';
     updateCartBadge();

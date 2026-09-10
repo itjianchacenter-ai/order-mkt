@@ -168,10 +168,11 @@ a.btn{text-decoration:none}
 .pill.date .th{font-size:12px;font-weight:400}
 .pill.date.on .th{color:#ddd}
 .sumbox .pickup-date{font-size:15px;margin-top:4px}
-.sumbox span.pickup-date{display:block}
+.sumbox span.pickup-date{display:block;font-weight:400}
 .chips .pill b{font-weight:700}
 .chips .pill{gap:6px}
 .pill .brand-lg{display:block;height:14px;width:auto}
+.sumbox .store .brand-lg{display:inline-block;height:20px;width:auto;vertical-align:-3px}
 .pill.on .brand-lg{filter:invert(1)}
 
 /* summary */

@@ -60,7 +60,7 @@
     const total = cart.reduce((s, l) => s + linePrice(l, map) * l.quantity, 0);
     $('#total').textContent = money(total) + ' ฿';
     const dateRow = !pickupDates.length ? '' : (getPickup() ? `<span class="pickup-date">Pick-up Date - ${esc(fmtPickupDate(getPickup()).en)} <a class="th" style="font-size:12px;font-weight:400" href="${H()}/">เปลี่ยน</a></span>` : `<span class="pickup-date th" style="font-weight:400;font-size:13px">ยังไม่ได้เลือกวันที่รับของ <a href="${H()}/">เลือก</a></span>`);
-    $('#store-name').innerHTML = (store ? `<span class="th" style="font-size:13px;display:block">สถานที่รับของ</span>${esc(store.brand)} - ${esc(store.name)} <a class="th" style="font-size:12px;font-weight:400" href="${H()}/">เปลี่ยน</a>` : '<span class="th" style="font-weight:400;font-size:13px">ยังไม่ได้เลือกสถานที่รับของ</span>') + dateRow;
+    $('#store-name').innerHTML = (store ? `<span class="th" style="font-size:13px;display:block">สถานที่รับของ</span>${storeLabel(store)} <a class="th" style="font-size:12px;font-weight:400" href="${H()}/">เปลี่ยน</a>` : '<span class="th" style="font-weight:400;font-size:13px">ยังไม่ได้เลือกสถานที่รับของ</span>') + dateRow;
     updateCartBadge();
   }
   render();
