@@ -44,6 +44,7 @@
   const [menu, stores] = await Promise.all([getMenu(), api('/api/stores')]);
   const map = menuMap(menu);
   if (menu.campaign && menu.campaign.name) applyCampaignBrand(menu.campaign.name);
+  const pickupDates = menu.pickup_dates || []; if (getPickup() && !pickupDates.includes(getPickup())) setPickup('');
   let stock = menu.stock; const getStock = () => stock;
   async function refreshStock() { try { stock = await api(withCampaign('/api/stock')); } catch (e) { /* keep last */ } render(); }
   const closed = menu.campaign && menu.campaign.orders_open === false;
@@ -58,13 +59,15 @@
     $('#lines').innerHTML = cart.map((l) => `<li><span>${esc(lineName(l, map))}</span><span>x ${l.quantity}</span><span class="p">${money(linePrice(l, map) * l.quantity)} ฿</span></li>`).join('') || '<li><span class="empty">ยังไม่มีรายการ</span></li>';
     const total = cart.reduce((s, l) => s + linePrice(l, map) * l.quantity, 0);
     $('#total').textContent = money(total) + ' ฿';
-    $('#store-name').innerHTML = store ? `<span class="th" style="font-size:13px;display:block">สถานที่รับของ</span>${esc(store.brand)} - ${esc(store.name)} <a class="th" style="font-size:12px;font-weight:400" href="${H()}/">เปลี่ยน</a>` : '<span class="th" style="font-weight:400;font-size:13px">ยังไม่ได้เลือกสถานที่รับของ</span>';
+    const dateRow = !pickupDates.length ? '' : (getPickup() ? `<span class="pickup-date">Pick-up Date - ${esc(fmtPickupDate(getPickup()).en)} <a class="th" style="font-size:12px;font-weight:400" href="${H()}/">เปลี่ยน</a></span>` : `<span class="pickup-date th" style="font-weight:400;font-size:13px">ยังไม่ได้เลือกวันที่รับของ <a href="${H()}/">เลือก</a></span>`);
+    $('#store-name').innerHTML = (store ? `<span class="th" style="font-size:13px;display:block">สถานที่รับของ</span>${esc(store.brand)} - ${esc(store.name)} <a class="th" style="font-size:12px;font-weight:400" href="${H()}/">เปลี่ยน</a>` : '<span class="th" style="font-weight:400;font-size:13px">ยังไม่ได้เลือกสถานที่รับของ</span>') + dateRow;
     updateCartBadge();
   }
   render();
   $('#confirm').addEventListener('click', () => {
     if (!getStore()) { $('#err').textContent = 'กรุณาเลือกสาขาที่รับสินค้าที่หน้าแรก / Please choose a pick-up location on the campaign page'; return; }
-    submitOrder({ storeId: getStore(), note: getNote(), phone: $('#phone').value.trim(), errEl: $('#err'), btn: $('#confirm'), onFail: refreshStock });
+    if (pickupDates.length && !pickupDates.includes(getPickup())) { $('#err').textContent = 'กรุณาเลือกวันที่รับของที่หน้าแรก / Please choose a pick-up date on the campaign page'; return; }
+    submitOrder({ storeId: getStore(), note: getNote(), phone: $('#phone').value.trim(), pickupDate: getPickup(), pickupDates, errEl: $('#err'), btn: $('#confirm'), onFail: refreshStock });
   });
 })();
 </script>

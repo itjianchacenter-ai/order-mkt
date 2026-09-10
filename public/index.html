@@ -20,8 +20,13 @@
   </section>
 
   <section class="section">
-    <div class="label" id="lbl-pickup"></div>
+    <div class="label" id="lbl-pickup"></div><span class="lbl-sub th">สถานที่รับของ</span>
     <div class="chips" id="stores"></div>
+  </section>
+
+  <section class="section" id="sec-dates" hidden>
+    <div class="label" id="lbl-date"></div><span class="lbl-sub th">วันที่รับของ</span>
+    <div class="chips" id="dates"></div>
   </section>
 
   <section class="section">
@@ -41,6 +46,7 @@
           <h3 style="margin-top:14px">Pick-up Location</h3><span class="sub th">สถานที่รับของ</span>
           <hr>
           <div class="store" id="store-name">-</div>
+          <div class="pickup-date" id="pickup-name" hidden></div>
           <hr>
         </div>
         <button type="button" class="confirm" id="confirm"><b>Confirm</b><small class="th">ยืนยันคำสั่งซื้อ</small></button>
@@ -55,11 +61,16 @@
   renderHeader('home');
   $('#lbl-sets').innerHTML = ICONS.match + ' Match Sets';
   $('#lbl-pickup').innerHTML = ICONS.pin + ' Pick-up Location';
+  $('#lbl-date').innerHTML = ICONS.cal + ' Pick-up Date';
   $('#lbl-summary').innerHTML = ICONS.tag + ' Order Summary';
   $('#contact-box').innerHTML = contactBox(); bindContactBox();
 
   const [menu, stores] = await Promise.all([getMenu(), api('/api/stores')]);
   const map = menuMap(menu);
+  // วันที่รับของของแคมเปญ (ว่าง = ไม่ต้องเลือก) ค่าที่เคยเลือกแต่ไม่อยู่ในรายการแล้วจะถูกล้าง
+  const pickupDates = menu.pickup_dates || [];
+  if (getPickup() && !pickupDates.includes(getPickup())) setPickup('');
+  $('#sec-dates').hidden = !pickupDates.length;
   let stock = menu.stock; const getStock = () => stock;
   async function refreshStock() { try { stock = await api(withCampaign('/api/stock')); } catch (e) { /* keep last */ } render(); }
   const closed = menu.campaign && menu.campaign.orders_open === false;
@@ -82,7 +93,7 @@
         <label class="pick"><input type="checkbox" data-pick="${esc(s.id)}" ${qty ? 'checked' : ''}><span class="radio"></span></label>
         <div class="names">
           <span class="en">${esc(s.name_en)}</span><span class="th">${esc(s.name_th)}</span>
-          <ul class="items">${(s.items || []).map((i) => `<li>${esc(i.name_en)}${i.name_th ? ` <span class="th">(${esc(i.name_th)})</span>` : ''}</li>`).join('')}</ul>
+          <ul class="items">${(s.items || []).map((i) => `<li>${esc(i.name_en)}${i.name_th ? ` : <span class="th">${esc(i.name_th)}</span>` : ''}</li>`).join('')}</ul>
         </div>
         <div class="right">
           <b class="price">${money(s.price)}</b>
@@ -118,6 +129,7 @@
   $('#note').value = getNote();
   $('#note').addEventListener('input', (e) => setNote(e.target.value));
   $('#stores').addEventListener('click', (e) => { const b = e.target.closest('[data-store]'); if (b) { setStore(b.dataset.store); render(); } });
+  $('#dates').addEventListener('click', (e) => { const b = e.target.closest('[data-date]'); if (b) { setPickup(b.dataset.date); $('#err').textContent = ''; render(); } });
 
   function render() {
     const cart = loadCart(); const storeId = getStore(); const store = stores.find((s) => s.id === storeId);
@@ -125,16 +137,19 @@
     $('#confirm').disabled = Boolean(stock && stock.sold_out) || closed;
     sets.innerHTML = (menu.sets || []).map(setCard).join('') || '<div class="empty">ยังไม่มีเซ็ตเมนู</div>';
     $('#stores').innerHTML = storeChips(stores, storeId);
+    $('#dates').innerHTML = pickupChips(pickupDates, getPickup());
     const lines = cart.map((l) => `<li><span>${esc(lineName(l, map))}</span><span class="n">x ${l.quantity}</span><span class="p">${money(linePrice(l, map) * l.quantity)} ฿</span></li>`);
     while (lines.length < 4) lines.push('<li class="blank"></li>');
     $('#lines').innerHTML = lines.join('');
     const total = cart.reduce((s, l) => s + linePrice(l, map) * l.quantity, 0);
     $('#total').textContent = money(total) + ' ฿';
     $('#store-name').textContent = store ? `${store.brand} - ${store.name}` : '-';
+    const pd = $('#pickup-name'); pd.hidden = !pickupDates.length;
+    pd.textContent = getPickup() ? `Pick-up Date - ${fmtPickupDate(getPickup()).en}` : 'Pick-up Date - ยังไม่ได้เลือกวันที่รับของ';
     updateCartBadge();
   }
   render();
-  $('#confirm').addEventListener('click', () => submitOrder({ storeId: getStore(), note: $('#note').value, phone: $('#phone').value.trim(), errEl: $('#err'), btn: $('#confirm'), onFail: refreshStock }));
+  $('#confirm').addEventListener('click', () => submitOrder({ storeId: getStore(), note: $('#note').value, phone: $('#phone').value.trim(), pickupDate: getPickup(), pickupDates, errEl: $('#err'), btn: $('#confirm'), onFail: refreshStock }));
 })();
 </script>
 </body>

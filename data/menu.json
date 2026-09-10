@@ -7,13 +7,18 @@
     "from": 2026090001,
     "to": 2026092000
   },
+  "pickup_dates": [
+    "2026-09-25",
+    "2026-09-26",
+    "2026-09-27"
+  ],
   "sets": [
     {
       "id": "A",
       "label": "SET A",
-      "name_en": "Menu Name",
-      "name_th": "ชื่อเมนู ภาษาไทย",
-      "price": 215,
+      "name_en": "Mooncake Set with Pomegranate Iced Tea",
+      "name_th": "",
+      "price": 289,
       "image": "/img/menu/navori-set-a.jpg",
       "images": [
         "/img/menu/pomegranate-iced-tea.png",
@@ -23,28 +28,28 @@
       "pieces": 1,
       "items": [
         {
-          "name_en": "Menu name",
-          "name_th": "ชื่อเมนูน้ำ",
+          "name_en": "Mooncake",
+          "name_th": "เผือกโมจิ",
+          "kind": "dessert"
+        },
+        {
+          "name_en": "Snowy Mooncake",
+          "name_th": "ถั่วทองล้วน",
+          "kind": "dessert"
+        },
+        {
+          "name_en": "Pomegranate Iced Tea with Grape",
+          "name_th": "ชาทับทิมเย็นเนื้อองุ่น",
           "kind": "drink"
-        },
-        {
-          "name_en": "Menu name",
-          "name_th": "ชื่อเมนูขนม",
-          "kind": "dessert"
-        },
-        {
-          "name_en": "Menu name",
-          "name_th": "ชื่อเมนูขนม",
-          "kind": "dessert"
         }
       ]
     },
     {
       "id": "B",
       "label": "SET B",
-      "name_en": "Menu Name",
-      "name_th": "ชื่อเมนู ภาษาไทย",
-      "price": 245,
+      "name_en": "Mooncake Set with Pomegranate Tea Smoothie",
+      "name_th": "",
+      "price": 299,
       "image": "/img/menu/navori-set-b.jpg",
       "images": [
         "/img/menu/pomegranate-smoothie.png",
@@ -54,19 +59,19 @@
       "pieces": 1,
       "items": [
         {
-          "name_en": "Menu name",
-          "name_th": "ชื่อเมนูน้ำ",
+          "name_en": "Mooncake",
+          "name_th": "เผือกโมจิ",
+          "kind": "dessert"
+        },
+        {
+          "name_en": "Snowy Mooncake",
+          "name_th": "ถั่วทองล้วน",
+          "kind": "dessert"
+        },
+        {
+          "name_en": "Pomegranate Tea Smoothie with Grape",
+          "name_th": "ชาทับทิมปั่นเนื้อองุ่น",
           "kind": "drink"
-        },
-        {
-          "name_en": "Menu name",
-          "name_th": "ชื่อเมนูขนม",
-          "kind": "dessert"
-        },
-        {
-          "name_en": "Menu name",
-          "name_th": "ชื่อเมนูขนม",
-          "kind": "dessert"
         }
       ]
     }

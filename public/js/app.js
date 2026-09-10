@@ -42,7 +42,7 @@ function campaignSlug() {
 const B = () => (campaignSlug() ? '/' + campaignSlug() : '');          // path prefix for navigation
 const H = () => (window.PREVIEW_MODE ? '#' : '') + B();                // same, for href attributes
 const withCampaign = (p) => (campaignSlug() ? p + (p.includes('?') ? '&' : '?') + 'campaign=' + campaignSlug() : p);
-const CART_KEY = 'jc_cart' + (campaignSlug() ? ':' + campaignSlug() : ''), STORE_KEY = 'jc_store', NOTE_KEY = 'jc_note';
+const CART_KEY = 'jc_cart' + (campaignSlug() ? ':' + campaignSlug() : ''), STORE_KEY = 'jc_store', NOTE_KEY = 'jc_note', PICKUP_KEY = 'jc_pickup' + (campaignSlug() ? ':' + campaignSlug() : '');
 const money = (n) => (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -133,6 +133,20 @@ function cartSetQty(key, qty) { let c = loadCart(); c = c.map((l) => (lineKey(l)
 function cartClear() { saveCart([]); }
 const getStore = () => { try { return localStorage.getItem(STORE_KEY) || ''; } catch (e) { return ''; } };
 const setStore = (id) => { try { localStorage.setItem(STORE_KEY, id); } catch (e) { /* ignore */ } };
+const getPickup = () => { try { return localStorage.getItem(PICKUP_KEY) || ''; } catch (e) { return ''; } };
+const setPickup = (d) => { try { localStorage.setItem(PICKUP_KEY, d || ''); } catch (e) { /* ignore */ } };
+/* วันที่รับของ YYYY-MM-DD → { en: '25 September 2026', th: '25 กันยายน 2569' } */
+const TH_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+const EN_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+function fmtPickupDate(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || '')); if (!m) return { en: iso || '', th: '' };
+  const y = Number(m[1]), mo = Number(m[2]) - 1, d = Number(m[3]);
+  return { en: `${d} ${EN_MONTHS[mo] || m[2]} ${y}`, th: `${d} ${TH_MONTHS[mo] || m[2]} ${y + 543}` };
+}
+/* ปุ่มเลือกวันที่รับของ (บรรทัดบนอังกฤษ ล่างไทย พ.ศ.) */
+function pickupChips(dates, selected) {
+  return (dates || []).map((d) => { const f = fmtPickupDate(d); return `<button type="button" class="pill date ${d === selected ? 'on' : ''}" data-date="${esc(d)}"><b>${esc(f.en)}</b><span class="th">${esc(f.th)}</span></button>`; }).join('');
+}
 const getNote = () => { try { return localStorage.getItem(NOTE_KEY) || ''; } catch (e) { return ''; } };
 const setNote = (t) => { try { localStorage.setItem(NOTE_KEY, t); } catch (e) { /* ignore */ } };
 const PHONE_KEY = 'jc_phone';
@@ -307,22 +321,23 @@ function storeChips(stores, selected) {
 }
 
 /* submit the cart as an order, then go to the payment page */
-async function submitOrder({ storeId, note, phone = '', errEl, btn, onFail }) {
+async function submitOrder({ storeId, note, phone = '', pickupDate = '', pickupDates = [], errEl, btn, onFail }) {
   errEl.textContent = '';
   const lines = loadCart();
   if (!lines.length) { errEl.textContent = 'ยังไม่มีรายการในตะกร้า / Your cart is empty'; return; }
   if (!storeId) { errEl.textContent = 'กรุณาเลือกสาขาที่รับสินค้า / Please choose a pick-up location'; return; }
+  if (pickupDates.length && !pickupDates.includes(pickupDate)) { errEl.textContent = 'กรุณาเลือกวันที่รับของ / Please choose a pick-up date'; return; }
   if (!validPhone(phone)) { errEl.textContent = 'กรุณาใส่เบอร์ติดต่อผู้รับขนม (เบอร์มือถือ 10 หลัก) / Please enter the contact number'; const f = $('#phone'); if (f) { f.focus(); f.classList.add('invalid'); } return; }
   await loadMe();
-  if (needLogin()) { openLoginModal(() => submitOrder({ storeId, note, phone, errEl, btn, onFail })); return; }  // ล็อกอินก่อน แล้วยืนยันต่อให้อัตโนมัติ
+  if (needLogin()) { openLoginModal(() => submitOrder({ storeId, note, phone, pickupDate, pickupDates, errEl, btn, onFail })); return; }  // ล็อกอินก่อน แล้วยืนยันต่อให้อัตโนมัติ
   btn.disabled = true;
   try {
-    const order = await api('/api/orders', { method: 'POST', body: { store_id: storeId, note, phone: normalizePhone(phone), lines, campaign: campaignSlug() || undefined } });
+    const order = await api('/api/orders', { method: 'POST', body: { store_id: storeId, note, phone: normalizePhone(phone), pickup_date: pickupDate || undefined, lines, campaign: campaignSlug() || undefined } });
     cartClear(); setNote('');
     location.href = `${B()}/pay?order=${encodeURIComponent(order.id)}`;
   } catch (e) {
     btn.disabled = false;
-    if (/HTTP 401|เข้าสู่ระบบ|sign in/i.test(e.message)) { await loadMe(true); refreshAccountSlot(); openLoginModal(() => submitOrder({ storeId, note, phone, errEl, btn, onFail })); return; }
+    if (/HTTP 401|เข้าสู่ระบบ|sign in/i.test(e.message)) { await loadMe(true); refreshAccountSlot(); openLoginModal(() => submitOrder({ storeId, note, phone, pickupDate, pickupDates, errEl, btn, onFail })); return; }
     errEl.textContent = e.message; if (onFail) onFail();
   }
 }
@@ -349,7 +364,7 @@ function orderCard(o, { light = false, open = false, extra = '', badge = '', asi
   }).join('');
   return `<div class="order" data-id="${esc(o.id)}">
     <button type="button" class="head ${light ? 'light' : ''}" aria-expanded="${open}">
-      <span><span class="t">Order Number: ${esc(o.order_number)}</span> ${badge}<br><span class="s"><b>Pick-up Location:</b> ${esc(o.store_name.replace(/^(JIANCHA|JIAN CHA) - /, ''))}</span></span>
+      <span><span class="t">Order Number: ${esc(o.order_number)}</span> ${badge}<br><span class="s"><b>Pick-up Location:</b> ${esc(o.store_name.replace(/^(JIANCHA|JIAN CHA) - /, ''))}</span>${o.pickup_date ? `<br><span class="s"><b>Pick-up Date:</b> ${esc(fmtPickupDate(o.pickup_date).en)}</span>` : ''}</span>
       <span class="amt">${aside}${money(o.total)} ฿ ${open ? ICONS.down : ICONS.right}</span>
     </button>
     <div class="body ${open ? '' : 'hidden'}">
