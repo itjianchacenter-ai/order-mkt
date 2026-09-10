@@ -39,7 +39,8 @@ function loadMenu() {
       drink_pieces: items.filter((i) => i.kind === 'drink').length, dessert_pieces: items.filter((i) => i.kind === 'dessert').length };
   };
   const pickup_dates = (Array.isArray(m.pickup_dates) ? m.pickup_dates : []).map((x) => String(x || '').trim()).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x));
-  return { banner: m.banner || '', sets: (m.sets || []).map(normSet).filter((x) => x.active), drinks: (m.drinks || []).map(norm).filter((x) => x.active), desserts: (m.desserts || []).map(norm).filter((x) => x.active), pickup_dates };
+  const pickup_times = (Array.isArray(m.pickup_times) ? m.pickup_times : []).map((x) => String(x || '').trim().slice(0, 40)).filter(Boolean);
+  return { banner: m.banner || '', sets: (m.sets || []).map(normSet).filter((x) => x.active), drinks: (m.drinks || []).map(norm).filter((x) => x.active), desserts: (m.desserts || []).map(norm).filter((x) => x.active), pickup_dates, pickup_times };
 }
 function loadStores() {
   return readJson('stores.json', []).filter((s) => s.active !== false).map((s) => ({ id: String(s.id), brand: s.brand || 'JIANCHA', name: s.name || '', map_url: s.map_url || '' }));
@@ -67,9 +68,11 @@ function normalizeDesign(d) {
   }
   // pickup_dates: วันที่รับของให้ลูกค้าเลือก (YYYY-MM-DD) ว่าง = ใช้ของ template (data/menu.json)
   const pickup_dates = [...new Set((Array.isArray(src.pickup_dates) ? src.pickup_dates : []).map((x) => String(x || '').trim()).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x)))].sort().slice(0, 31);
-  return { promote_images, sets, pickup_dates };
+  // pickup_times: ช่วงเวลารับของ (ข้อความ) ว่าง = ใช้ของ template
+  const pickup_times = [...new Set((Array.isArray(src.pickup_times) ? src.pickup_times : []).map((x) => String(x || '').trim().slice(0, 40)).filter(Boolean))].slice(0, 24);
+  return { promote_images, sets, pickup_dates, pickup_times };
 }
-function defaultDesign() { const m = loadMenu(); return normalizeDesign({ promote_images: m.banner ? [m.banner] : [], sets: m.sets, pickup_dates: m.pickup_dates }); }
+function defaultDesign() { const m = loadMenu(); return normalizeDesign({ promote_images: m.banner ? [m.banner] : [], sets: m.sets, pickup_dates: m.pickup_dates, pickup_times: m.pickup_times }); }
 function campaignDesign(c) {
   if (c && c.design_json) { try { return normalizeDesign(JSON.parse(c.design_json)); } catch (e) { /* fall through */ } }
   return defaultDesign();
@@ -77,7 +80,7 @@ function campaignDesign(c) {
 /** What the customer site sells for a campaign: its design's active sets and promote images. */
 function menuFor(c) {
   const d = campaignDesign(c); const m = loadMenu();
-  return { banner: d.promote_images[0] || '', banners: d.promote_images, sets: d.sets.filter((x) => x.active), drinks: m.drinks, desserts: m.desserts, pickup_dates: d.pickup_dates.length ? d.pickup_dates : (Array.isArray(m.pickup_dates) ? m.pickup_dates : []) };
+  return { banner: d.promote_images[0] || '', banners: d.promote_images, sets: d.sets.filter((x) => x.active), drinks: m.drinks, desserts: m.desserts, pickup_dates: d.pickup_dates.length ? d.pickup_dates : (Array.isArray(m.pickup_dates) ? m.pickup_dates : []), pickup_times: d.pickup_times.length ? d.pickup_times : (Array.isArray(m.pickup_times) ? m.pickup_times : []) };
 }
 
 // First run: the three back-office accounts and the first campaign (stock / promo range seeded from menu.json)
@@ -287,6 +290,8 @@ app.post('/api/orders', (req, res) => {
   // วันที่รับของ: บังคับเลือกเมื่อแคมเปญกำหนดวันไว้ และต้องเป็นวันในรายการ
   const pickup_date = String((req.body && req.body.pickup_date) || '').trim();
   if (menu.pickup_dates.length && !menu.pickup_dates.includes(pickup_date)) return res.status(400).json({ error: 'กรุณาเลือกวันที่รับของ / Please choose a pick-up date', field: 'pickup_date' });
+  const pickup_time = String((req.body && req.body.pickup_time) || '').trim();
+  if (menu.pickup_times.length && !menu.pickup_times.includes(pickup_time)) return res.status(400).json({ error: 'กรุณาเลือกเวลาที่รับของ / Please choose a pick-up time', field: 'pickup_time' });
   const drinks = Object.fromEntries(menu.drinks.map((d) => [d.id, d]));
   const desserts = Object.fromEntries(menu.desserts.map((d) => [d.id, d]));
   const sets = Object.fromEntries(menu.sets.map((s) => [s.id, s]));
@@ -323,8 +328,8 @@ app.post('/api/orders', (req, res) => {
     touchCustomer(req.customerId); linkCustomerCampaign(req.customerId, campaign.id);
     const order_number = nextOrderNumber();
     // A zero-total order (free campaign item) has nothing to pay: it is paid on creation.
-    db.prepare(`INSERT INTO orders(id, order_number, customer_id, campaign_id, store_id, store_name, total, note, phone, pickup_date, status, paid_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, order_number, req.customerId, campaign.id, store.id, `${store.brand} - ${store.name}`, total, String(note).slice(0, 500), phone, menu.pickup_dates.length ? pickup_date : '',
+    db.prepare(`INSERT INTO orders(id, order_number, customer_id, campaign_id, store_id, store_name, total, note, phone, pickup_date, pickup_time, status, paid_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, order_number, req.customerId, campaign.id, store.id, `${store.brand} - ${store.name}`, total, String(note).slice(0, 500), phone, menu.pickup_dates.length ? pickup_date : '', menu.pickup_times.length ? pickup_time : '',
                 total > 0 ? 'pending' : 'paid', total > 0 ? null : new Date().toISOString().slice(0, 19).replace('T', ' '));
     const ins = db.prepare(`INSERT INTO order_lines(order_id, set_id, set_label, set_name, items_json, pieces, drink_pieces, dessert_pieces, drink_id, drink_name, dessert_id, dessert_name, quantity, unit_price, line_total)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -345,7 +350,7 @@ const SLIP_ACCEPTED = ['pending', 'slip_uploaded', 'slip_rejected'];
 function orderView(o, { admin = false } = {}) {
   const v = {
     id: o.id, order_number: o.order_number, campaign_id: o.campaign_id, campaign_name: o.campaign_name || '', store_id: o.store_id, store_name: o.store_name,
-    total: o.total, status: o.status, note: o.note, phone: o.phone || '', pickup_date: o.pickup_date || '', created_at: o.created_at, paid_at: o.paid_at,
+    total: o.total, status: o.status, note: o.note, phone: o.phone || '', pickup_date: o.pickup_date || '', pickup_time: o.pickup_time || '', created_at: o.created_at, paid_at: o.paid_at,
     picked_up_at: o.picked_up_at, has_slip: Boolean(o.slip_path), slip_reason: o.slip_reason,
     promo_code: o.promo_code || null, code_available: ['paid', 'picked_up'].includes(o.status), payable: PAYABLE.includes(o.status),
     lines: (o.lines || []).map((l) => {

@@ -92,6 +92,8 @@ if (!db.prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name = 'phone'"
 
 // orders.pickup_date: วันที่รับของที่ลูกค้าเลือก (YYYY-MM-DD จากรายการ pickup_dates ของแคมเปญ)
 if (!db.prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name = 'pickup_date'").get()) db.exec("ALTER TABLE orders ADD COLUMN pickup_date TEXT DEFAULT ''");
+// orders.pickup_time: ช่วงเวลารับของที่ลูกค้าเลือก (ข้อความจากรายการ pickup_times ของแคมเปญ เช่น 13:00-15:00 P.M.)
+if (!db.prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name = 'pickup_time'").get()) db.exec("ALTER TABLE orders ADD COLUMN pickup_time TEXT DEFAULT ''");
 
 // customers: Google account (migration for databases created before Google login)
 for (const [col, ddl] of [['google_sub', 'TEXT'], ['email', 'TEXT'], ['name', 'TEXT'], ['picture', 'TEXT'], ['last_login_at', 'TEXT']]) {
