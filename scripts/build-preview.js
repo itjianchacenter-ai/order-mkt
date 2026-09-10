@@ -7,7 +7,7 @@ const read = (p) => fs.readFileSync(p, 'utf8');
 const css = read(path.join(PUB, 'css/style.css'));
 const menu = JSON.parse(read(path.join(ROOT, 'data/menu.json'))); const stores = JSON.parse(read(path.join(ROOT, 'data/stores.json')));
 const normSet = (x) => { const items = (x.items || []).map((i) => ({ name_en: i.name_en || '', name_th: i.name_th || '', kind: i.kind || '' })); return { id: String(x.id), label: x.label || `SET ${x.id}`, name_en: x.name_en || '', name_th: x.name_th || '', price: Number(x.price) || 0, image: x.image || '', images: x.images || [], items, pieces: Number(x.pieces) > 0 ? Number(x.pieces) : 1, drink_pieces: items.filter((i) => i.kind === 'drink').length, dessert_pieces: items.filter((i) => i.kind === 'dessert').length }; };
-const menuPublic = { banner: menu.banner || '', stock: menu.stock || {}, promo_code: menu.promo_code || {}, sets: (menu.sets || []).filter((x) => x.active !== false).map(normSet), drinks: (menu.drinks || []).filter((x) => x.active !== false), desserts: (menu.desserts || []).filter((x) => x.active !== false) };
+const menuPublic = { banner: menu.banner || '', stock: menu.stock || {}, promo_code: menu.promo_code || {}, pickup_dates: Array.isArray(menu.pickup_dates) ? menu.pickup_dates : [], sets: (menu.sets || []).filter((x) => x.active !== false).map(normSet), drinks: (menu.drinks || []).filter((x) => x.active !== false), desserts: (menu.desserts || []).filter((x) => x.active !== false) };
 
 const toPreview = (js) => js
   .replace(/location\.href = /g, "location.hash = '#' + ")

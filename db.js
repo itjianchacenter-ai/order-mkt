@@ -90,6 +90,9 @@ CREATE TABLE IF NOT EXISTS campaigns (
 // orders.phone: เบอร์ติดต่อของผู้รับขนม (กรอกที่หน้า Cart)
 if (!db.prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name = 'phone'").get()) db.exec("ALTER TABLE orders ADD COLUMN phone TEXT DEFAULT ''");
 
+// orders.pickup_date: วันที่รับของที่ลูกค้าเลือก (YYYY-MM-DD จากรายการ pickup_dates ของแคมเปญ)
+if (!db.prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name = 'pickup_date'").get()) db.exec("ALTER TABLE orders ADD COLUMN pickup_date TEXT DEFAULT ''");
+
 // customers: Google account (migration for databases created before Google login)
 for (const [col, ddl] of [['google_sub', 'TEXT'], ['email', 'TEXT'], ['name', 'TEXT'], ['picture', 'TEXT'], ['last_login_at', 'TEXT']]) {
   if (!db.prepare("SELECT 1 FROM pragma_table_info('customers') WHERE name = ?").get(col)) db.exec(`ALTER TABLE customers ADD COLUMN ${col} ${ddl}`);

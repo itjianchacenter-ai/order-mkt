@@ -36,6 +36,7 @@
         <tr><th>Order Number</th><td class="mono">${esc(o.order_number)}</td></tr>
         <tr><th>Date <span class="th">/ วันที่สั่ง</span></th><td>${fmtDateTime(o.created_at)}</td></tr>
         <tr><th>Pick-up Location <span class="th">/ สถานที่รับของ</span></th><td><b>${esc(o.store_name)}</b></td></tr>
+        ${o.pickup_date ? `<tr><th>Pick-up Date <span class="th">/ วันที่รับของ</span></th><td><b>${esc(fmtPickupDate(o.pickup_date).en)}</b> <span class="th">(${esc(fmtPickupDate(o.pickup_date).th)})</span></td></tr>` : ''}
         <tr><th>Status <span class="th">/ สถานะ</span></th><td>${en} <span class="th">(${th})</span>${o.paid_at ? ' · ' + fmtDateTime(o.paid_at) : ''}</td></tr>
         ${o.phone ? `<tr><th>Contact number <span class="th">/ เบอร์ผู้รับ</span></th><td>${esc(o.phone)}</td></tr>` : ''}
         ${o.note ? `<tr><th>หมายเหตุ</th><td>${esc(o.note)}</td></tr>` : ''}

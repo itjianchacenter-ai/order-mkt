@@ -108,11 +108,12 @@ function pvNormDesign(src) {
   return { promote_images: (Array.isArray(src.promote_images) ? src.promote_images : []).filter(ok).slice(0, 10), sets };
 }
 function pvDesign(c) { return c.design ? pvNormDesign(c.design) : pvNormDesign({ promote_images: PREVIEW_MENU.banner ? [PREVIEW_MENU.banner] : [], sets: PREVIEW_MENU.sets }); }
-function pvMenuFor(c) { const dz = pvDesign(c); return { banner: dz.promote_images[0] || '', banners: dz.promote_images, sets: dz.sets.filter((x) => x.active), drinks: [], desserts: [] }; }
+function pvPickupDates(c) { const d = c.design && Array.isArray(c.design.pickup_dates) ? c.design.pickup_dates.filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(String(x))) : []; return d.length ? d : (PREVIEW_MENU.pickup_dates || []); }
+function pvMenuFor(c) { const dz = pvDesign(c); return { banner: dz.promote_images[0] || '', banners: dz.promote_images, sets: dz.sets.filter((x) => x.active), drinks: [], desserts: [], pickup_dates: pvPickupDates(c) }; }
 function pvCampaignView(c) { const dz = pvDesign(c); return { ...c, url: `/${c.slug}/`, orders_open: c.orders_open !== false, design: undefined, cover: dz.promote_images[0] || '', set_count: dz.sets.filter((x) => x.active).length, has_design: Boolean(c.design) }; }
 function pvCampaignName(d, id) { const c = d.campaigns.find((x) => x.id === id); return c ? c.name : ''; }
 function pvView(d, o, admin) {
-  const v = { id: o.id, order_number: o.order_number, campaign_id: o.campaign_id, campaign_name: pvCampaignName(d, o.campaign_id), store_id: o.store_id, store_name: o.store_name, total: o.total, status: o.status, note: o.note, phone: o.phone || '', created_at: o.created_at, paid_at: o.paid_at, picked_up_at: o.picked_up_at, has_slip: Boolean(o.slip_url), slip_reason: o.slip_reason, lines: o.lines, promo_code: o.promo_code || null, code_available: ['paid', 'picked_up'].includes(o.status), payable: ['pending', 'slip_rejected'].includes(o.status) };
+  const v = { id: o.id, order_number: o.order_number, campaign_id: o.campaign_id, campaign_name: pvCampaignName(d, o.campaign_id), store_id: o.store_id, store_name: o.store_name, total: o.total, status: o.status, note: o.note, phone: o.phone || '', pickup_date: o.pickup_date || '', created_at: o.created_at, paid_at: o.paid_at, picked_up_at: o.picked_up_at, has_slip: Boolean(o.slip_url), slip_reason: o.slip_reason, lines: o.lines, promo_code: o.promo_code || null, code_available: ['paid', 'picked_up'].includes(o.status), payable: ['pending', 'slip_rejected'].includes(o.status) };
   if (admin) { const c = pvCustomerOf(d, o.customer_id); Object.assign(v, { customer_email: c ? c.email : '', customer_name: c ? c.name : '' }); }
   if (admin) Object.assign(v, { customer_id: o.customer_id, slip_url: o.slip_url, slip_ref: o.slip_ref, slip_amount: o.slip_amount, slip_verified: o.slip_verified, cancelled_at: o.cancelled_at });
   return v;
@@ -206,6 +207,8 @@ async function api(path, opts = {}) {
     const store = PREVIEW_STORES.find((s) => s.id === String(body.store_id)); if (!store) pvFail('กรุณาเลือกสาขาที่รับสินค้า');
     if (!Array.isArray(body.lines) || !body.lines.length) pvFail('ยังไม่มีรายการในตะกร้า');
     const camp = reqCamp; if (camp.orders_open === false) pvFail('แคมเปญนี้ปิดรับคำสั่งซื้อแล้ว / This campaign is closed');
+    const pdates = pvPickupDates(camp); const pickup_date = String(body.pickup_date || '').trim();
+    if (pdates.length && !pdates.includes(pickup_date)) pvFail('กรุณาเลือกวันที่รับของ / Please choose a pick-up date');
     const SETS = Object.fromEntries(pvMenuFor(camp).sets.map((x) => [x.id, x]));
     const lines = body.lines.map((l) => {
       const s = SETS[String(l.set_id)]; const qty = parseInt(l.quantity, 10);
@@ -215,7 +218,7 @@ async function api(path, opts = {}) {
     const total = pvMoney(lines.reduce((s, l) => s + l.line_total, 0));
     const want = lines.reduce((w, r) => { w.total += r.quantity * r.pieces; w.drink += r.quantity * r.drink_pieces; w.dessert += r.quantity * r.dessert_pieces; return w; }, { drink: 0, dessert: 0, total: 0 });
     const short = pvStockShortfall(d, camp, want); if (short) pvFail(short);
-    const o = { promo_code: null, id: pvUuid(), order_number: pvNextNumber(d), customer_id: me, campaign_id: camp.id, store_id: store.id, store_name: `${store.brand} - ${store.name}`, total, status: total > 0 ? 'pending' : 'paid', note: String(body.note || '').slice(0, 500), phone: String(body.phone || '').replace(/[^\d+]/g, '').slice(0, 20), created_at: pvNow(), paid_at: total > 0 ? null : pvNow(), picked_up_at: null, cancelled_at: null, slip_url: '', slip_hash: '', slip_ref: '', slip_amount: null, slip_reason: '', slip_verified: 0, lines };
+    const o = { promo_code: null, id: pvUuid(), order_number: pvNextNumber(d), customer_id: me, campaign_id: camp.id, store_id: store.id, store_name: `${store.brand} - ${store.name}`, total, status: total > 0 ? 'pending' : 'paid', note: String(body.note || '').slice(0, 500), phone: String(body.phone || '').replace(/[^\d+]/g, '').slice(0, 20), pickup_date: pdates.length ? pickup_date : '', created_at: pvNow(), paid_at: total > 0 ? null : pvNow(), picked_up_at: null, cancelled_at: null, slip_url: '', slip_hash: '', slip_ref: '', slip_amount: null, slip_reason: '', slip_verified: 0, lines };
     d.orders.unshift(o); pvSave(d); return pvView(d, o);
   }
   // ประวัติการสั่งซื้อแยกตามบัญชี Google: ยังไม่ล็อกอิน = ไม่มีออเดอร์
