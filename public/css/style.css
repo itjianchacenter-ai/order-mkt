@@ -170,6 +170,9 @@ a.btn{text-decoration:none}
 .sumbox .pickup-date{font-size:15px;margin-top:4px}
 .sumbox span.pickup-date{display:block}
 .chips .pill b{font-weight:700}
+.chips .pill{gap:6px}
+.pill .brand-lg{display:block;height:14px;width:auto}
+.pill.on .brand-lg{filter:invert(1)}
 
 /* summary */
 .summary{display:grid;grid-template-columns:1.6fr 1fr;gap:24px;align-items:start}
