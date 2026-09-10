@@ -13,6 +13,8 @@ input,textarea,select{font:inherit;color:inherit}
 @media (max-width:700px){.wrap{padding:16px 16px 48px}}
 svg.ic,img.ic{width:18px;height:18px;flex:none;vertical-align:-3px;object-fit:contain}
 .label svg.ic,.label img.ic{width:22px;height:22px}
+img.ic.wide{width:auto;height:18px}
+.label img.ic.wide{width:auto;height:24px}
 
 /* header */
 .site-head{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:28px}
@@ -178,7 +180,6 @@ a.btn{text-decoration:none}
 .lines li:last-child{border-bottom:1px solid var(--line)}
 .lines li .n{text-align:right}
 .lines li .p{font-weight:700;text-align:right;min-width:90px}
-.lines .blank{height:44px;border-bottom:1px solid var(--line)}
 .notebox{border:1px solid var(--line);border-radius:10px;background:#fff;padding:14px 22px;margin-top:20px}
 .notebox b{display:block;margin-bottom:6px}
 .telbox label{display:block;margin-bottom:6px}

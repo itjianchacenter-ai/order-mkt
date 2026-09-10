@@ -139,8 +139,8 @@
     $('#stores').innerHTML = storeChips(stores, storeId);
     $('#dates').innerHTML = pickupChips(pickupDates, getPickup());
     const lines = cart.map((l) => `<li><span>${esc(lineName(l, map))}</span><span class="n">x ${l.quantity}</span><span class="p">${money(linePrice(l, map) * l.quantity)} ฿</span></li>`);
-    while (lines.length < 4) lines.push('<li class="blank"></li>');
-    $('#lines').innerHTML = lines.join('');
+    // แสดงเฉพาะรายการที่มีจริง (เหมือนหน้า Cart) ไม่เติมแถวว่าง
+    $('#lines').innerHTML = lines.join('') || '<li><span class="empty">ยังไม่มีรายการ</span></li>';
     const total = cart.reduce((s, l) => s + linePrice(l, map) * l.quantity, 0);
     $('#total').textContent = money(total) + ' ฿';
     $('#store-name').textContent = store ? `${store.brand} - ${store.name}` : '-';
