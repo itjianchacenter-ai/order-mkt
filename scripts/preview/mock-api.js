@@ -115,7 +115,7 @@ function pvCampaignView(c) { const dz = pvDesign(c); return { ...c, url: `/${c.s
 function pvCampaignName(d, id) { const c = d.campaigns.find((x) => x.id === id); return c ? c.name : ''; }
 function pvView(d, o, admin) {
   const v = { id: o.id, order_number: o.order_number, campaign_id: o.campaign_id, campaign_name: pvCampaignName(d, o.campaign_id), store_id: o.store_id, store_name: o.store_name, total: o.total, status: o.status, note: o.note, phone: o.phone || '', pickup_date: o.pickup_date || '', pickup_time: o.pickup_time || '', created_at: o.created_at, paid_at: o.paid_at, picked_up_at: o.picked_up_at, has_slip: Boolean(o.slip_url), slip_reason: o.slip_reason, lines: o.lines, promo_code: o.promo_code || null, code_available: ['paid', 'picked_up'].includes(o.status), payable: ['pending', 'slip_rejected'].includes(o.status) };
-  if (admin) { const c = pvCustomerOf(d, o.customer_id); Object.assign(v, { customer_email: c ? c.email : '', customer_name: c ? c.name : '' }); }
+  if (admin) { const c = pvCustomerOf(d, o.customer_id); Object.assign(v, { customer_email: c ? c.email : '', customer_name: c ? c.name : '', pdpa_accepted_at: o.pdpa_accepted_at || '' }); }
   if (admin) Object.assign(v, { customer_id: o.customer_id, slip_url: o.slip_url, slip_ref: o.slip_ref, slip_amount: o.slip_amount, slip_verified: o.slip_verified, cancelled_at: o.cancelled_at });
   return v;
 }
@@ -168,8 +168,10 @@ async function api(path, opts = {}) {
   // ลูกค้าที่ล็อกอิน (Google) เก็บใน d.customer (อ้างอิงแถวเดียวกับทะเบียน d.customers); ยังไม่ล็อกอิน = 'me' (ตัวตนของเบราว์เซอร์)
   if (d.customer) d.customer = pvCustomerOf(d, d.customer.id) || d.customer;
   const me = d.customer ? d.customer.id : 'me';
-  const meView = () => ({ logged_in: Boolean(d.customer), login_required: true, google_client_id: (typeof PREVIEW_GOOGLE_CLIENT_ID === 'string' ? PREVIEW_GOOGLE_CLIENT_ID : ''), email: d.customer ? d.customer.email : '', name: d.customer ? d.customer.name : '', picture: d.customer ? d.customer.picture : '' });
+  const meView = () => ({ logged_in: Boolean(d.customer), login_required: true, google_client_id: (typeof PREVIEW_GOOGLE_CLIENT_ID === 'string' ? PREVIEW_GOOGLE_CLIENT_ID : ''), email: d.customer ? d.customer.email : '', name: d.customer ? d.customer.name : '', picture: d.customer ? d.customer.picture : '', pdpa_accepted_at: (d.customer && d.customer.pdpa_accepted_at) || d.pdpa_anon || '' });
   if (p === '/api/me') return meView();
+  // ยอมรับ PDPA: เก็บกับบัญชีที่ล็อกอิน หรือกับเบราว์เซอร์นี้ (d.pdpa_anon) แล้วติดไปกับบัญชีเมื่อล็อกอิน
+  if (p === '/api/pdpa' && method === 'POST') { const at = pvNow(); if (d.customer) d.customer.pdpa_accepted_at = d.customer.pdpa_accepted_at || at; else d.pdpa_anon = d.pdpa_anon || at; pvSave(d); return meView(); }
   if (p === '/api/auth/google' && method === 'POST') {
     let g = null;
     if (body.credential) { try { const payload = JSON.parse(atob(String(body.credential).split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); g = { sub: payload.sub, email: payload.email, name: payload.name || payload.email, picture: payload.picture || '' }; } catch (e) { pvFail('เข้าสู่ระบบด้วย Google ไม่สำเร็จ'); } }
@@ -185,6 +187,7 @@ async function api(path, opts = {}) {
     for (const o of d.orders) if (o.customer_id === id && o.campaign_id && !camps[o.campaign_id]) camps[o.campaign_id] = o.created_at;
     if (!acct) { acct = { id, created_at: pvNow() }; d.customers.push(acct); }
     Object.assign(acct, { email: g.email, name: g.name || acct.name, picture: g.picture || acct.picture || '', last_login_at: pvNow(), campaigns: camps });
+    if (!acct.pdpa_accepted_at && d.pdpa_anon) acct.pdpa_accepted_at = d.pdpa_anon;
     d.customer = acct; pvSave(d); return meView();
   }
   if (p === '/api/auth/logout' && method === 'POST') { d.customer = null; pvSave(d); return meView(); }
@@ -221,7 +224,7 @@ async function api(path, opts = {}) {
     const total = pvMoney(lines.reduce((s, l) => s + l.line_total, 0));
     const want = lines.reduce((w, r) => { w.total += r.quantity * r.pieces; w.drink += r.quantity * r.drink_pieces; w.dessert += r.quantity * r.dessert_pieces; return w; }, { drink: 0, dessert: 0, total: 0 });
     const short = pvStockShortfall(d, camp, want); if (short) pvFail(short);
-    const o = { promo_code: null, id: pvUuid(), order_number: pvNextNumber(d), customer_id: me, campaign_id: camp.id, store_id: store.id, store_name: `${store.brand} - ${store.name}`, total, status: total > 0 ? 'pending' : 'paid', note: String(body.note || '').slice(0, 500), phone: String(body.phone || '').replace(/[^\d+]/g, '').slice(0, 20), pickup_date: pdates.length ? pickup_date : '', pickup_time: ptimes.length ? pickup_time : '', created_at: pvNow(), paid_at: total > 0 ? null : pvNow(), picked_up_at: null, cancelled_at: null, slip_url: '', slip_hash: '', slip_ref: '', slip_amount: null, slip_reason: '', slip_verified: 0, lines };
+    const o = { promo_code: null, id: pvUuid(), order_number: pvNextNumber(d), customer_id: me, campaign_id: camp.id, store_id: store.id, store_name: `${store.brand} - ${store.name}`, total, status: total > 0 ? 'pending' : 'paid', note: String(body.note || '').slice(0, 500), phone: String(body.phone || '').replace(/[^\d+]/g, '').slice(0, 20), pickup_date: pdates.length ? pickup_date : '', pickup_time: ptimes.length ? pickup_time : '', pdpa_accepted_at: (d.customer && d.customer.pdpa_accepted_at) || '', created_at: pvNow(), paid_at: total > 0 ? null : pvNow(), picked_up_at: null, cancelled_at: null, slip_url: '', slip_hash: '', slip_ref: '', slip_amount: null, slip_reason: '', slip_verified: 0, lines };
     d.orders.unshift(o); pvSave(d); return pvView(d, o);
   }
   // ประวัติการสั่งซื้อแยกตามบัญชี Google: ยังไม่ล็อกอิน = ไม่มีออเดอร์
