@@ -330,6 +330,47 @@ function storeChips(stores, selected) {
 }
 
 /* submit the cart as an order, then go to the payment page */
+
+/* ─── PDPA: pop-up ขอความยินยอมเก็บ/ใช้ข้อมูลส่วนบุคคล (ข้อความจาก "ฟอร์ม PDPA.docx") ───
+   ลูกค้าใหม่ที่ยังไม่เคยกดยอมรับจะเจอ pop-up ทุกครั้งที่เปิดหน้าแคมเปญ จนกว่าจะติ๊กยอมรับ
+   เก็บใน localStorage ของเบราว์เซอร์ + ส่งไป server (/api/pdpa) ให้ติดกับบัญชี */
+const PDPA_KEY = 'jc_pdpa';
+const PDPA_TITLE = 'การให้ความยินยอมในการเก็บรวบรวมและใช้ข้อมูลส่วนบุคคล';
+const PDPA_PARAS = [
+  'ข้าพเจ้ารับทราบและยินยอมให้ บริษัท เจี้ยนชา จำกัด เก็บรวบรวม ใช้ และประมวลผลข้อมูลส่วนบุคคลที่ข้าพเจ้าให้ไว้ผ่านเว็บไซต์ เช่น ชื่อ-นามสกุล หมายเลขโทรศัพท์ อีเมล และข้อมูลอื่นที่จำเป็น เพื่อวัตถุประสงค์ในการดำเนินการเกี่ยวกับการสั่งซื้อสินค้า การยืนยันคำสั่งซื้อ การติดต่อประสานงานเกี่ยวกับคำสั่งซื้อ รวมถึงการจัดทำและบริหารสิทธิประโยชน์ โปรโมชั่น และกิจกรรมทางการตลาดที่เกี่ยวข้องกับ JIANCHA และแคมเปญที่ข้าพเจ้าเข้าร่วม',
+  'บริษัทอาจนำข้อมูลดังกล่าวไปใช้เพื่อวิเคราะห์และประเมินผลการจัดทำโปรโมชั่นและกิจกรรมทางการตลาด เพื่อพัฒนาการสื่อสารและประสบการณ์การให้บริการแก่ลูกค้า รวมถึงใช้สำหรับการติดต่อแจ้งข้อมูลที่เกี่ยวข้องกับโปรโมชั่นหรือกิจกรรมที่ข้าพเจ้าได้เข้าร่วม ทั้งนี้ บริษัทจะใช้ข้อมูลส่วนบุคคลตามวัตถุประสงค์ที่แจ้งไว้ และจะไม่ใช้ข้อมูลดังกล่าวนอกเหนือจากวัตถุประสงค์โดยไม่มีฐานทางกฎหมายหรือความยินยอมที่เหมาะสมตามที่กฎหมายกำหนด',
+  'บริษัทจะเก็บรักษาข้อมูลส่วนบุคคลด้วยมาตรการรักษาความมั่นคงปลอดภัยที่เหมาะสม และจะเปิดเผยหรือส่งต่อข้อมูลให้แก่บุคคลภายนอกเฉพาะกรณีที่จำเป็นต่อการดำเนินการตามวัตถุประสงค์ดังกล่าว หรือเมื่อมีกฎหมายกำหนดหรืออนุญาตให้ดำเนินการได้',
+  'ข้าพเจ้ารับทราบว่าการให้ความยินยอมเป็นไปโดยสมัครใจ และสามารถถอนความยินยอมได้ตามช่องทางที่บริษัทกำหนด ทั้งนี้ การถอนความยินยอมจะไม่กระทบต่อการประมวลผลข้อมูลส่วนบุคคลที่ได้ดำเนินการไปแล้วก่อนการถอนความยินยอม โดยบริษัทจะดำเนินการเกี่ยวกับข้อมูลส่วนบุคคลตามสิทธิของเจ้าของข้อมูลส่วนบุคคลและกฎหมายคุ้มครองข้อมูลส่วนบุคคลที่เกี่ยวข้อง',
+];
+const PDPA_CONSENT = 'ข้าพเจ้ายอมรับและยินยอมให้ JIANCHA เก็บรวบรวม ใช้ และประมวลผลข้อมูลส่วนบุคคลตามรายละเอียดข้างต้น';
+const pdpaAccepted = () => { try { return Boolean(localStorage.getItem(PDPA_KEY)) || Boolean(ME && ME.pdpa_accepted_at); } catch (e) { return Boolean(ME && ME.pdpa_accepted_at); } };
+function openPdpaModal(onAccept) {
+  let m = $('#pdpa-modal');
+  if (!m) {
+    m = document.createElement('div'); m.id = 'pdpa-modal'; m.className = 'modal pdpa';
+    m.innerHTML = `<div class="modal-card pdpa-card" role="dialog" aria-modal="true" aria-labelledby="pdpa-title">
+      <h3 id="pdpa-title">${esc(PDPA_TITLE)}</h3><hr>
+      <div class="pdpa-body">${PDPA_PARAS.map((p) => `<p>${esc(p)}</p>`).join('')}</div>
+      <label class="pdpa-consent"><input type="checkbox" id="pdpa-check"><span class="box"></span><b>${esc(PDPA_CONSENT)}</b></label>
+      <button type="button" class="confirm" id="pdpa-accept" disabled><b>ยอมรับ</b><small class="th">Accept &amp; continue</small></button>
+    </div>`;
+    document.body.appendChild(m);
+    $('#pdpa-check').addEventListener('change', (e) => { $('#pdpa-accept').disabled = !e.target.checked; });
+    $('#pdpa-accept').addEventListener('click', async () => {
+      if (!$('#pdpa-check').checked) return;
+      const at = new Date().toISOString();
+      try { localStorage.setItem(PDPA_KEY, at); } catch (e) { /* ignore */ }
+      try { ME = await api('/api/pdpa', { method: 'POST', body: { accepted_at: at } }); } catch (e) { /* บันทึกฝั่ง server ไม่ได้ก็ยังใช้ค่าในเบราว์เซอร์ */ }
+      m.classList.remove('open'); document.body.classList.remove('pdpa-lock');
+      if (onAccept) onAccept();
+    });
+  }
+  $('#pdpa-check').checked = false; $('#pdpa-accept').disabled = true;
+  m.classList.add('open'); document.body.classList.add('pdpa-lock');
+}
+/* เรียกตอนเปิดหน้าแคมเปญ: ยังไม่เคยยอมรับ → เปิด pop-up (ปิดไม่ได้จนกว่าจะยอมรับ) */
+async function requirePdpa() { await loadMe(); if (!pdpaAccepted()) openPdpaModal(); }
+
 async function submitOrder({ storeId, note, phone = '', pickupDate = '', pickupDates = [], pickupTime = '', pickupTimes = [], errEl, btn, onFail }) {
   errEl.textContent = '';
   const lines = loadCart();
@@ -381,6 +422,7 @@ function orderCard(o, { light = false, open = false, extra = '', badge = '', asi
       <table>${rows}</table>
       ${o.customer_email ? `<div class="meta"><span>${ICONS.user} <b>Google account:</b> ${esc(o.customer_email)}${o.customer_name && o.customer_name !== o.customer_email ? ` (${esc(o.customer_name)})` : ''}</span></div>` : ''}
       ${o.phone || light ? `<div class="meta"><span><b>Contact number:</b> ${o.phone ? esc(o.phone) : '-'}</span></div>` : ''}
+      ${light ? `<div class="meta"><span><b>PDPA consent:</b> ${o.pdpa_accepted_at ? 'ยอมรับแล้ว ' + esc(fmtDateTime(o.pdpa_accepted_at)) : '-'}</span></div>` : ''}
       ${o.note ? `<div class="meta"><span><b>หมายเหตุ:</b> ${esc(o.note)}</span></div>` : ''}
       <div class="meta"><span>${fmtDateTime(o.created_at)}</span>${statusPill(o.status)}${o.slip_reason && ['pending', 'slip_uploaded', 'slip_rejected'].includes(o.status) && o.has_slip ? `<span>${esc(o.slip_reason)}</span>` : ''}</div>
       ${extra}

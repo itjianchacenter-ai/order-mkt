@@ -65,6 +65,7 @@
 <script>
 (async () => {
   renderHeader('home');
+  requirePdpa();   // ลูกค้าใหม่ต้องกดยอมรับ PDPA ก่อนใช้งานหน้านี้
   $('#lbl-sets').innerHTML = ICONS.match + ' Match Sets';
   $('#lbl-pickup').innerHTML = ICONS.pin + ' Pick-up Location';
   $('#lbl-date').innerHTML = ICONS.cal + ' Pick-up Date';

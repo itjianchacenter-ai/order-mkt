@@ -51,6 +51,11 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 P.M.', lines: [{ set_id: A, quantity: 1 }] }); check('order without login rejected (401)', r.status === 401 && r.json.login_required === true, r.json);
     r = await call('customer', 'POST', '/api/auth/google', { credential: 'bad' }); check('bad google token rejected', r.status === 401);
     r = await call('customer', 'POST', '/api/auth/google', { credential: 'alice@wrong' }); check('token for another client id rejected', r.status === 401);
+    // PDPA: ยอมรับก่อนล็อกอิน → ติดไปกับบัญชี Google → ออเดอร์เก็บเวลายอมรับ
+    r = await call('customer', 'GET', '/api/me'); check('me: pdpa not accepted yet', r.json.pdpa_accepted_at === '');
+    r = await call('customer', 'POST', '/api/pdpa', {}); check('pdpa accepted (anonymous browser)', r.status === 200 && /^\d{4}-\d{2}-\d{2} /.test(r.json.pdpa_accepted_at), r.json);
+    const pdpaAt = r.json.pdpa_accepted_at;
+    r = await call('customer', 'POST', '/api/pdpa', {}); check('pdpa accept is idempotent (keeps first time)', r.json.pdpa_accepted_at === pdpaAt);
     r = await call('customer', 'POST', '/api/auth/google', { credential: 'alice', campaign: 'jianchaxnavori' }); check('google login ok', r.status === 200 && r.json.logged_in === true && r.json.email === 'alice@gmail.com' && r.json.name === 'Test alice', r.json);
     r = await call('customer', 'GET', '/api/me'); check('me: logged in', r.json.logged_in === true && r.json.email === 'alice@gmail.com');
 
@@ -68,6 +73,7 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     check('order created', r.status === 201 && /^\d{13}$/.test(r.json.order_number) && r.json.campaign_id === 'jiancha-x-navori', r.json);
     const order = r.json;
     check('phone kept (digits only)', r.json.phone === '0812345678', r.json.phone);
+    r = await call('customer', 'GET', '/api/me'); check('pdpa acceptance follows the google account', r.json.pdpa_accepted_at === pdpaAt, r.json);
     // ล็อกอินบัญชีเดิมจากเบราว์เซอร์ใหม่ → เห็นออเดอร์เดิม; ออเดอร์ที่สั่งแบบไม่ล็อกอินก่อนหน้าย้ายมาด้วย (ทดสอบผ่านสถานะ login เพราะยังสั่งไม่ได้ก่อนล็อกอิน)
     r = await call('customer2', 'GET', '/api/orders'); check('new browser sees no orders', r.status === 200 && r.json.length === 0);
     r = await call('customer2', 'POST', '/api/auth/google', { credential: 'alice' }); check('same google account on new browser', r.json.logged_in === true);
@@ -233,6 +239,7 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
       db.prepare('UPDATE orders SET customer_id = ? WHERE id = ?').run(placeholderId, order2.id);
       r = await call('customer', 'GET', '/api/orders'); check('order moved to the pre-assigned account leaves alice history', !r.json.some((o) => o.id === order2.id));
       r = await call('it', 'GET', `/api/admin/orders/${order2.id}`); check('back-office shows google account email + contact number for the order', r.json.customer_email === 'wendy@gmail.com' && r.json.phone === '0812345678', r.json);
+      check('back-office order carries pdpa consent time', r.json.pdpa_accepted_at === pdpaAt, r.json.pdpa_accepted_at);
       r = await call('it', 'GET', '/api/admin/orders?q=wendy@gmail'); check('back-office search by google email', r.json.rows.some((o) => o.id === order2.id) && r.json.rows.every((o) => o.customer_email === 'wendy@gmail.com'), r.json.total);
       r = await call('it', 'GET', '/api/admin/orders?q=0812345678'); check('back-office search by contact number', r.json.rows.some((o) => o.id === order2.id));
       r = await call('wendy', 'GET', '/api/orders'); check('not signed in = no order history', r.json.length === 0);

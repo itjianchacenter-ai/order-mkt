@@ -164,11 +164,11 @@ app.use((req, res, next) => {
 // GOOGLE_CLIENT_ID ว่าง = ยังไม่เปิดใช้ login (สั่งซื้อแบบไม่ล็อกอินเหมือนเดิม) — ตั้งค่าแล้วลูกค้าต้องล็อกอินก่อนกด Confirm
 const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID || '').trim();
 const loginRequired = () => Boolean(GOOGLE_CLIENT_ID);
-const customerRow = (id) => db.prepare('SELECT id, google_sub, email, name, picture FROM customers WHERE id = ?').get(id) || null;
+const customerRow = (id) => db.prepare('SELECT id, google_sub, email, name, picture, pdpa_accepted_at FROM customers WHERE id = ?').get(id) || null;
 const customerLoggedIn = (id) => { const c = customerRow(id); return Boolean(c && c.google_sub); };
 function meView(id) {
   const c = customerRow(id); const logged_in = Boolean(c && c.google_sub);
-  return { logged_in, login_required: loginRequired(), google_client_id: GOOGLE_CLIENT_ID, email: logged_in ? c.email : '', name: logged_in ? c.name : '', picture: logged_in ? c.picture : '' };
+  return { logged_in, login_required: loginRequired(), google_client_id: GOOGLE_CLIENT_ID, email: logged_in ? c.email : '', name: logged_in ? c.name : '', picture: logged_in ? c.picture : '', pdpa_accepted_at: (c && c.pdpa_accepted_at) || '' };
 }
 // ตรวจ ID token กับ Google (tokeninfo ตรวจลายเซ็นให้) แล้วเช็ค aud/iss/exp/email_verified เอง
 async function verifyGoogleToken(credential) {
@@ -190,6 +190,12 @@ function setCustomerCookie(res, cid) {
   res.cookie(CUSTOMER_COOKIE, jwt.sign({ cid }, JWT_SECRET), { httpOnly: true, sameSite: 'lax', secure: IS_PROD, maxAge: 365 * 24 * 3600 * 1000, path: '/' });
 }
 app.get('/api/me', (req, res) => res.json(meView(req.customerId)));
+// ลูกค้ากดยอมรับ PDPA (pop-up หน้าแคมเปญ) → บันทึกเวลาไว้กับตัวตนของเบราว์เซอร์/บัญชี Google (ติดไปกับบัญชีเมื่อล็อกอิน)
+app.post('/api/pdpa', (req, res) => {
+  touchCustomer(req.customerId);
+  db.prepare("UPDATE customers SET pdpa_accepted_at = COALESCE(pdpa_accepted_at, datetime('now','localtime')) WHERE id = ?").run(req.customerId);
+  res.json(meView(req.customerId));
+});
 app.post('/api/auth/google', async (req, res) => {
   if (!GOOGLE_CLIENT_ID) return res.status(503).json({ error: 'ยังไม่ได้ตั้งค่า Google login (GOOGLE_CLIENT_ID)' });
   let g; try { g = await verifyGoogleToken(req.body && req.body.credential); } catch (e) { return res.status(401).json({ error: 'เข้าสู่ระบบด้วย Google ไม่สำเร็จ กรุณาลองใหม่ / Google sign-in failed' }); }
@@ -202,8 +208,9 @@ app.post('/api/auth/google', async (req, res) => {
       // บัญชีใหม่: ใช้แถวลูกค้าของเบราว์เซอร์นี้เป็นบัญชี (ออเดอร์ที่สั่งไว้ก่อนล็อกอินติดมาด้วย)
       touchCustomer(anon); acct = { id: anon };
     } else if (acct.id !== anon) {
-      // เคยล็อกอินจากเครื่องอื่น: ย้ายออเดอร์ที่สั่งแบบไม่ล็อกอินในเบราว์เซอร์นี้ไปไว้กับบัญชี
+      // เคยล็อกอินจากเครื่องอื่น: ย้ายออเดอร์ที่สั่งแบบไม่ล็อกอินในเบราว์เซอร์นี้ไปไว้กับบัญชี (และการยอมรับ PDPA ถ้าบัญชียังไม่มี)
       db.prepare('UPDATE orders SET customer_id = ? WHERE customer_id = ?').run(acct.id, anon);
+      db.prepare('UPDATE customers SET pdpa_accepted_at = (SELECT pdpa_accepted_at FROM customers WHERE id = ?) WHERE id = ? AND pdpa_accepted_at IS NULL').run(anon, acct.id);
     }
     db.prepare(`UPDATE customers SET google_sub = ?, email = ?, name = ?, picture = ?, last_login_at = datetime('now','localtime'), last_seen_at = datetime('now','localtime') WHERE id = ?`).run(g.sub, g.email, g.name, g.picture, acct.id);
   });
@@ -326,10 +333,11 @@ app.post('/api/orders', (req, res) => {
     const short = stockShortfall(want, campaign); // checked inside the write transaction so two customers cannot both take the last pieces
     if (short) { const e = new Error(short); e.status = 409; throw e; }
     touchCustomer(req.customerId); linkCustomerCampaign(req.customerId, campaign.id);
+    const pdpaAt = (customerRow(req.customerId) || {}).pdpa_accepted_at || '';
     const order_number = nextOrderNumber();
     // A zero-total order (free campaign item) has nothing to pay: it is paid on creation.
-    db.prepare(`INSERT INTO orders(id, order_number, customer_id, campaign_id, store_id, store_name, total, note, phone, pickup_date, pickup_time, status, paid_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, order_number, req.customerId, campaign.id, store.id, `${store.brand} - ${store.name}`, total, String(note).slice(0, 500), phone, menu.pickup_dates.length ? pickup_date : '', menu.pickup_times.length ? pickup_time : '',
+    db.prepare(`INSERT INTO orders(id, order_number, customer_id, campaign_id, store_id, store_name, total, note, phone, pickup_date, pickup_time, pdpa_accepted_at, status, paid_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, order_number, req.customerId, campaign.id, store.id, `${store.brand} - ${store.name}`, total, String(note).slice(0, 500), phone, menu.pickup_dates.length ? pickup_date : '', menu.pickup_times.length ? pickup_time : '', pdpaAt,
                 total > 0 ? 'pending' : 'paid', total > 0 ? null : new Date().toISOString().slice(0, 19).replace('T', ' '));
     const ins = db.prepare(`INSERT INTO order_lines(order_id, set_id, set_label, set_name, items_json, pieces, drink_pieces, dessert_pieces, drink_id, drink_name, dessert_id, dessert_name, quantity, unit_price, line_total)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -361,6 +369,7 @@ function orderView(o, { admin = false } = {}) {
   };
   // หลังบ้านเห็นบัญชี Google (อีเมล/ชื่อ) ของผู้สั่ง เผื่อต้องติดต่อ (บัญชีที่เตรียมไว้ล่วงหน้ายังไม่ล็อกอินก็แสดงอีเมล)
   if (admin) { const c = customerRow(o.customer_id); Object.assign(v, { customer_email: (c && c.email) || '', customer_name: (c && c.name) || '' }); }
+  if (admin) Object.assign(v, { pdpa_accepted_at: o.pdpa_accepted_at || '' });
   if (admin) Object.assign(v, { customer_id: o.customer_id, slip_url: o.slip_path ? `/uploads/${path.basename(o.slip_path)}` : '', slip_ref: o.slip_ref, slip_amount: o.slip_amount, slip_verified: o.slip_verified, cancelled_at: o.cancelled_at });
   return v;
 }

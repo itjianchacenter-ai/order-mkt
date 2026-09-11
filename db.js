@@ -94,9 +94,11 @@ if (!db.prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name = 'phone'"
 if (!db.prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name = 'pickup_date'").get()) db.exec("ALTER TABLE orders ADD COLUMN pickup_date TEXT DEFAULT ''");
 // orders.pickup_time: ช่วงเวลารับของที่ลูกค้าเลือก (ข้อความจากรายการ pickup_times ของแคมเปญ เช่น 13:00-15:00 P.M.)
 if (!db.prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name = 'pickup_time'").get()) db.exec("ALTER TABLE orders ADD COLUMN pickup_time TEXT DEFAULT ''");
+// orders.pdpa_accepted_at: เวลาที่ลูกค้ากดยอมรับ PDPA (คัดลอกจากบัญชีลูกค้าตอนสั่งซื้อ เป็นหลักฐานความยินยอม)
+if (!db.prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name = 'pdpa_accepted_at'").get()) db.exec("ALTER TABLE orders ADD COLUMN pdpa_accepted_at TEXT DEFAULT ''");
 
-// customers: Google account (migration for databases created before Google login)
-for (const [col, ddl] of [['google_sub', 'TEXT'], ['email', 'TEXT'], ['name', 'TEXT'], ['picture', 'TEXT'], ['last_login_at', 'TEXT']]) {
+// customers: Google account (migration for databases created before Google login) + pdpa_accepted_at (เวลาที่กดยอมรับ PDPA)
+for (const [col, ddl] of [['google_sub', 'TEXT'], ['email', 'TEXT'], ['name', 'TEXT'], ['picture', 'TEXT'], ['last_login_at', 'TEXT'], ['pdpa_accepted_at', 'TEXT']]) {
   if (!db.prepare("SELECT 1 FROM pragma_table_info('customers') WHERE name = ?").get(col)) db.exec(`ALTER TABLE customers ADD COLUMN ${col} ${ddl}`);
 }
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_google ON customers(google_sub) WHERE google_sub IS NOT NULL');
