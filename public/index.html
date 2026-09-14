@@ -86,6 +86,7 @@
   async function refreshStock() { try { stock = await api(withCampaign('/api/stock')); } catch (e) { /* keep last */ } render(); }
   const closed = menu.campaign && menu.campaign.orders_open === false;
   if (closed) $('#stock-err').textContent = 'แคมเปญนี้ปิดรับคำสั่งซื้อแล้ว / This campaign is closed';
+  const windowMsg = () => (orderWindowClosed(stock) ? stock.order_window.message : '');
   renderHero($('#hero'), menu.banners && menu.banners.length ? menu.banners : [menu.banner]);
   if (menu.campaign && menu.campaign.name) {
     // แคมเปญอื่นที่ไม่ใช่ JIANCHA x NAVORI ใช้ชื่อเป็นข้อความแทนโลโก้
@@ -146,7 +147,8 @@
   function render() {
     const cart = loadCart(); const storeId = getStore(); const store = stores.find((s) => s.id === storeId);
     $('#stock-pill').innerHTML = stockPill(stock);
-    $('#confirm').disabled = Boolean(stock && stock.sold_out) || closed;
+    $('#confirm').disabled = Boolean(stock && stock.sold_out) || closed || orderWindowClosed(stock);
+    if (windowMsg()) $('#stock-err').textContent = windowMsg();
     sets.innerHTML = (menu.sets || []).map(setCard).join('') || '<div class="empty">ยังไม่มีเซ็ตเมนู</div>';
     $('#stores').innerHTML = storeChips(stores, storeId);
     $('#dates').innerHTML = pickupChips(pickupDates, getPickup());

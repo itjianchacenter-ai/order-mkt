@@ -279,14 +279,24 @@ function stockCheck(stock, cart, extra = {}, map = {}) {
   }
   return '';
 }
+/* ช่วงเปิดรับออเดอร์ (order_window จาก server): ปิด/ยังไม่เปิด/ครบโควตาวันนี้ = สั่งไม่ได้ */
+const orderWindowClosed = (stock) => Boolean(stock && stock.order_window && stock.order_window.open === false);
+function orderWindowPill(ow) {
+  if (!ow || !ow.days || !ow.days.length) return '';
+  if (ow.status === 'before') return `<span class="note-pill sold"><b>ยังไม่เปิดรับออเดอร์</b> เปิด ${esc(ow.range.th)}</span>`;
+  if (ow.status === 'closed') return `<span class="note-pill sold"><b>ปิดรับออเดอร์แล้ว</b> รับ ${esc(ow.range.th)}</span>`;
+  if (ow.status === 'full') return `<span class="note-pill sold"><b>วันนี้ครบ ${ow.per_day} ออเดอร์แล้ว</b></span>`;
+  return ow.per_day ? `<span class="note-pill">วันนี้เหลือ <b>${ow.today_remaining.toLocaleString('en-US')}</b> / ${ow.per_day} ออเดอร์</span>` : '';
+}
 function stockPill(stock) {
   if (!stock || !stock.remaining) return '';
-  if (stock.sold_out) return '<span class="note-pill sold"><b>สินค้าหมด</b> Sold out</span>';
+  const owp = orderWindowPill(stock.order_window);
+  if (stock.sold_out) return '<span class="note-pill sold"><b>สินค้าหมด</b> Sold out</span>' + owp;
   const parts = [];
   if (stock.remaining.total != null) parts.push(`เหลือ <b>${stock.remaining.total.toLocaleString('en-US')}</b> ชุด`);
   if (stock.remaining.drink != null) parts.push(`เครื่องดื่ม <b>${stock.remaining.drink.toLocaleString('en-US')}</b>`);
   if (stock.remaining.dessert != null) parts.push(`ของหวาน <b>${stock.remaining.dessert.toLocaleString('en-US')}</b>`);
-  return parts.length ? `<span class="note-pill th">${parts.join(' · ')}</span>` : '';
+  return (parts.length ? `<span class="note-pill th">${parts.join(' · ')}</span>` : '') + owp;
 }
 
 /* pop-up (lightbox) for product images: click an image to view it large, close with ×, click outside, or Esc */

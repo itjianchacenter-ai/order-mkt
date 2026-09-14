@@ -94,6 +94,8 @@ if (!db.prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name = 'phone'"
 if (!db.prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name = 'pickup_date'").get()) db.exec("ALTER TABLE orders ADD COLUMN pickup_date TEXT DEFAULT ''");
 // orders.pickup_time: ช่วงเวลารับของที่ลูกค้าเลือก (ข้อความจากรายการ pickup_times ของแคมเปญ เช่น 13:00-15:00 น.)
 if (!db.prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name = 'pickup_time'").get()) db.exec("ALTER TABLE orders ADD COLUMN pickup_time TEXT DEFAULT ''");
+// orders.order_day: วันที่สั่ง (YYYY-MM-DD เวลาไทย) ใช้นับโควตาออเดอร์ต่อวัน
+if (!db.prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name = 'order_day'").get()) { db.exec("ALTER TABLE orders ADD COLUMN order_day TEXT DEFAULT ''"); db.exec("UPDATE orders SET order_day = substr(created_at, 1, 10) WHERE order_day = '' OR order_day IS NULL"); }
 // orders.pdpa_accepted_at: เวลาที่ลูกค้ากดยอมรับ PDPA (คัดลอกจากบัญชีลูกค้าตอนสั่งซื้อ เป็นหลักฐานความยินยอม)
 if (!db.prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name = 'pdpa_accepted_at'").get()) db.exec("ALTER TABLE orders ADD COLUMN pdpa_accepted_at TEXT DEFAULT ''");
 
@@ -156,6 +158,7 @@ if (!db.prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name = 'campaig
   db.exec('ALTER TABLE orders ADD COLUMN campaign_id TEXT');
 }
 db.exec('CREATE INDEX IF NOT EXISTS idx_orders_campaign ON orders(campaign_id, created_at DESC)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_orders_day ON orders(campaign_id, order_day)');  // นับโควตาออเดอร์ต่อวัน
 
 // promo_code: 10-digit POS promotion code handed to the customer once the order is paid
 if (!db.prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name = 'promo_code'").get()) {

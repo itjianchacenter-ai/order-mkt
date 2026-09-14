@@ -182,6 +182,7 @@ a.btn{text-decoration:none}
 .pill.date .th{font-size:12px;font-weight:400}
 .pill.date.on .th{color:#ddd}
 .pill.time{padding:9px 20px;font-family:inherit;cursor:pointer;font-size:15px}
+.note-pill+.note-pill{margin-left:8px}
 .sumbox .pickup-date{font-size:15px;margin-top:4px}
 .sumbox span.pickup-date{display:block;font-weight:400}
 .chips .pill b{font-weight:700}

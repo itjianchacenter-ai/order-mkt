@@ -129,7 +129,25 @@ function pvStockView(d, c) {
   const used = { drink: 0, dessert: 0, total: 0 };
   for (const o of d.orders) if (o.status !== 'cancelled' && o.campaign_id === c.id) for (const l of o.lines) { used.total += l.quantity * (l.pieces ?? 1); used.drink += l.quantity * (l.drink_pieces || 0); used.dessert += l.quantity * (l.dessert_pieces || 0); }
   const remaining = {}; for (const k of ['total', 'drink', 'dessert']) remaining[k] = limits[k] == null ? null : Math.max(0, limits[k] - used[k]);
-  return { limits, used, remaining, sold_out: ['total', 'drink', 'dessert'].some((k) => remaining[k] === 0) };
+  return { limits, used, remaining, sold_out: ['total', 'drink', 'dessert'].some((k) => remaining[k] === 0), order_window: pvOrderWindow(d, c) };
+}
+// ช่วงเปิดรับออเดอร์ + โควตาต่อวัน (preview นับเฉพาะออเดอร์ในเบราว์เซอร์นี้; ของจริงนับรวมทุกคนที่ server)
+const PV_TH_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+const PV_EN_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+function pvDayTH(iso) { const [y, mo, dd] = iso.split('-').map(Number); return `${dd} ${PV_TH_MONTHS[mo - 1]} ${y + 543}`; }
+function pvDayEN(iso) { const [y, mo, dd] = iso.split('-').map(Number); return `${dd} ${PV_EN_MONTHS[mo - 1]} ${y}`; }
+function pvToday() { try { const o = localStorage.getItem('jc_pv_today'); if (o) return o; } catch (e) { /* ignore */ } return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' }); }
+function pvOrderWindow(d, c) {
+  const days = (c.design && Array.isArray(c.design.order_days) && c.design.order_days.length ? c.design.order_days : (PREVIEW_MENU.order_days || [])).slice().sort();
+  const per_day = (c.design && c.design.orders_per_day) || PREVIEW_MENU.orders_per_day || null; const today = pvToday();
+  const cnt = (day) => d.orders.filter((o) => o.campaign_id === c.id && o.status !== 'cancelled' && (o.order_day || (o.created_at || '').slice(0, 10)) === day).length;
+  const today_count = cnt(today); const total_count = days.length ? days.reduce((s, x) => s + cnt(x), 0) : today_count;
+  const a = days[0], b = days[days.length - 1]; const same = days.length && a.slice(0, 7) === b.slice(0, 7);
+  const range = days.length ? { th: a === b ? pvDayTH(a) : (same ? `${Number(a.slice(8))}–${pvDayTH(b)}` : `${pvDayTH(a)} – ${pvDayTH(b)}`), en: a === b ? pvDayEN(a) : (same ? `${Number(a.slice(8))}–${pvDayEN(b)}` : `${pvDayEN(a)} – ${pvDayEN(b)}`) } : { th: '', en: '' };
+  let status = 'open', message = '';
+  if (days.length && !days.includes(today)) { status = today < days[0] ? 'before' : 'closed'; message = status === 'before' ? `ยังไม่เปิดรับคำสั่งซื้อ เปิดรับวันที่ ${range.th}${per_day ? ` (วันละ ${per_day} ออเดอร์)` : ''} / Orders open ${range.en}` : `ปิดรับคำสั่งซื้อแล้ว (รับเฉพาะวันที่ ${range.th}) / Ordering has closed`; }
+  else if (per_day && today_count >= per_day) { const next = days[days.indexOf(today) + 1]; status = 'full'; message = next ? `วันนี้รับครบ ${per_day} ออเดอร์แล้ว กรุณาสั่งใหม่วันที่ ${pvDayTH(next)} / Today's ${per_day} orders are full, please order again on ${pvDayEN(next)}` : `รับออเดอร์ครบ ${per_day} ออเดอร์ของวันสุดท้ายแล้ว ปิดรับคำสั่งซื้อ / All orders are full, ordering has closed`; }
+  return { days, per_day, today, today_count, today_remaining: per_day ? Math.max(0, per_day - today_count) : null, total_max: days.length && per_day ? days.length * per_day : null, total_count, range, status, open: status === 'open', message };
 }
 function pvStockShortfall(d, c, want) {
   const { remaining } = pvStockView(d, c); const label = { total: 'สินค้า', drink: 'เครื่องดื่ม', dessert: 'ของหวาน' };
@@ -224,7 +242,8 @@ async function api(path, opts = {}) {
     const total = pvMoney(lines.reduce((s, l) => s + l.line_total, 0));
     const want = lines.reduce((w, r) => { w.total += r.quantity * r.pieces; w.drink += r.quantity * r.drink_pieces; w.dessert += r.quantity * r.dessert_pieces; return w; }, { drink: 0, dessert: 0, total: 0 });
     const short = pvStockShortfall(d, camp, want); if (short) pvFail(short);
-    const o = { promo_code: null, id: pvUuid(), order_number: pvNextNumber(d), customer_id: me, campaign_id: camp.id, store_id: store.id, store_name: `${store.brand} - ${store.name}`, total, status: total > 0 ? 'pending' : 'paid', note: String(body.note || '').slice(0, 500), phone: String(body.phone || '').replace(/[^\d+]/g, '').slice(0, 20), pickup_date: pdates.length ? pickup_date : '', pickup_time: ptimes.length ? pickup_time : '', pdpa_accepted_at: (d.customer && d.customer.pdpa_accepted_at) || '', created_at: pvNow(), paid_at: total > 0 ? null : pvNow(), picked_up_at: null, cancelled_at: null, slip_url: '', slip_hash: '', slip_ref: '', slip_amount: null, slip_reason: '', slip_verified: 0, lines };
+    const ow = pvOrderWindow(d, camp); if (!ow.open) pvFail(ow.message);
+    const o = { promo_code: null, id: pvUuid(), order_number: pvNextNumber(d), customer_id: me, campaign_id: camp.id, store_id: store.id, store_name: `${store.brand} - ${store.name}`, total, status: total > 0 ? 'pending' : 'paid', note: String(body.note || '').slice(0, 500), phone: String(body.phone || '').replace(/[^\d+]/g, '').slice(0, 20), pickup_date: pdates.length ? pickup_date : '', pickup_time: ptimes.length ? pickup_time : '', pdpa_accepted_at: (d.customer && d.customer.pdpa_accepted_at) || '', order_day: ow.today, created_at: pvNow(), paid_at: total > 0 ? null : pvNow(), picked_up_at: null, cancelled_at: null, slip_url: '', slip_hash: '', slip_ref: '', slip_amount: null, slip_reason: '', slip_verified: 0, lines };
     d.orders.unshift(o); pvSave(d); return pvView(d, o);
   }
   // ประวัติการสั่งซื้อแยกตามบัญชี Google: ยังไม่ล็อกอิน = ไม่มีออเดอร์

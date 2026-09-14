@@ -448,7 +448,7 @@
     try {
       const st = await api('/api/admin/summary?campaign=' + encodeURIComponent(campaign ? campaign.id : '')); const s = st.stock; const fmt = (n) => (n == null ? '∞' : n.toLocaleString('en-US'));
       const el = $('#stock-pill'); if (!el || !alive()) return;
-      el.innerHTML = `<span class="note-pill ${s.sold_out ? 'sold' : ''}">Stock <b>${fmt(s.used.total)}</b> / ${fmt(s.limits.total)} · เหลือ <b>${fmt(s.remaining.total)}</b></span>`;
+      el.innerHTML = `<span class="note-pill ${s.sold_out ? 'sold' : ''}">Stock <b>${fmt(s.used.total)}</b> / ${fmt(s.limits.total)} · เหลือ <b>${fmt(s.remaining.total)}</b></span>${s.order_window && s.order_window.per_day ? ` <span class="note-pill ${s.order_window.status === 'full' ? 'sold' : ''}">วันนี้ <b>${s.order_window.today_count}</b> / ${s.order_window.per_day} ออเดอร์${s.order_window.total_max ? ` · รวม <b>${s.order_window.total_count}</b> / ${s.order_window.total_max}` : ''}</span>` : ''}`;
     } catch (e) { /* ignore */ }
   }
   async function load(openId) {
