@@ -194,7 +194,7 @@ a.btn{text-decoration:none}
 /* summary */
 .summary{display:grid;grid-template-columns:1.6fr 1fr;gap:24px;align-items:start}
 @media (max-width:800px){.summary{grid-template-columns:1fr}}
-.panel{background:#a82028;color:#fffdf8;border-radius:6px;padding:20px 22px}
+.panel{background:#a5a5a5;color:#fffdf8;border-radius:6px;padding:20px 22px}
 .panel .lines li,.panel .lines li:last-child,.panel .cart-table li{border-color:#fffdf8}
 .panel .empty,.panel .th,.panel .muted{color:#fffdf8}
 .lines{list-style:none;margin:0;padding:0}
@@ -215,7 +215,7 @@ a.btn{text-decoration:none}
 .order .body td .ln{font-size:15px}
 .notebox textarea{width:100%;border:0;border-bottom:1px solid var(--line);background:transparent;resize:vertical;min-height:44px;padding:6px 0;outline:none}
 .sumbox{border-radius:8px;padding:18px 22px}
-.sumbox.blue{background:#a82028;color:#fffdf8}
+.sumbox.blue{background:#a5a5a5;color:#fffdf8}
 .sumbox.blue hr{border-top-color:#fffdf8}
 .sumbox.blue a{color:#fffdf8}
 .sumbox.blue .store .brand-lg{filter:brightness(0) invert(1)}
