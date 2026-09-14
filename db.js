@@ -92,7 +92,7 @@ if (!db.prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name = 'phone'"
 
 // orders.pickup_date: วันที่รับของที่ลูกค้าเลือก (YYYY-MM-DD จากรายการ pickup_dates ของแคมเปญ)
 if (!db.prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name = 'pickup_date'").get()) db.exec("ALTER TABLE orders ADD COLUMN pickup_date TEXT DEFAULT ''");
-// orders.pickup_time: ช่วงเวลารับของที่ลูกค้าเลือก (ข้อความจากรายการ pickup_times ของแคมเปญ เช่น 13:00-15:00 P.M.)
+// orders.pickup_time: ช่วงเวลารับของที่ลูกค้าเลือก (ข้อความจากรายการ pickup_times ของแคมเปญ เช่น 13:00-15:00 น.)
 if (!db.prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name = 'pickup_time'").get()) db.exec("ALTER TABLE orders ADD COLUMN pickup_time TEXT DEFAULT ''");
 // orders.pdpa_accepted_at: เวลาที่ลูกค้ากดยอมรับ PDPA (คัดลอกจากบัญชีลูกค้าตอนสั่งซื้อ เป็นหลักฐานความยินยอม)
 if (!db.prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name = 'pdpa_accepted_at'").get()) db.exec("ALTER TABLE orders ADD COLUMN pdpa_accepted_at TEXT DEFAULT ''");

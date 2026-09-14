@@ -138,7 +138,7 @@ const getPickup = () => { try { return localStorage.getItem(PICKUP_KEY) || ''; }
 const setPickup = (d) => { try { localStorage.setItem(PICKUP_KEY, d || ''); } catch (e) { /* ignore */ } };
 const getPickupTime = () => { try { return localStorage.getItem(PICKUP_TIME_KEY) || ''; } catch (e) { return ''; } };
 const setPickupTime = (t) => { try { localStorage.setItem(PICKUP_TIME_KEY, t || ''); } catch (e) { /* ignore */ } };
-/* ปุ่มเลือกช่วงเวลารับของ (ข้อความตามที่ตั้งไว้ เช่น 13:00-15:00 P.M.) */
+/* ปุ่มเลือกช่วงเวลารับของ (ข้อความตามที่ตั้งไว้ เช่น 13:00-15:00 น.) */
 function timeChips(times, selected) {
   return (times || []).map((t) => `<button type="button" class="pill time ${t === selected ? 'on' : ''}" data-time="${esc(t)}">${esc(t)}</button>`).join('');
 }
