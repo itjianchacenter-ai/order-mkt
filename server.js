@@ -40,7 +40,10 @@ function loadMenu() {
   };
   const pickup_dates = (Array.isArray(m.pickup_dates) ? m.pickup_dates : []).map((x) => String(x || '').trim()).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x));
   const pickup_times = (Array.isArray(m.pickup_times) ? m.pickup_times : []).map((x) => String(x || '').trim().slice(0, 40)).filter(Boolean);
-  return { banner: m.banner || '', sets: (m.sets || []).map(normSet).filter((x) => x.active), drinks: (m.drinks || []).map(norm).filter((x) => x.active), desserts: (m.desserts || []).map(norm).filter((x) => x.active), pickup_dates, pickup_times };
+  // ช่วงวันที่เปิดรับออเดอร์ + โควตาออเดอร์ต่อวัน (ว่าง/null = ไม่จำกัด)
+  const order_days = (Array.isArray(m.order_days) ? m.order_days : []).map((x) => String(x || '').trim()).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x)).sort();
+  const orders_per_day = Number.isInteger(Number(m.orders_per_day)) && Number(m.orders_per_day) > 0 ? Number(m.orders_per_day) : null;
+  return { banner: m.banner || '', sets: (m.sets || []).map(normSet).filter((x) => x.active), drinks: (m.drinks || []).map(norm).filter((x) => x.active), desserts: (m.desserts || []).map(norm).filter((x) => x.active), pickup_dates, pickup_times, order_days, orders_per_day };
 }
 function loadStores() {
   return readJson('stores.json', []).filter((s) => s.active !== false).map((s) => ({ id: String(s.id), brand: s.brand || 'JIANCHA', name: s.name || '', map_url: s.map_url || '' }));
@@ -70,9 +73,12 @@ function normalizeDesign(d) {
   const pickup_dates = [...new Set((Array.isArray(src.pickup_dates) ? src.pickup_dates : []).map((x) => String(x || '').trim()).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x)))].sort().slice(0, 31);
   // pickup_times: ช่วงเวลารับของ (ข้อความ) ว่าง = ใช้ของ template
   const pickup_times = [...new Set((Array.isArray(src.pickup_times) ? src.pickup_times : []).map((x) => String(x || '').trim().slice(0, 40)).filter(Boolean))].slice(0, 24);
-  return { promote_images, sets, pickup_dates, pickup_times };
+  // order_days / orders_per_day: วันที่เปิดรับออเดอร์และโควตาต่อวันของแคมเปญ (ว่าง = ใช้ของ template)
+  const order_days = [...new Set((Array.isArray(src.order_days) ? src.order_days : []).map((x) => String(x || '').trim()).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x)))].sort().slice(0, 62);
+  const orders_per_day = Number.isInteger(Number(src.orders_per_day)) && Number(src.orders_per_day) > 0 ? Number(src.orders_per_day) : null;
+  return { promote_images, sets, pickup_dates, pickup_times, order_days, orders_per_day };
 }
-function defaultDesign() { const m = loadMenu(); return normalizeDesign({ promote_images: m.banner ? [m.banner] : [], sets: m.sets, pickup_dates: m.pickup_dates, pickup_times: m.pickup_times }); }
+function defaultDesign() { const m = loadMenu(); return normalizeDesign({ promote_images: m.banner ? [m.banner] : [], sets: m.sets, pickup_dates: m.pickup_dates, pickup_times: m.pickup_times, order_days: m.order_days, orders_per_day: m.orders_per_day }); }
 function campaignDesign(c) {
   if (c && c.design_json) { try { return normalizeDesign(JSON.parse(c.design_json)); } catch (e) { /* fall through */ } }
   return defaultDesign();
@@ -80,7 +86,7 @@ function campaignDesign(c) {
 /** What the customer site sells for a campaign: its design's active sets and promote images. */
 function menuFor(c) {
   const d = campaignDesign(c); const m = loadMenu();
-  return { banner: d.promote_images[0] || '', banners: d.promote_images, sets: d.sets.filter((x) => x.active), drinks: m.drinks, desserts: m.desserts, pickup_dates: d.pickup_dates.length ? d.pickup_dates : (Array.isArray(m.pickup_dates) ? m.pickup_dates : []), pickup_times: d.pickup_times.length ? d.pickup_times : (Array.isArray(m.pickup_times) ? m.pickup_times : []) };
+  return { banner: d.promote_images[0] || '', banners: d.promote_images, sets: d.sets.filter((x) => x.active), drinks: m.drinks, desserts: m.desserts, pickup_dates: d.pickup_dates.length ? d.pickup_dates : (Array.isArray(m.pickup_dates) ? m.pickup_dates : []), pickup_times: d.pickup_times.length ? d.pickup_times : (Array.isArray(m.pickup_times) ? m.pickup_times : []), order_days: d.order_days.length ? d.order_days : m.order_days, orders_per_day: d.orders_per_day || m.orders_per_day };
 }
 
 // First run: the three back-office accounts and the first campaign (stock / promo range seeded from menu.json)
@@ -125,7 +131,39 @@ function stockView(c) {
   const limits = { total: c.stock_total, drink: c.stock_drink, dessert: c.stock_dessert };
   const used = stockUsage(c.id); const remaining = {};
   for (const k of ['total', 'drink', 'dessert']) remaining[k] = limits[k] == null ? null : Math.max(0, limits[k] - used[k]);
-  return { limits, used, remaining, sold_out: ['total', 'drink', 'dessert'].some((k) => remaining[k] === 0) };
+  return { limits, used, remaining, sold_out: ['total', 'drink', 'dessert'].some((k) => remaining[k] === 0), order_window: orderWindow(c) };
+}
+// ─── ช่วงเปิดรับออเดอร์ + โควตาต่อวัน (นับตามวันเวลาไทย) ───
+// วันนี้ = เวลาไทย (ORDER_DAY_OVERRIDE ใช้ตอนทดสอบ)
+const bangkokToday = () => (process.env.ORDER_DAY_OVERRIDE || '').trim() || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+const TH_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+const EN_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+function fmtDayTH(iso) { const [y, mo, d] = iso.split('-').map(Number); return `${d} ${TH_MONTHS[mo - 1]} ${y + 543}`; }
+function fmtDayEN(iso) { const [y, mo, d] = iso.split('-').map(Number); return `${d} ${EN_MONTHS[mo - 1]} ${y}`; }
+function fmtDayRange(days) {
+  if (!days.length) return { th: '', en: '' };
+  const a = days[0], b = days[days.length - 1];
+  if (a === b) return { th: fmtDayTH(a), en: fmtDayEN(a) };
+  const sameMonth = a.slice(0, 7) === b.slice(0, 7);
+  return { th: sameMonth ? `${Number(a.slice(8))}–${fmtDayTH(b)}` : `${fmtDayTH(a)} – ${fmtDayTH(b)}`, en: sameMonth ? `${Number(a.slice(8))}–${fmtDayEN(b)}` : `${fmtDayEN(a)} – ${fmtDayEN(b)}` };
+}
+/** สถานะการรับออเดอร์ของแคมเปญวันนี้: open | before | closed | full (+ ข้อความแจ้งลูกค้า) */
+function orderWindow(c) {
+  const menu = menuFor(c); const days = menu.order_days || []; const per_day = menu.orders_per_day || null; const today = bangkokToday();
+  const countDay = (d) => db.prepare("SELECT COUNT(*) AS n FROM orders WHERE campaign_id = ? AND order_day = ? AND status <> 'cancelled'").get(c.id, d).n;
+  const today_count = countDay(today);
+  const total_count = days.length ? db.prepare(`SELECT COUNT(*) AS n FROM orders WHERE campaign_id = ? AND status <> 'cancelled' AND order_day IN (${days.map(() => '?').join(',')})`).get(c.id, ...days).n : today_count;
+  const range = fmtDayRange(days);
+  let status = 'open', message = '';
+  if (days.length && !days.includes(today)) {
+    status = today < days[0] ? 'before' : 'closed';
+    message = status === 'before' ? `ยังไม่เปิดรับคำสั่งซื้อ เปิดรับวันที่ ${range.th}${per_day ? ` (วันละ ${per_day} ออเดอร์)` : ''} / Orders open ${range.en}` : `ปิดรับคำสั่งซื้อแล้ว (รับเฉพาะวันที่ ${range.th}) / Ordering has closed`;
+  } else if (per_day && today_count >= per_day) {
+    const idx = days.indexOf(today); const next = idx >= 0 ? days[idx + 1] : null;
+    status = 'full';
+    message = next ? `วันนี้รับครบ ${per_day} ออเดอร์แล้ว กรุณาสั่งใหม่วันที่ ${fmtDayTH(next)} / Today's ${per_day} orders are full, please order again on ${fmtDayEN(next)}` : `รับออเดอร์ครบ ${per_day} ออเดอร์ของวันสุดท้ายแล้ว ปิดรับคำสั่งซื้อ / All orders are full, ordering has closed`;
+  }
+  return { days, per_day, today, today_count, today_remaining: per_day ? Math.max(0, per_day - today_count) : null, total_max: days.length && per_day ? days.length * per_day : null, total_count, range, status, open: status === 'open', message };
 }
 function stockShortfall(want, c) {
   const { remaining } = stockView(c);
@@ -332,12 +370,14 @@ app.post('/api/orders', (req, res) => {
   const create = db.transaction(() => {
     const short = stockShortfall(want, campaign); // checked inside the write transaction so two customers cannot both take the last pieces
     if (short) { const e = new Error(short); e.status = 409; throw e; }
+    const ow = orderWindow(campaign); // ช่วงวันเปิดรับ + โควตาต่อวัน ตรวจใน transaction เดียวกัน กันสั่งเกินโควตาพร้อมกัน
+    if (!ow.open) { const e = new Error(ow.message); e.status = 409; e.order_window = ow; throw e; }
     touchCustomer(req.customerId); linkCustomerCampaign(req.customerId, campaign.id);
     const pdpaAt = (customerRow(req.customerId) || {}).pdpa_accepted_at || '';
     const order_number = nextOrderNumber();
     // A zero-total order (free campaign item) has nothing to pay: it is paid on creation.
-    db.prepare(`INSERT INTO orders(id, order_number, customer_id, campaign_id, store_id, store_name, total, note, phone, pickup_date, pickup_time, pdpa_accepted_at, status, paid_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, order_number, req.customerId, campaign.id, store.id, `${store.brand} - ${store.name}`, total, String(note).slice(0, 500), phone, menu.pickup_dates.length ? pickup_date : '', menu.pickup_times.length ? pickup_time : '', pdpaAt,
+    db.prepare(`INSERT INTO orders(id, order_number, customer_id, campaign_id, store_id, store_name, total, note, phone, pickup_date, pickup_time, pdpa_accepted_at, order_day, status, paid_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, order_number, req.customerId, campaign.id, store.id, `${store.brand} - ${store.name}`, total, String(note).slice(0, 500), phone, menu.pickup_dates.length ? pickup_date : '', menu.pickup_times.length ? pickup_time : '', pdpaAt, ow.today,
                 total > 0 ? 'pending' : 'paid', total > 0 ? null : new Date().toISOString().slice(0, 19).replace('T', ' '));
     const ins = db.prepare(`INSERT INTO order_lines(order_id, set_id, set_label, set_name, items_json, pieces, drink_pieces, dessert_pieces, drink_id, drink_name, dessert_id, dessert_name, quantity, unit_price, line_total)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);

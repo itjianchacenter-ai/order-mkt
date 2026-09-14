@@ -2,6 +2,7 @@
 process.env.DB_PATH = require('path').join(require('os').tmpdir(), `jc-order-test-${Date.now()}.db`);
 process.env.PROMPTPAY_ID = '0812345678';
 process.env.JWT_SECRET = 'test'; process.env.NODE_ENV = 'test'; process.env.SLIPOK_API_KEY = '';
+process.env.ORDER_DAY_OVERRIDE = '2026-09-18'; // อยู่ในช่วงเปิดรับออเดอร์ของแม่แบบ (18–22 ก.ย. 2026)
 process.env.GOOGLE_CLIENT_ID = 'test-client-id'; // เปิดบังคับล็อกอิน; token ตรวจกับ stub ด้านล่างแทน Google
 const fs = require('fs'); const path = require('path');
 const app = require('../server');
@@ -230,6 +231,29 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     r = await call('fin', 'POST', `/api/admin/orders/${bigOrder.id}/status`, { status: 'cancelled' }); check('finance cancels big order', r.json.status === 'cancelled');
     r = await call('customer', 'GET', '/api/stock'); check('cancelled order frees stock', r.json.remaining.total === 990, r.json);
     r = await call('it', 'GET', '/api/admin/summary?campaign=jiancha-x-navori'); check('summary per campaign', r.status === 200 && r.json.stock.remaining.total === 990);
+
+    // ── ช่วงเปิดรับออเดอร์ 18–22 ก.ย. 2026 + โควตา 200 ออเดอร์/วัน ──
+    r = await call('customer', 'GET', '/api/stock'); const ow = r.json.order_window;
+    check('order window: open today (18 Sep), 5 days x 200 = 1000, counts today', ow.open === true && ow.status === 'open' && ow.days.length === 5 && ow.per_day === 200 && ow.total_max === 1000 && ow.today === '2026-09-18' && ow.today_count > 0 && ow.today_remaining === 200 - ow.today_count && ow.range.th === '18–22 กันยายน 2569', ow);
+    process.env.ORDER_DAY_OVERRIDE = '2026-09-17';
+    r = await call('customer', 'GET', '/api/stock'); check('before the window: status before + message', r.json.order_window.status === 'before' && /ยังไม่เปิดรับ/.test(r.json.order_window.message), r.json.order_window);
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 1 }] }); check('order before the window rejected (409)', r.status === 409 && /ยังไม่เปิดรับ/.test(r.json.error), r.json);
+    process.env.ORDER_DAY_OVERRIDE = '2026-09-23';
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 1 }] }); check('order after the window rejected (409)', r.status === 409 && /ปิดรับ/.test(r.json.error), r.json);
+    process.env.ORDER_DAY_OVERRIDE = '2026-09-19';
+    r = await call('customer', 'GET', '/api/stock'); check('next window day starts at 0 orders', r.json.order_window.open === true && r.json.order_window.today_count === 0);
+    const dzw = (await call('it', 'GET', '/api/admin/campaigns/jiancha-x-navori/design')).json.design;
+    r = await call('it', 'PUT', '/api/admin/campaigns/jiancha-x-navori/design', { ...dzw, orders_per_day: 2 }); check('campaign design can set its own per-day quota', r.status === 200 && r.json.design.orders_per_day === 2, r.json.design);
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 1 }] }); check('quota: order 1 of 2 accepted', r.status === 201 && r.json.order_day === undefined, r.json.error);
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 1 }] }); check('quota: order 2 of 2 accepted', r.status === 201, r.json.error);
+    const quotaOrder = r.json;
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 1 }] }); check('quota: order 3 rejected, told to come back 20 Sep', r.status === 409 && /ครบ 2 ออเดอร์/.test(r.json.error) && /20 กันยายน 2569/.test(r.json.error), r.json);
+    r = await call('customer', 'GET', '/api/stock'); check('stock view reports today full', r.json.order_window.status === 'full' && r.json.order_window.today_remaining === 0);
+    r = await call('fin', 'POST', `/api/admin/orders/${quotaOrder.id}/status`, { status: 'cancelled' }); check('cancel frees a quota slot', r.json.status === 'cancelled');
+    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 1 }] }); check('quota: slot reused after cancel', r.status === 201, r.json.error);
+    r = await call('it', 'PUT', '/api/admin/campaigns/jiancha-x-navori/design', { ...dzw, orders_per_day: null }); check('design without per-day quota falls back to template (200)', r.status === 200 && (await call('customer', 'GET', '/api/stock')).json.order_window.per_day === 200);
+    r = await call('it', 'GET', '/api/admin/summary?campaign=jiancha-x-navori'); check('admin summary carries the order window', r.json.stock.order_window && r.json.stock.order_window.per_day === 200 && r.json.stock.order_window.total_count >= 3);
+    process.env.ORDER_DAY_OVERRIDE = '2026-09-18';
 
     // ── ออเดอร์แยกตามบัญชี Google + หลังบ้านเห็นอีเมล/เบอร์ + บัญชีที่เตรียมไว้ล่วงหน้าด้วยอีเมล ──
     {
