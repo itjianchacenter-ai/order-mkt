@@ -300,7 +300,9 @@ function stockPill(stock) {
 }
 
 /* pop-up (lightbox) for product images: click an image to view it large, close with ×, click outside, or Esc */
-function openLightbox(src, alt = '') {
+/* รูปสำหรับ pop-up: ใช้ไฟล์ความละเอียดสูง <ชื่อ>-lg.<นามสกุล> ถ้ามี (ไม่มีจะถอยไปใช้รูปเดิม) */
+const lightboxSrcOf = (u) => String(u || '').replace(/\.(?:png|jpe?g|webp)(\?.*)?$/i, '-lg.jpg$1');
+function openLightbox(src, alt = '', fallback = '') {
   let lb = $('#lightbox');
   if (!lb) {
     lb = document.createElement('div'); lb.id = 'lightbox'; lb.className = 'lightbox'; lb.setAttribute('role', 'dialog'); lb.setAttribute('aria-modal', 'true');
@@ -313,6 +315,7 @@ function openLightbox(src, alt = '') {
   const im = lb.querySelector('img'); im.style.width = ''; im.alt = alt;
   // รูปย่อยต้นฉบับเล็ก (115x105) ขยายให้ดูได้ 2.5 เท่า; รูปใหญ่ใช้ขนาดตาม CSS
   im.onload = () => { if (im.naturalWidth && im.naturalWidth < 400) im.style.width = Math.min(im.naturalWidth * 2.5, window.innerWidth * 0.92) + 'px'; };
+  im.onerror = () => { if (fallback && im.src !== fallback) { im.onerror = null; im.src = fallback; } };
   im.src = src;
   lb.classList.add('open'); document.body.classList.add('lb-lock');
 }
