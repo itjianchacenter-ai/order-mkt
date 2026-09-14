@@ -89,10 +89,10 @@ img.ic.wide{width:auto;height:18px}
 /* Match Sets (homepage) */
 .sets{display:grid;grid-template-columns:1fr 1fr;gap:44px}
 @media (max-width:800px){.sets{grid-template-columns:1fr}}
-.set-imgs{display:grid;grid-template-columns:1fr 88px auto;gap:12px;align-items:start}
-.set-imgs .big{aspect-ratio:320/330;width:100%;object-fit:cover}
+.set-imgs{display:grid;grid-template-columns:1fr 100px auto;gap:12px;align-items:start}
+.set-imgs .big{aspect-ratio:4/5;width:100%;object-fit:cover}  /* รูปใหญ่สัดส่วนเดียวกับต้นฉบับ (1081x1350) ใหญ่ขึ้นและไม่ถูกตัด */
 .set-imgs .small{display:grid;gap:12px}
-.set-imgs .small .ph{aspect-ratio:115/105;width:88px;object-fit:cover}
+.set-imgs .small .ph{aspect-ratio:100/118;width:100px;object-fit:contain;background:#fff;border:1px solid #000;border-radius:4px;padding:4px;box-sizing:border-box}
 .set-imgs img.ph{cursor:zoom-in}
 /* pop-up รูปสินค้า */
 .lightbox{position:fixed;inset:0;z-index:100;display:none;align-items:center;justify-content:center;padding:24px;background:rgba(0,0,0,.82);cursor:zoom-out}
