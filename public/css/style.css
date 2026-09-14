@@ -194,9 +194,9 @@ a.btn{text-decoration:none}
 /* summary */
 .summary{display:grid;grid-template-columns:1.6fr 1fr;gap:24px;align-items:start}
 @media (max-width:800px){.summary{grid-template-columns:1fr}}
-.panel{background:#a82028;color:#fffdf8;border-radius:6px;padding:20px 22px}
-.panel .lines li,.panel .lines li:last-child,.panel .cart-table li{border-color:#fffdf8}
-.panel .empty,.panel .th,.panel .muted{color:#fffdf8}
+.panel{background:#a5a5a5;color:#000;border-radius:6px;padding:20px 22px}
+.panel .lines li,.panel .lines li:last-child,.panel .cart-table li{border-color:#000}
+.panel .empty,.panel .th,.panel .muted{color:#000}
 .lines{list-style:none;margin:0;padding:0}
 .lines li{display:grid;grid-template-columns:1fr auto auto;gap:24px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line);font-size:14px}
 .lines li:last-child{border-bottom:1px solid var(--line)}
@@ -215,10 +215,9 @@ a.btn{text-decoration:none}
 .order .body td .ln{font-size:15px}
 .notebox textarea{width:100%;border:0;border-bottom:1px solid var(--line);background:transparent;resize:vertical;min-height:44px;padding:6px 0;outline:none}
 .sumbox{border-radius:8px;padding:18px 22px}
-.sumbox.blue{background:#a82028;color:#fffdf8}
-.sumbox.blue hr{border-top-color:#fffdf8}
-.sumbox.blue a{color:#fffdf8}
-.sumbox.blue .store .brand-lg{filter:brightness(0) invert(1)}
+.sumbox.blue{background:#a5a5a5;color:#000}
+.sumbox.blue hr{border-top-color:#000}
+.sumbox.blue a{color:#000}
 .sumbox.bordered{background:#fff;border:1px solid var(--line);border-radius:14px}
 .sumbox h3{margin:0;font-size:20px;font-weight:700;line-height:1.1}
 .sumbox .sub{font-size:13px;display:block;margin-bottom:8px}
