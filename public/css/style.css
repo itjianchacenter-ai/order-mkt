@@ -439,3 +439,8 @@ a.btn{text-decoration:none}
 .pair-note .pairs li{display:flex;gap:8px;align-items:center;color:var(--muted)}
 .pair-note .pairs li.on{color:#000;font-weight:700}
 .pair-note .arr{font-weight:700}
+/* วัน/เวลารับของที่เลือกในกล่อง Order Summary */
+.sumbox .pickup-sel{font-size:18px;font-weight:700;padding:10px 0 6px;line-height:1.2}
+.sumbox .pickup-sel > .th{display:block;font-size:13px;font-weight:400;margin-top:2px}
+.sumbox .none{font-weight:400;font-size:13px;opacity:.85}
+.sumbox #pickup-time-name{padding-bottom:8px}

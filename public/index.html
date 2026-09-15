@@ -52,9 +52,14 @@
           <h3 style="margin-top:14px">Pick-up Location</h3><span class="sub th">สถานที่รับของ</span>
           <hr>
           <div class="store" id="store-name">-</div>
-          <div class="pickup-date" id="pickup-name" hidden></div>
-          <div class="pickup-date" id="pickup-time-name" hidden></div>
           <hr>
+          <div id="pickup-block" hidden>
+            <h3 style="margin-top:14px">Pick-up Date &amp; Time</h3><span class="sub th">วันและเวลาที่รับของ</span>
+            <hr>
+            <div class="store pickup-sel" id="pickup-name"></div>
+            <div class="pickup-date" id="pickup-time-name" hidden></div>
+            <hr>
+          </div>
         </div>
         <button type="button" class="confirm" id="confirm"><b>Confirm</b><small class="th">ยืนยันคำสั่งซื้อ</small></button>
         <div class="err" id="err"></div>
@@ -163,10 +168,12 @@
     const total = cart.reduce((s, l) => s + linePrice(l, map) * l.quantity, 0);
     $('#total').textContent = money(total) + ' ฿';
     $('#store-name').innerHTML = store ? storeLabel(store) : '-';
+    // วัน/เวลารับของที่เลือก แสดงในกล่อง Order Summary ทันทีที่กดเลือก
+    $('#pickup-block').hidden = !pickupDates.length && !pickupTimes.length;
     const pd = $('#pickup-name'); pd.hidden = !pickupDates.length;
-    pd.textContent = getPickup() ? `Pick-up Date - ${fmtPickupDate(getPickup()).en}` : 'Pick-up Date - ยังไม่ได้เลือกวันที่รับของ';
+    pd.innerHTML = getPickup() ? `${esc(fmtPickupDate(getPickup()).en)}<span class="th">${esc(fmtPickupDate(getPickup()).th)}</span>` : '<span class="th none">ยังไม่ได้เลือกวันที่รับของ</span>';
     const pt = $('#pickup-time-name'); pt.hidden = !pickupTimes.length;
-    pt.textContent = getPickupTime() ? `Pick-up Time - ${getPickupTime()}` : 'Pick-up Time - ยังไม่ได้เลือกเวลาที่รับของ';
+    pt.innerHTML = getPickupTime() ? `<b>Pick-up Time</b> - ${esc(getPickupTime())}` : '<span class="th none">ยังไม่ได้เลือกเวลาที่รับของ</span>';
     updateCartBadge();
   }
   render();
