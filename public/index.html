@@ -169,9 +169,9 @@
     // วัน/เวลารับของที่เลือก แสดงในกล่อง Order Summary ทันทีที่กดเลือก
     $('#pickup-block').hidden = !pickupDates.length && !pickupTimes.length;
     const pd = $('#pickup-name'); pd.hidden = !pickupDates.length;
-    pd.innerHTML = getPickup() ? `${esc(fmtPickupDate(getPickup()).en)}<span class="th">${esc(fmtPickupDate(getPickup()).th)}</span>` : '<span class="th none">ยังไม่ได้เลือกวันที่รับของ</span>';
+    pd.innerHTML = getPickup() ? `Pick-up Date - ${esc(fmtPickupDate(getPickup()).en)}<span class="th">${esc(fmtPickupDate(getPickup()).th)}</span>` : '<span class="th none">Pick-up Date - ยังไม่ได้เลือกวันที่รับของ</span>';
     const pt = $('#pickup-time-name'); pt.hidden = !pickupTimes.length;
-    pt.innerHTML = getPickupTime() ? `<b>Pick-up Time</b> - ${esc(getPickupTime())}` : '<span class="th none">ยังไม่ได้เลือกเวลาที่รับของ</span>';
+    pt.innerHTML = getPickupTime() ? `<b>Pick-up Time</b> - ${esc(getPickupTime())}` : '<span class="th none"><b>Pick-up Time</b> - ยังไม่ได้เลือกเวลาที่รับของ</span>';
     updateCartBadge();
   }
   render();
