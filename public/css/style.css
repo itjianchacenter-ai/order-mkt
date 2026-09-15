@@ -182,7 +182,9 @@ a.btn{text-decoration:none}
 .pill.date .th{font-size:12px;font-weight:400}
 .pill.date.on .th{color:#ddd}
 .pill.time{padding:9px 20px;font-family:inherit;cursor:pointer;font-size:15px}
-.note-pill+.note-pill{margin-left:8px}
+#stock-pill{display:inline-flex;flex-wrap:wrap;align-items:center;gap:10px 8px}   /* stock pill + order-window pill: keep a gap when they wrap on mobile */
+#stock-err{margin:14px 0 0}
+#stock-err:not(:empty){margin-bottom:20px}    /* red notice sits 20px clear of the first set card */
 .sumbox .pickup-date{font-size:15px;margin-top:4px}
 .sumbox span.pickup-date{display:block;font-weight:400}
 .chips .pill b{font-weight:700}
