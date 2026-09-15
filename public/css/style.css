@@ -432,3 +432,10 @@ a.btn{text-decoration:none}
 /* root landing page: one button into the active campaign */
 .landing{min-height:calc(100vh - 88px);display:flex;align-items:center;justify-content:center;padding-top:8vh}
 .landing-btn{font-size:24px;font-weight:800;padding:6px 28px;letter-spacing:-.2px}
+/* รอบสั่ง → รอบรับ (ใต้ปุ่มวันที่รับของ) */
+.pair-note{margin-top:12px;font-size:13px}
+.pair-note b{display:block;margin-bottom:6px;font-weight:700}
+.pair-note .pairs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px}
+.pair-note .pairs li{display:flex;gap:8px;align-items:center;color:var(--muted)}
+.pair-note .pairs li.on{color:#000;font-weight:700}
+.pair-note .arr{font-weight:700}

@@ -45,6 +45,7 @@
   const map = menuMap(menu);
   if (menu.campaign && menu.campaign.name) applyCampaignBrand(menu.campaign.name);
   const pickupDates = menu.pickup_dates || []; if (getPickup() && !pickupDates.includes(getPickup())) setPickup('');
+  { const locked = lockedPickup(menu.stock); if (locked && pickupDates.includes(locked)) setPickup(locked); }   // รอบสั่งวันนี้ → รอบรับที่ผูกไว้
   const pickupTimes = menu.pickup_times || []; if (getPickupTime() && !pickupTimes.includes(getPickupTime())) setPickupTime('');
   let stock = menu.stock; const getStock = () => stock;
   async function refreshStock() { try { stock = await api(withCampaign('/api/stock')); } catch (e) { /* keep last */ } render(); }

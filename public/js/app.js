@@ -150,6 +150,15 @@ function fmtPickupDate(iso) {
   const y = Number(m[1]), mo = Number(m[2]) - 1, d = Number(m[3]);
   return { en: `${d} ${EN_MONTHS[mo] || m[2]} ${y}`, th: `${d} ${TH_MONTHS[mo] || m[2]} ${y + 543}` };
 }
+/* รอบสั่ง → รอบรับ: วันรับของที่ล็อกไว้สำหรับรอบสั่งวันนี้ (null = เลือกได้ตามรายการ) */
+const lockedPickup = (stock) => (stock && stock.order_window && stock.order_window.pickup_date) || null;
+/* ข้อความตารางคู่ "สั่ง 18 กันยายน 2569 → รับ 25 กันยายน 2569" สำหรับแสดงใต้ปุ่มวันที่ */
+function pickupPairsNote(stock) {
+  const ow = stock && stock.order_window; if (!ow || !ow.pickup_pairs || !ow.pickup_pairs.length) return '';
+  const rows = ow.pickup_pairs.map((p) => `<li class="${ow.pickup_date === p.pickup ? 'on' : ''}"><span>สั่ง ${esc(p.order_range.th)}</span><span class="arr">→</span><span>รับ ${esc(p.pickup_th)}</span></li>`).join('');
+  const head = ow.pickup_date ? `<b>รอบสั่งวันนี้ (${esc(fmtPickupDate(ow.today).th)}) รับของวันที่ ${esc(fmtPickupDate(ow.pickup_date).th)}</b>` : '<b>รอบสั่งกับรอบรับของ</b>';
+  return `<div class="pair-note th">${head}<ul class="pairs">${rows}</ul></div>`;
+}
 /* ปุ่มเลือกวันที่รับของ (บรรทัดบนอังกฤษ ล่างไทย พ.ศ.) */
 function pickupChips(dates, selected) {
   return (dates || []).map((d) => { const f = fmtPickupDate(d); return `<button type="button" class="pill date ${d === selected ? 'on' : ''}" data-date="${esc(d)}"><b>${esc(f.en)}</b><span class="th">${esc(f.th)}</span></button>`; }).join('');

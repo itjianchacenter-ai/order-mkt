@@ -109,8 +109,9 @@ function pvNormDesign(src) {
 }
 function pvDesign(c) { return c.design ? pvNormDesign(c.design) : pvNormDesign({ promote_images: PREVIEW_MENU.banner ? [PREVIEW_MENU.banner] : [], sets: PREVIEW_MENU.sets }); }
 function pvPickupDates(c) { const d = c.design && Array.isArray(c.design.pickup_dates) ? c.design.pickup_dates.filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(String(x))) : []; return d.length ? d : (PREVIEW_MENU.pickup_dates || []); }
+function pvPickupMap(c) { const src = c.design && c.design.pickup_map && typeof c.design.pickup_map === 'object' ? c.design.pickup_map : (PREVIEW_MENU.pickup_map || {}); const out = {}; for (const [k, v] of Object.entries(src)) if (/^\d{4}-\d{2}-\d{2}$/.test(k) && /^\d{4}-\d{2}-\d{2}$/.test(String(v))) out[k] = String(v); return out; }
 function pvPickupTimes(c) { const t = c.design && Array.isArray(c.design.pickup_times) ? c.design.pickup_times.map((x) => String(x || '').trim()).filter(Boolean) : []; return t.length ? t : (PREVIEW_MENU.pickup_times || []); }
-function pvMenuFor(c) { const dz = pvDesign(c); return { banner: dz.promote_images[0] || '', banners: dz.promote_images, sets: dz.sets.filter((x) => x.active), drinks: [], desserts: [], pickup_dates: pvPickupDates(c), pickup_times: pvPickupTimes(c) }; }
+function pvMenuFor(c) { const dz = pvDesign(c); return { banner: dz.promote_images[0] || '', banners: dz.promote_images, sets: dz.sets.filter((x) => x.active), drinks: [], desserts: [], pickup_dates: pvPickupDates(c), pickup_times: pvPickupTimes(c), pickup_map: pvPickupMap(c) }; }
 function pvCampaignView(c) { const dz = pvDesign(c); return { ...c, url: `/${c.slug}/`, orders_open: c.orders_open !== false, design: undefined, cover: dz.promote_images[0] || '', set_count: dz.sets.filter((x) => x.active).length, has_design: Boolean(c.design) }; }
 function pvCampaignName(d, id) { const c = d.campaigns.find((x) => x.id === id); return c ? c.name : ''; }
 function pvView(d, o, admin) {
@@ -147,7 +148,11 @@ function pvOrderWindow(d, c) {
   let status = 'open', message = '';
   if (days.length && !days.includes(today)) { status = today < days[0] ? 'before' : 'closed'; message = status === 'before' ? `ยังไม่เปิดรับคำสั่งซื้อ เปิดรับวันที่ ${range.th}${per_day ? ` (วันละ ${per_day} ออเดอร์)` : ''} / Orders open ${range.en}` : `ปิดรับคำสั่งซื้อแล้ว (รับเฉพาะวันที่ ${range.th}) / Ordering has closed`; }
   else if (per_day && today_count >= per_day) { const next = days[days.indexOf(today) + 1]; status = 'full'; message = next ? `วันนี้รับครบ ${per_day} ออเดอร์แล้ว กรุณาสั่งใหม่วันที่ ${pvDayTH(next)} / Today's ${per_day} orders are full, please order again on ${pvDayEN(next)}` : `รับออเดอร์ครบ ${per_day} ออเดอร์ของวันสุดท้ายแล้ว ปิดรับคำสั่งซื้อ / All orders are full, ordering has closed`; }
-  return { days, per_day, today, today_count, today_remaining: per_day ? Math.max(0, per_day - today_count) : null, total_max: days.length && per_day ? days.length * per_day : null, total_count, range, status, open: status === 'open', message };
+  const pickup_map = pvPickupMap(c); const pickup_date = pickup_map[today] || null; const byPickup = new Map();
+  for (const [o, p] of Object.entries(pickup_map).sort()) { if (!byPickup.has(p)) byPickup.set(p, []); byPickup.get(p).push(o); }
+  const rng = (ds) => { const x = ds[0], y = ds[ds.length - 1]; const sm = x.slice(0, 7) === y.slice(0, 7); return x === y ? { th: pvDayTH(x), en: pvDayEN(x) } : { th: sm ? `${Number(x.slice(8))}–${pvDayTH(y)}` : `${pvDayTH(x)} – ${pvDayTH(y)}`, en: sm ? `${Number(x.slice(8))}–${pvDayEN(y)}` : `${pvDayEN(x)} – ${pvDayEN(y)}` }; };
+  const pickup_pairs = [...byPickup.entries()].map(([pickup, ods]) => ({ order_days: ods, pickup, order_range: rng(ods), pickup_th: pvDayTH(pickup), pickup_en: pvDayEN(pickup) }));
+  return { days, per_day, today, today_count, today_remaining: per_day ? Math.max(0, per_day - today_count) : null, total_max: days.length && per_day ? days.length * per_day : null, total_count, range, status, open: status === 'open', message, pickup_date, pickup_map, pickup_pairs };
 }
 function pvStockShortfall(d, c, want) {
   const { remaining } = pvStockView(d, c); const label = { total: 'สินค้า', drink: 'เครื่องดื่ม', dessert: 'ของหวาน' };
@@ -231,6 +236,7 @@ async function api(path, opts = {}) {
     const camp = reqCamp; if (camp.orders_open === false) pvFail('แคมเปญนี้ปิดรับคำสั่งซื้อแล้ว / This campaign is closed');
     const pdates = pvPickupDates(camp); const pickup_date = String(body.pickup_date || '').trim();
     if (pdates.length && !pdates.includes(pickup_date)) pvFail('กรุณาเลือกวันที่รับของ / Please choose a pick-up date');
+    { const must = pvPickupMap(camp)[pvToday()]; if (must && pickup_date !== must) pvFail(`รอบสั่งวันนี้ (${pvDayTH(pvToday())}) รับของได้เฉพาะวันที่ ${pvDayTH(must)} / Orders placed today are picked up on ${pvDayEN(must)} only`); }
     const ptimes = pvPickupTimes(camp); const pickup_time = String(body.pickup_time || '').trim();
     if (ptimes.length && !ptimes.includes(pickup_time)) pvFail('กรุณาเลือกเวลาที่รับของ / Please choose a pick-up time');
     const SETS = Object.fromEntries(pvMenuFor(camp).sets.map((x) => [x.id, x]));

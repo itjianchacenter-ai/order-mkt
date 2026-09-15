@@ -27,6 +27,7 @@
   <section class="section" id="sec-dates" hidden>
     <div class="label" id="lbl-date"></div><span class="lbl-sub th">วันที่รับของ</span>
     <div class="chips" id="dates"></div>
+    <div id="pairs"></div>
   </section>
 
   <section class="section" id="sec-times" hidden>
@@ -151,7 +152,10 @@
     if (windowMsg()) $('#stock-err').textContent = windowMsg();
     sets.innerHTML = (menu.sets || []).map(setCard).join('') || '<div class="empty">ยังไม่มีเซ็ตเมนู</div>';
     $('#stores').innerHTML = storeChips(stores, storeId);
-    $('#dates').innerHTML = pickupChips(pickupDates, getPickup());
+    // รอบสั่งวันนี้รับได้วันเดียว: โชว์เฉพาะวันนั้นและเลือกให้เลย
+    const locked = lockedPickup(stock); if (locked && pickupDates.includes(locked) && getPickup() !== locked) setPickup(locked);
+    $('#dates').innerHTML = pickupChips(locked && pickupDates.includes(locked) ? [locked] : pickupDates, getPickup());
+    $('#pairs').innerHTML = pickupPairsNote(stock);
     $('#times').innerHTML = timeChips(pickupTimes, getPickupTime());
     const lines = cart.map((l) => `<li><span>${esc(lineName(l, map))}</span><span class="n">x ${l.quantity}</span><span class="p">${money(linePrice(l, map) * l.quantity)} ฿</span></li>`);
     // แสดงเฉพาะรายการที่มีจริง (เหมือนหน้า Cart) ไม่เติมแถวว่าง

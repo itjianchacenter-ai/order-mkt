@@ -43,7 +43,13 @@ function loadMenu() {
   // ช่วงวันที่เปิดรับออเดอร์ + โควตาออเดอร์ต่อวัน (ว่าง/null = ไม่จำกัด)
   const order_days = (Array.isArray(m.order_days) ? m.order_days : []).map((x) => String(x || '').trim()).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x)).sort();
   const orders_per_day = Number.isInteger(Number(m.orders_per_day)) && Number(m.orders_per_day) > 0 ? Number(m.orders_per_day) : null;
-  return { banner: m.banner || '', sets: (m.sets || []).map(normSet).filter((x) => x.active), drinks: (m.drinks || []).map(norm).filter((x) => x.active), desserts: (m.desserts || []).map(norm).filter((x) => x.active), pickup_dates, pickup_times, order_days, orders_per_day };
+  return { banner: m.banner || '', sets: (m.sets || []).map(normSet).filter((x) => x.active), drinks: (m.drinks || []).map(norm).filter((x) => x.active), desserts: (m.desserts || []).map(norm).filter((x) => x.active), pickup_dates, pickup_times, order_days, orders_per_day, pickup_map: normPickupMap(m.pickup_map) };
+}
+/** รอบสั่ง → รอบรับ: { 'YYYY-MM-DD (วันสั่ง)': 'YYYY-MM-DD (วันรับ)' } วันสั่งไหนไม่อยู่ในตาราง = เลือกวันรับได้ตามรายการปกติ */
+function normPickupMap(src) {
+  const out = {}; if (!src || typeof src !== 'object' || Array.isArray(src)) return out;
+  for (const [k, v] of Object.entries(src).slice(0, 62)) { const a = String(k || '').trim(), b = String(v || '').trim(); if (/^\d{4}-\d{2}-\d{2}$/.test(a) && /^\d{4}-\d{2}-\d{2}$/.test(b)) out[a] = b; }
+  return out;
 }
 function loadStores() {
   return readJson('stores.json', []).filter((s) => s.active !== false).map((s) => ({ id: String(s.id), brand: s.brand || 'JIANCHA', name: s.name || '', map_url: s.map_url || '' }));
@@ -76,9 +82,11 @@ function normalizeDesign(d) {
   // order_days / orders_per_day: วันที่เปิดรับออเดอร์และโควตาต่อวันของแคมเปญ (ว่าง = ใช้ของ template)
   const order_days = [...new Set((Array.isArray(src.order_days) ? src.order_days : []).map((x) => String(x || '').trim()).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x)))].sort().slice(0, 62);
   const orders_per_day = Number.isInteger(Number(src.orders_per_day)) && Number(src.orders_per_day) > 0 ? Number(src.orders_per_day) : null;
-  return { promote_images, sets, pickup_dates, pickup_times, order_days, orders_per_day };
+  // pickup_map: รอบสั่ง → รอบรับ ของแคมเปญ (ว่าง = ใช้ของ template)
+  const pickup_map = normPickupMap(src.pickup_map);
+  return { promote_images, sets, pickup_dates, pickup_times, order_days, orders_per_day, pickup_map };
 }
-function defaultDesign() { const m = loadMenu(); return normalizeDesign({ promote_images: m.banner ? [m.banner] : [], sets: m.sets, pickup_dates: m.pickup_dates, pickup_times: m.pickup_times, order_days: m.order_days, orders_per_day: m.orders_per_day }); }
+function defaultDesign() { const m = loadMenu(); return normalizeDesign({ promote_images: m.banner ? [m.banner] : [], sets: m.sets, pickup_dates: m.pickup_dates, pickup_times: m.pickup_times, order_days: m.order_days, orders_per_day: m.orders_per_day, pickup_map: m.pickup_map }); }
 function campaignDesign(c) {
   if (c && c.design_json) { try { return normalizeDesign(JSON.parse(c.design_json)); } catch (e) { /* fall through */ } }
   return defaultDesign();
@@ -86,7 +94,7 @@ function campaignDesign(c) {
 /** What the customer site sells for a campaign: its design's active sets and promote images. */
 function menuFor(c) {
   const d = campaignDesign(c); const m = loadMenu();
-  return { banner: d.promote_images[0] || '', banners: d.promote_images, sets: d.sets.filter((x) => x.active), drinks: m.drinks, desserts: m.desserts, pickup_dates: d.pickup_dates.length ? d.pickup_dates : (Array.isArray(m.pickup_dates) ? m.pickup_dates : []), pickup_times: d.pickup_times.length ? d.pickup_times : (Array.isArray(m.pickup_times) ? m.pickup_times : []), order_days: d.order_days.length ? d.order_days : m.order_days, orders_per_day: d.orders_per_day || m.orders_per_day };
+  return { banner: d.promote_images[0] || '', banners: d.promote_images, sets: d.sets.filter((x) => x.active), drinks: m.drinks, desserts: m.desserts, pickup_dates: d.pickup_dates.length ? d.pickup_dates : (Array.isArray(m.pickup_dates) ? m.pickup_dates : []), pickup_times: d.pickup_times.length ? d.pickup_times : (Array.isArray(m.pickup_times) ? m.pickup_times : []), order_days: d.order_days.length ? d.order_days : m.order_days, orders_per_day: d.orders_per_day || m.orders_per_day, pickup_map: Object.keys(d.pickup_map).length ? d.pickup_map : m.pickup_map };
 }
 
 // First run: the three back-office accounts and the first campaign (stock / promo range seeded from menu.json)
@@ -163,7 +171,16 @@ function orderWindow(c) {
     status = 'full';
     message = next ? `วันนี้รับครบ ${per_day} ออเดอร์แล้ว กรุณาสั่งใหม่วันที่ ${fmtDayTH(next)} / Today's ${per_day} orders are full, please order again on ${fmtDayEN(next)}` : `รับออเดอร์ครบ ${per_day} ออเดอร์ของวันสุดท้ายแล้ว ปิดรับคำสั่งซื้อ / All orders are full, ordering has closed`;
   }
-  return { days, per_day, today, today_count, today_remaining: per_day ? Math.max(0, per_day - today_count) : null, total_max: days.length && per_day ? days.length * per_day : null, total_count, range, status, open: status === 'open', message };
+  // รอบสั่งวันนี้รับของได้วันไหน (ตาราง pickup_map) + ตารางคู่ทั้งหมดไว้แสดงให้ลูกค้า
+  const pickup_map = menu.pickup_map || {}; const pickup_date = pickup_map[today] || null;
+  const pickup_pairs = pickupPairs(pickup_map);
+  return { days, per_day, today, today_count, today_remaining: per_day ? Math.max(0, per_day - today_count) : null, total_max: days.length && per_day ? days.length * per_day : null, total_count, range, status, open: status === 'open', message, pickup_date, pickup_map, pickup_pairs };
+}
+/** จัดกลุ่มตาราง รอบสั่ง → รอบรับ เป็นแถว เช่น สั่ง 21–22 ก.ย. → รับ 28 ก.ย. */
+function pickupPairs(map) {
+  const byPickup = new Map();
+  for (const [o, p] of Object.entries(map).sort()) { if (!byPickup.has(p)) byPickup.set(p, []); byPickup.get(p).push(o); }
+  return [...byPickup.entries()].map(([pickup, orderDays]) => ({ order_days: orderDays, pickup, order_range: fmtDayRange(orderDays), pickup_th: fmtDayTH(pickup), pickup_en: fmtDayEN(pickup) }));
 }
 function stockShortfall(want, c) {
   const { remaining } = stockView(c);
@@ -335,6 +352,9 @@ app.post('/api/orders', (req, res) => {
   // วันที่รับของ: บังคับเลือกเมื่อแคมเปญกำหนดวันไว้ และต้องเป็นวันในรายการ
   const pickup_date = String((req.body && req.body.pickup_date) || '').trim();
   if (menu.pickup_dates.length && !menu.pickup_dates.includes(pickup_date)) return res.status(400).json({ error: 'กรุณาเลือกวันที่รับของ / Please choose a pick-up date', field: 'pickup_date' });
+  // รอบสั่งวันนี้ผูกกับรอบรับตามตาราง (สั่ง 18 ก.ย. รับ 25 ก.ย. …)
+  const mustPickup = (menu.pickup_map || {})[bangkokToday()];
+  if (mustPickup && pickup_date !== mustPickup) return res.status(400).json({ error: `รอบสั่งวันนี้ (${fmtDayTH(bangkokToday())}) รับของได้เฉพาะวันที่ ${fmtDayTH(mustPickup)} / Orders placed today are picked up on ${fmtDayEN(mustPickup)} only`, field: 'pickup_date', pickup_date: mustPickup });
   const pickup_time = String((req.body && req.body.pickup_time) || '').trim();
   if (menu.pickup_times.length && !menu.pickup_times.includes(pickup_time)) return res.status(400).json({ error: 'กรุณาเลือกเวลาที่รับของ / Please choose a pick-up time', field: 'pickup_time' });
   const drinks = Object.fromEntries(menu.drinks.map((d) => [d.id, d]));
