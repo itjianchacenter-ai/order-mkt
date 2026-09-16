@@ -433,11 +433,11 @@ a.btn{text-decoration:none}
 .dz-savebar.dirty .th{color:#000;font-weight:700}
 .dz-savebar .btn:disabled{opacity:.45;cursor:default}
 /* root landing page (order.jianchatea.com): แบนเนอร์เต็มจอเป็นพื้นหลัง — PC ใช้ Banner Pre order, มือถือใช้ป้ายแคมเปญแนวตั้ง — ปุ่ม Order with us อยู่ด้านล่าง */
-body.landing-page{background:#efe5dc url(/img/landing-desktop.jpg) center center/contain no-repeat;min-height:100vh;min-height:100dvh}  /* contain = เห็นแบนเนอร์เต็มทุกขนาดจอ ไม่ตัดตัวหนังสือ */
-body.landing-page .wrap{padding:0;max-width:none}
-.landing{min-height:100vh;min-height:100dvh;display:flex;align-items:flex-end;justify-content:center;padding:0 16px 7vh}
+/* .landing เป็นชั้นเต็มจอ (position:fixed) ใส่พื้นหลังที่ตัวมันเอง — ใช้ได้ทั้ง server จริงและ preview ที่ใช้ <body> ร่วมกัน; contain = เห็นแบนเนอร์เต็มทุกขนาดจอ */
+.landing{position:fixed;inset:0;z-index:5;background:#efe5dc url(/img/landing-desktop.jpg) center center/contain no-repeat;display:flex;align-items:flex-end;justify-content:center;padding:0 16px 7vh}
+body.landing-page{background:#efe5dc}
 .landing-btn{font-size:24px;font-weight:800;padding:8px 32px;letter-spacing:-.2px;background:#000;color:#fff;border-color:#000;box-shadow:0 6px 18px rgba(0,0,0,.25)}
-@media (max-width:700px){body.landing-page{background-image:url(/img/landing-mobile.jpg)}.landing{padding-bottom:9vh}.landing-btn{font-size:20px}}
+@media (max-width:700px){.landing{background-image:url(/img/landing-mobile.jpg);padding-bottom:9vh}.landing-btn{font-size:20px}}
 /* รอบสั่ง → รอบรับ (ใต้ปุ่มวันที่รับของ) */
 .pair-note{margin-top:12px;font-size:13px}
 .pair-note b{display:block;margin-bottom:6px;font-weight:700}
