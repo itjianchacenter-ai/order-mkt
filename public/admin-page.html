@@ -116,7 +116,7 @@ if (!window.PREVIEW_MODE && /^#\/backend/.test(location.hash)) { const q = locat
     }
   }
 
-  /* ───────── customers: ลูกค้าที่ล็อกอินด้วย Google (อีเมล ชื่อ ล็อกอินล่าสุด ออเดอร์ ยอดชำระ) ───────── */
+  /* ───────── customers: ทะเบียนลูกค้าจากอีเมลที่กรอกตอนสั่งซื้อ (หรือบัญชี Google ถ้าเปิดใช้) — อีเมล ชื่อ ใช้งานล่าสุด ออเดอร์ ยอดชำระ ───────── */
   if (state.view === 'customers') return renderCustomers();
   async function renderCustomers() {
     // แยกตามแคมเปญ: ลูกค้าที่ล็อกอินจาก /<แคมเปญ>/ หรือสั่งซื้อในแคมเปญนั้น (ค่าเริ่มต้น = แคมเปญที่ Active; เลือก "ทุกแคมเปญ" ได้)
@@ -135,13 +135,13 @@ if (!window.PREVIEW_MODE && /^#\/backend/.test(location.hash)) { const q = locat
         <button type="button" class="pill" id="cust-csv">${ICONS.doc} Download CSV</button>
       </div>
       <div class="tbl-wrap"><table class="jc-tbl" id="cust-tbl">
-        <thead><tr><th>Customer</th><th>Email</th><th>Last login</th><th class="num">Orders</th><th class="num">Paid (฿)</th><th>Last order</th>${allC ? '' : '<th>Joined campaign</th>'}</tr></thead>
+        <thead><tr><th>Customer</th><th>Email</th><th>Last active</th><th class="num">Orders</th><th class="num">Paid (฿)</th><th>Last order</th>${allC ? '' : '<th>Joined campaign</th>'}</tr></thead>
         <tbody></tbody></table></div>
       <div class="pager"><button type="button" id="prev">${ICONS.arrowL}</button><span class="pg" id="pg">1</span><button type="button" id="next">${ICONS.arrowR}</button></div>`;
     const row = (c) => `<tr>
-        <td class="who">${c.picture ? `<img class="avatar" src="${esc(c.picture)}" alt="" referrerpolicy="no-referrer">` : ICONS.user} <b>${esc(c.name || '-')}</b></td>
+        <td class="who">${c.picture ? `<img class="avatar" src="${esc(c.picture)}" alt="" referrerpolicy="no-referrer">` : ICONS.user} <b>${esc(c.name || (c.email || '').split('@')[0] || '-')}</b></td>
         <td class="mono"><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></td>
-        <td>${fmtDateTime(c.last_login_at)}</td>
+        <td>${fmtDateTime(c.last_login_at || c.last_seen_at)}</td>
         <td class="num">${c.orders}</td>
         <td class="num">${money(c.paid_total)}</td>
         <td>${c.last_order_at ? fmtDateTime(c.last_order_at) : '-'}</td>${allC ? '' : `<td>${c.joined_at ? fmtDateTime(c.joined_at) : '-'}</td>`}</tr>`;
@@ -149,7 +149,7 @@ if (!window.PREVIEW_MODE && /^#\/backend/.test(location.hash)) { const q = locat
       let data; try { data = await api('/api/admin/customers?' + new URLSearchParams({ campaign: campParam, q: state.q, page: state.page })); } catch (e) { if (/401/.test(e.message)) return location.reload(); $('#cust-tbl tbody').innerHTML = `<tr><td colspan="6" class="err">${esc(e.message)}</td></tr>`; return; }
       if (!alive()) return;
       state.page = data.page;
-      $('#cust-tbl tbody').innerHTML = data.rows.map(row).join('') || `<tr><td colspan="7" class="empty">ยังไม่มีลูกค้าที่ล็อกอิน${campaign ? 'ในแคมเปญ ' + esc(campaign.name) : ''} / No customers yet</td></tr>`;
+      $('#cust-tbl tbody').innerHTML = data.rows.map(row).join('') || `<tr><td colspan="7" class="empty">ยังไม่มีลูกค้า${campaign ? 'ในแคมเปญ ' + esc(campaign.name) : ''} / No customers yet</td></tr>`;
       $('#cust-count').innerHTML = `${ICONS.customer} Customer <b>${data.total}</b>${campaign ? ` <span class="th">· ${esc(campaign.name)}</span>` : ' <span class="th">· ทุกแคมเปญ</span>'}`;
       $('#pg').textContent = `${data.page} / ${data.pages}`; $('#prev').disabled = data.page <= 1; $('#next').disabled = data.page >= data.pages;
     }
@@ -161,7 +161,7 @@ if (!window.PREVIEW_MODE && /^#\/backend/.test(location.hash)) { const q = locat
     $('#cust-csv').addEventListener('click', async () => {
       const data = await api('/api/admin/customers?' + new URLSearchParams({ campaign: campParam, q: state.q, export: '1' }));
       const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-      const lines = [['campaign', 'name', 'email', 'last_login', 'orders', 'paid_total', 'last_order', 'joined_campaign', 'first_seen'].join(','), ...data.rows.map((c) => [campaign ? campaign.name : 'all', c.name, c.email, c.last_login_at, c.orders, c.paid_total, c.last_order_at || '', c.joined_at || '', c.created_at].map(cell).join(','))];
+      const lines = [['campaign', 'name', 'email', 'last_active', 'orders', 'paid_total', 'last_order', 'joined_campaign', 'first_seen'].join(','), ...data.rows.map((c) => [campaign ? campaign.name : 'all', c.name || '', c.email, c.last_login_at || c.last_seen_at || '', c.orders, c.paid_total, c.last_order_at || '', c.joined_at || '', c.created_at].map(cell).join(','))];
       const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `customers-${campaign ? campaign.slug : 'all'}-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     });
