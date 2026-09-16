@@ -119,6 +119,21 @@ function refreshAccountSlot() {
   const so = $('#signout'); if (so) so.addEventListener('click', signOut);
 }
 
+/* downscale a picture in the browser before uploading (keeps uploads small; JPEG unless the source is PNG) */
+async function shrinkImage(file, maxW, maxH, { quality = 0.86, minBytes = 600 * 1024, jpeg = false } = {}) {
+  if (file.type === 'image/svg+xml' || file.type === 'image/gif') return file;
+  try {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, maxW / bmp.width, maxH / bmp.height);
+    if (scale === 1 && file.size < minBytes) return file;
+    const c = document.createElement('canvas'); c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    const type = file.type === 'image/png' && !jpeg ? 'image/png' : 'image/jpeg';   // PNG คงความโปร่งใส (รูป Design); สลิปใช้ JPEG ให้ไฟล์เล็ก
+    const blob = await new Promise((res) => c.toBlob(res, type, quality));
+    return new File([blob], (file.name || 'image').replace(/\.[^.]+$/, '') + (type === 'image/png' ? '.png' : '.jpg'), { type });
+  } catch (e) { return file; }
+}
+
 /* cart: [{set_id, quantity}] — one line per Match Set */
 function loadCart() { try { return (JSON.parse(localStorage.getItem(CART_KEY)) || []).filter((l) => l && l.set_id && l.quantity > 0); } catch (e) { return []; } }
 function saveCart(c) { try { localStorage.setItem(CART_KEY, JSON.stringify(c)); } catch (e) { /* ignore */ } updateCartBadge(); }
