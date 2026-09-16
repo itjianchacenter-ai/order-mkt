@@ -41,9 +41,9 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
   try {
     let r = await call('customer', 'GET', '/api/menu');
     check('menu loads with sets + campaign + stock', r.status === 200 && r.json.sets.length === 2 && r.json.sets[0].label === 'SET A' && r.json.sets[0].items.length === 3 && r.json.campaign.name === 'JIANCHA x NAVORI' && r.json.stock.limits.total === 1000, r.json.sets);
-    const menu = r.json; const A = menu.sets[0].id, B = menu.sets[1].id; // SET A 289 · SET B 299, each set = 1 unit of stock
+    const menu = r.json; const A = menu.sets[0].id, B = menu.sets[1].id; // SET A 369 · SET B 379, each set = 1 unit of stock
     check('menu carries pick-up times', Array.isArray(menu.pickup_times) && menu.pickup_times.join('|') === '10:00-11:00 น.|13:00-15:00 น.|17:00-20:00 น.', menu.pickup_times);
-    check('menu carries pick-up dates', Array.isArray(menu.pickup_dates) && menu.pickup_dates.join() === '2026-09-25,2026-09-26,2026-09-27,2026-09-28' && menu.sets[0].price === 289 && menu.sets[1].price === 299 && menu.sets[0].items[0].name_th === 'เผือกโมจิ', menu.pickup_dates);
+    check('menu carries pick-up dates', Array.isArray(menu.pickup_dates) && menu.pickup_dates.join() === '2026-09-25,2026-09-26,2026-09-27,2026-09-28' && menu.sets[0].price === 369 && menu.sets[1].price === 379 && menu.sets[0].items[0].name_th === 'เผือกโมจิ', menu.pickup_dates);
     r = await call('customer', 'GET', '/api/stores'); check('stores load (5 branches: Central World Groove merged, Emsphere)', r.status === 200 && r.json.length === 5 && r.json.some((x) => x.name === 'Emsphere') && r.json.some((x) => x.name === 'Central World Groove') && !r.json.some((x) => x.name === 'Groove'));
     const storeId = r.json[1].id; // central-world (Central World Groove)
 
@@ -89,7 +89,7 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     r = await call('customer2', 'POST', '/api/auth/logout'); check('logout', r.json.logged_in === false);
     r = await call('customer2', 'GET', '/api/orders'); check('after logout the browser has no orders', r.json.length === 0);
     r = await call('customer2', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-25', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 1 }] }); check('after logout ordering needs login again', r.status === 401);
-    check('order lines + total', order.lines.length === 2 && order.total === 2 * 289 + 299 && order.pickup_date === '2026-09-25' && order.pickup_time === '13:00-15:00 น.' && order.lines[0].name === 'SET A · Mooncake Set with Pomegranate Iced Tea' && order.lines[0].items.length === 3 && order.store_name === 'JIANCHA - Central World Groove', order);
+    check('order lines + total', order.lines.length === 2 && order.total === 2 * 369 + 379 && order.pickup_date === '2026-09-25' && order.pickup_time === '13:00-15:00 น.' && order.lines[0].name === 'SET A · Mooncake Set with Pomegranate Iced Tea' && order.lines[0].items.length === 3 && order.store_name === 'JIANCHA - Central World Groove', order);
     r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-25', pickup_time: '13:00-15:00 น.', lines: [{ set_id: B, quantity: 1 }] });
     check('order numbers increment', r.json.order_number === String(BigInt(order.order_number) + 1n), r.json.order_number);
     const order2 = r.json;
