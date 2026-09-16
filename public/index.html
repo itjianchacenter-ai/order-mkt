@@ -179,7 +179,7 @@
     updateCartBadge();
   }
   render();
-  $('#confirm').addEventListener('click', () => submitOrder({ storeId: getStore(), note: $('#note').value, phone: $('#phone').value.trim(), pickupDate: getPickup(), pickupDates, pickupTime: getPickupTime(), pickupTimes, errEl: $('#err'), btn: $('#confirm'), onFail: refreshStock }));
+  $('#confirm').addEventListener('click', () => submitOrder({ storeId: getStore(), note: $('#note').value, phone: $('#phone').value.trim(), email: $('#email').value.trim(), pickupDate: getPickup(), pickupDates, pickupTime: getPickupTime(), pickupTimes, errEl: $('#err'), btn: $('#confirm'), onFail: refreshStock }));
 })();
 </script>
 </body>

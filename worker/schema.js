@@ -18,7 +18,7 @@ const DDL = [
     store_id TEXT NOT NULL, store_name TEXT NOT NULL,
     total REAL NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'pending',
-    note TEXT DEFAULT '', phone TEXT DEFAULT '', pickup_date TEXT DEFAULT '', pickup_time TEXT DEFAULT '', order_day TEXT DEFAULT '', pdpa_accepted_at TEXT DEFAULT '',
+    note TEXT DEFAULT '', phone TEXT DEFAULT '', email TEXT DEFAULT '', pickup_date TEXT DEFAULT '', pickup_time TEXT DEFAULT '', order_day TEXT DEFAULT '', pdpa_accepted_at TEXT DEFAULT '',
     slip_path TEXT DEFAULT '', slip_hash TEXT DEFAULT '', slip_ref TEXT DEFAULT '', slip_amount REAL, slip_reason TEXT DEFAULT '', slip_verified INTEGER DEFAULT 0,
     promo_code TEXT,
     created_at TEXT DEFAULT (${NOW}), paid_at TEXT, picked_up_at TEXT, cancelled_at TEXT)`,
@@ -68,6 +68,7 @@ async function migrate(env) {
   await db.batch(DDL.map((q) => db.stmt(q)));
   // ฐานข้อมูลที่สร้างก่อนมี promo_prefix
   try { await db.run("ALTER TABLE campaigns ADD COLUMN promo_prefix TEXT DEFAULT ''"); } catch (e) { /* มีอยู่แล้ว */ }
+  try { await db.run("ALTER TABLE orders ADD COLUMN email TEXT DEFAULT ''"); } catch (e) { /* มีอยู่แล้ว */ }   // อีเมลผู้สั่ง (กรอกที่หน้า Order Summary)
   // First run: the three back-office accounts (change the passwords in the Account page before going live)
   if ((await db.get('SELECT COUNT(*) AS n FROM users')).n === 0) {
     const seed = [['it-admin', 'jiancha2026', 'it_admin', 'IT - Admin', 'IT'], ['admin', 'marketing', 'admin', 'Admin', 'Marketing'], ['finance', 'jiancha', 'finance', 'Finance', 'Finance']];

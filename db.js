@@ -89,6 +89,8 @@ CREATE TABLE IF NOT EXISTS campaigns (
 
 // orders.phone: เบอร์ติดต่อของผู้รับขนม (กรอกที่หน้า Cart)
 if (!db.prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name = 'phone'").get()) db.exec("ALTER TABLE orders ADD COLUMN phone TEXT DEFAULT ''");
+// orders.email: อีเมลผู้สั่ง (กรอกที่หน้า Order Summary; ใช้ส่งอีเมลยืนยัน + รหัสโปรโมชัน)
+if (!db.prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name = 'email'").get()) db.exec("ALTER TABLE orders ADD COLUMN email TEXT DEFAULT ''");
 
 // orders.pickup_date: วันที่รับของที่ลูกค้าเลือก (YYYY-MM-DD จากรายการ pickup_dates ของแคมเปญ)
 if (!db.prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name = 'pickup_date'").get()) db.exec("ALTER TABLE orders ADD COLUMN pickup_date TEXT DEFAULT ''");
