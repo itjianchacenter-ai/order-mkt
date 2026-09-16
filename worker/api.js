@@ -138,6 +138,8 @@ async function ownOrder(c, id) {
   return o;
 }
 async function notifyApproved(c, orderId) {
+  // อนุมัติแล้ว → ออกรหัสโปรโมชันเรียงลำดับทันที (ลูกค้ากด "รับ code" เพื่อดู) แล้วส่งอีเมลพร้อมรหัส
+  try { await assignPromoCode(c, orderId); } catch (e) { console.error('[promo] ' + (e.body ? e.body.error : e.message)); }
   const row = await getOrder(c.db, orderId); if (!row) return;
   const o = await orderView(c, row); const cust = await customerRow(c.db, row.customer_id); const camp = row.campaign_id ? await getCampaign(c.db, row.campaign_id) : null;
   const to = (cust && cust.email) || '';
@@ -337,15 +339,14 @@ async function assignPromoCode(c, orderId) {
   if (o.promo_code) return o.promo_code;
   if (!['paid', 'picked_up'].includes(o.status)) fail(400, 'รับ code ได้เมื่อชำระเงินเรียบร้อยแล้ว / Available after payment');
   const camp = (await getCampaign(db, o.campaign_id)) || (await activeCampaign(db));
-  const from = camp.promo_from, to = camp.promo_to;
-  // รหัสที่ออกไปแล้ว (ทุกแคมเปญ กันซ้ำข้ามแคมเปญ) — รหัสสุ่มในช่วงของแคมเปญ รูปแบบ prefix + เลขเติมศูนย์ เช่น NVR260001
-  const used = new Set((await db.all('SELECT promo_code FROM orders WHERE promo_code IS NOT NULL')).map((r) => String(r.promo_code)));
-  const usedHere = (await db.get('SELECT COUNT(*) AS n FROM orders WHERE campaign_id = ? AND promo_code IS NOT NULL', camp.id)).n;
-  if (usedHere >= to - from + 1) fail(409, 'รหัสโปรโมชันถูกใช้ครบแล้ว กรุณาติดต่อเจ้าหน้าที่');
+  // เรียงลำดับตามการอนุมัติ: เลขสูงสุดที่เคยออกในแคมเปญ + 1 (ไม่ใช้ซ้ำแม้ออเดอร์ถูกยกเลิก) รูปแบบ prefix + เลขเติมศูนย์ เช่น NVR260001
   for (let attempt = 0; attempt < 5; attempt++) {
-    let code; do { code = M.formatPromoCode(camp, from + randomInt(to - from + 1)); } while (used.has(code));
-    // ตั้งเฉพาะเมื่อยังไม่มี code (กันกดซ้ำพร้อมกัน); unique index กันเลขซ้ำ
-    try { const r = await db.run('UPDATE orders SET promo_code = ? WHERE id = ? AND promo_code IS NULL', code, orderId); if (r.meta.changes > 0) return code; } catch (e) { used.add(code); continue; }
+    const usedRows = await db.all('SELECT promo_code FROM orders WHERE campaign_id = ? AND promo_code IS NOT NULL', camp.id);
+    const n = M.nextPromoNumber(usedRows.map((r) => r.promo_code), camp);
+    if (n == null) fail(409, 'รหัสโปรโมชันถูกใช้ครบแล้ว กรุณาติดต่อเจ้าหน้าที่');
+    const code = M.formatPromoCode(camp, n);
+    // ตั้งเฉพาะเมื่อยังไม่มี code (กันกดซ้ำพร้อมกัน); unique index กันเลขซ้ำ → อ่านใหม่แล้วลองเลขถัดไป
+    try { const r = await db.run('UPDATE orders SET promo_code = ? WHERE id = ? AND promo_code IS NULL', code, orderId); if (r.meta.changes > 0) return code; } catch (e) { continue; }
     return (await db.get('SELECT promo_code FROM orders WHERE id = ?', orderId)).promo_code;
   }
   fail(409, 'ออกรหัสโปรโมชันไม่สำเร็จ กรุณาลองใหม่');

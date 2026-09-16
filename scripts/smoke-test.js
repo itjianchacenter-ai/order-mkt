@@ -156,11 +156,12 @@ const dbx = {
     r = await call('customer', 'POST', `/api/orders/${order2.id}/slip`, png(3)); check('re-upload after rejection', r.json.status === 'slip_uploaded');
     r = await call('customer', 'POST', `/api/orders/${order.id}/code`); check('code refused before approval', r.status === 400, r.json);
     r = await call('fin', 'POST', `/api/admin/orders/${order.id}/status`, { status: 'paid' }); check('finance approves slip', r.json.status === 'paid' && r.json.paid_at);
+    check('promo code assigned at approval, first in sequence', r.json.promo_code === 'NVR260001', r.json.promo_code);
     check('approval email sent to the customer\'s Google email', r.json.approval_mail && r.json.approval_mail.status === 'sent' && r.json.approval_mail.to === 'alice@gmail.com' && r.json.approval_mail.at, r.json.approval_mail);
     r = await call('it', 'GET', `/api/admin/orders/${order.id}`); check('approval email status visible to back-office', r.json.approval_mail && r.json.approval_mail.status === 'sent');
     r = await call('customer', 'GET', `/api/orders/${order.id}`); check('customer view does not expose mail log', r.json.approval_mail === undefined);
     r = await call('customer', 'POST', `/api/orders/${order.id}/code`);
-    check('promo code issued in range NVR260001–NVR262000', r.status === 200 && /^NVR26\d{4}$/.test(r.json.promo_code) && Number(r.json.promo_code.slice(5)) >= 1 && Number(r.json.promo_code.slice(5)) <= 2000, r.json);
+    check('customer "รับ code" shows the assigned code NVR260001', r.status === 200 && r.json.promo_code === 'NVR260001', r.json);
     const code1 = r.json.promo_code;
     r = await call('customer', 'POST', `/api/orders/${order.id}/code`); check('same code on repeat', r.json.promo_code === code1);
     r = await call('other', 'POST', `/api/orders/${order.id}/code`); check('stranger cannot get code', r.status === 404);
@@ -263,7 +264,7 @@ const dbx = {
     r = await call('customer', 'GET', '/api/menu'); check('menu reports sold out', r.json.stock.sold_out === true && r.json.stock.remaining.total === 0, r.json.stock);
     r = await placeOrder('customer', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-25', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 1 }] }); check('sold out rejected', r.status === 409 && /หมดแล้ว/.test(r.json.error), r.json);
     r = await call('it', 'POST', `/api/admin/orders/${bigOrder.id}/status`, { status: 'paid' });
-    r = await call('it', 'POST', `/api/orders/${bigOrder.id}/code`); check('it-admin can issue code, unique', r.status === 200 && r.json.promo_code !== code1, r.json);
+    r = await call('it', 'POST', `/api/orders/${bigOrder.id}/code`); check('next approved order gets the next number (NVR260002), never reused after cancel', r.status === 200 && r.json.promo_code === 'NVR260002' && r.json.promo_code !== code1, r.json);
     r = await call('fin', 'POST', `/api/admin/orders/${bigOrder.id}/status`, { status: 'cancelled' }); check('finance cancels big order', r.json.status === 'cancelled');
     r = await call('customer', 'GET', '/api/stock'); check('cancelled order frees stock', r.json.remaining.total === 990, r.json);
     r = await call('it', 'GET', '/api/admin/summary?campaign=jiancha-x-navori'); check('summary per campaign', r.status === 200 && r.json.stock.remaining.total === 990);

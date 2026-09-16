@@ -290,8 +290,9 @@ async function api(path, opts = {}) {
     if (!o.promo_code) {
       if (!['paid', 'picked_up'].includes(o.status)) pvFail('รับ code ได้เมื่อชำระเงินเรียบร้อยแล้ว / Available after payment');
       const c = d.campaigns.find((x) => x.id === o.campaign_id) || active; const from = c.promo_code.from, to = c.promo_code.to; const prefix = c.promo_code.prefix || '';
-      const used = new Set(d.orders.map((x) => x.promo_code).filter(Boolean));
-      let code; do { const n = from + Math.floor(Math.random() * (to - from + 1)); code = prefix ? prefix + String(n).padStart(String(to).length, '0') : String(n); } while (used.has(code));
+      let max = from - 1; for (const x of d.orders) { if (x.campaign_id !== c.id || !x.promo_code) continue; const s = String(x.promo_code); if (prefix && !s.startsWith(prefix)) continue; const n = parseInt(prefix ? s.slice(prefix.length) : s, 10); if (n > max) max = n; }
+      const n = Math.max(from, max + 1); if (n > to) pvFail('รหัสโปรโมชันถูกใช้ครบแล้ว กรุณาติดต่อเจ้าหน้าที่');
+      const code = prefix ? prefix + String(n).padStart(String(to).length, '0') : String(n);
       o.promo_code = code; pvSave(d);
     }
     return { promo_code: o.promo_code, order: pvView(d, o) };

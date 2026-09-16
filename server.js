@@ -305,13 +305,11 @@ const assignPromoCode = db.transaction((orderId) => {
   if (o.promo_code) return o.promo_code;
   if (!['paid', 'picked_up'].includes(o.status)) { const e = new Error('รับ code ได้เมื่อชำระเงินเรียบร้อยแล้ว / Available after payment'); e.status = 400; throw e; }
   const c = getCampaign(o.campaign_id) || activeCampaign();
-  const from = c.promo_from, to = c.promo_to;
-  // รหัสที่ออกไปแล้ว (ทุกแคมเปญ กันซ้ำข้ามแคมเปญ) — รหัสสุ่มในช่วงของแคมเปญ รูปแบบ prefix + เลขเติมศูนย์ เช่น NVR260001
-  const used = new Set(db.prepare('SELECT promo_code FROM orders WHERE promo_code IS NOT NULL').all().map((r) => String(r.promo_code)));
-  const usedHere = db.prepare('SELECT COUNT(*) AS n FROM orders WHERE campaign_id = ? AND promo_code IS NOT NULL').get(c.id).n;
-  if (usedHere >= to - from + 1) { const e = new Error('รหัสโปรโมชันถูกใช้ครบแล้ว กรุณาติดต่อเจ้าหน้าที่'); e.status = 409; throw e; }
-  let code;
-  do { code = M.formatPromoCode(c, from + crypto.randomInt(to - from + 1)); } while (used.has(code));
+  // เรียงลำดับตามการอนุมัติ: เลขสูงสุดที่เคยออกในแคมเปญ + 1 (ไม่ใช้ซ้ำแม้ออเดอร์ถูกยกเลิก) รูปแบบ prefix + เลขเติมศูนย์ เช่น NVR260001
+  const usedRows = db.prepare('SELECT promo_code FROM orders WHERE campaign_id = ? AND promo_code IS NOT NULL').all(c.id);
+  const n = M.nextPromoNumber(usedRows.map((r) => r.promo_code), c);
+  if (n == null) { const e = new Error('รหัสโปรโมชันถูกใช้ครบแล้ว กรุณาติดต่อเจ้าหน้าที่'); e.status = 409; throw e; }
+  const code = M.formatPromoCode(c, n);
   db.prepare('UPDATE orders SET promo_code = ? WHERE id = ?').run(code, orderId);
   return code;
 });
@@ -666,6 +664,8 @@ function approvalEmail(o, c, baseUrl) {
   return m;
 }
 async function notifyApproved(orderId) {
+  // อนุมัติแล้ว → ออกรหัสโปรโมชันเรียงลำดับทันที (ลูกค้ากด "รับ code" เพื่อดู) แล้วส่งอีเมลพร้อมรหัส
+  try { assignPromoCode(orderId); } catch (e) { console.error('[promo] ' + e.message); }
   const row = getOrder(orderId); if (!row) return;
   const o = orderView(row); const cust = customerRow(row.customer_id); const camp = row.campaign_id ? getCampaign(row.campaign_id) : null;
   const to = (cust && cust.email) || '';
