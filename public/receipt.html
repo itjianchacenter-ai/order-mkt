@@ -31,7 +31,7 @@
   const [en, th] = STATUS_LABEL[o.status] || [o.status, ''];
   $('#receipt').innerHTML = `
     <div class="receipt">
-      <div class="r-head"><b>JIANCHA x NAVORI</b><span class="th">ใบรายการสั่งซื้อ / Order Receipt</span></div>
+      <div class="r-head"><span class="brand-logos r-logos">${/navori/i.test(o.campaign_name || 'navori') ? `<img class="lg-jiancha" src="/img/logo-jiancha.png" alt="JIANCHA"><b class="x">x</b><img class="lg-navori" src="/img/logo-navori.png" alt="NAVORI">` : `<img class="lg-jiancha" src="/img/logo-jiancha.png" alt="JIANCHA"><b>${esc(o.campaign_name)}</b>`}</span><span class="th">ใบรายการสั่งซื้อ / Order Receipt</span></div>
       <table class="r-meta">
         <tr><th>Order Number</th><td class="mono">${esc(o.order_number)}</td></tr>
         <tr><th>Date <span class="th">/ วันที่สั่ง</span></th><td>${fmtDateTime(o.created_at)}</td></tr>

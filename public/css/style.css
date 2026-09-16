@@ -294,6 +294,9 @@ a.btn{text-decoration:none}
 .receipt{background:#fff;border:1px solid var(--line);border-radius:var(--r-card);padding:28px 32px;max-width:720px}
 .receipt .r-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;border-bottom:2px solid var(--line);padding-bottom:12px;margin-bottom:16px}
 .receipt .r-head b{font-size:22px;font-weight:800}
+.receipt .r-logos img{height:28px}
+.receipt .r-logos .lg-navori{height:24px}
+@media print{.receipt .r-logos img{height:24px}.receipt .r-logos .lg-navori{height:20px}}
 .receipt table{width:100%;border-collapse:collapse}
 .receipt .r-meta th{text-align:left;font-weight:700;padding:5px 12px 5px 0;width:40%;vertical-align:top}
 .receipt .r-meta td{padding:5px 0}
