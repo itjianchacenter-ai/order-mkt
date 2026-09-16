@@ -459,6 +459,15 @@ app.patch('/api/admin/users/:id', requirePerm('accounts'), (req, res) => {
     .run(String(next.display_name).slice(0, 80), String(next.department).slice(0, 80), next.role, next.active, u.id);
   res.json(userView(db.prepare('SELECT * FROM users WHERE id = ?').get(u.id)));
 });
+// ล้างออเดอร์ทั้งหมด (ข้อมูลทดสอบ) — IT-Admin เท่านั้น ต้องส่ง confirm: 'RESET' (บัญชี/แคมเปญ/ลูกค้าคงไว้)
+app.post('/api/admin/reset', requirePerm('accounts'), (req, res) => {
+  if (!req.body || req.body.confirm !== 'RESET') return res.status(400).json({ error: "ต้องยืนยันด้วยคำว่า RESET / Send { confirm: 'RESET' }" });
+  const before = db.prepare('SELECT COUNT(*) AS n, COUNT(promo_code) AS codes FROM orders').get();
+  const slips = db.prepare("SELECT slip_path FROM orders WHERE slip_path <> ''").all();
+  db.transaction(() => { db.exec('DELETE FROM order_lines; DELETE FROM mail_log; DELETE FROM orders; DELETE FROM order_counters;'); })();
+  for (const s of slips) fs.unlink(s.slip_path, () => {});
+  res.json({ ok: true, orders: before.n, promo_codes: before.codes, slips: slips.length, before: null });
+});
 app.delete('/api/admin/users/:id', requirePerm('accounts'), (req, res) => {
   const me = adminFromReq(req);
   const u = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);

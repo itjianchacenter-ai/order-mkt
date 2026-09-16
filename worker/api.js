@@ -7,6 +7,7 @@ const qrConfigured = (env) => Boolean(paymentMode(env));
 import { sendMail } from './mail.js';
 import { verifySlip, slipOkEnabled } from './slip.js';
 import { putFile, getFile, deleteFile, fileMax, usingR2 } from './files.js';
+import { wipeOrders } from './reset.js';
 import * as M from '../lib/menu.js';
 import * as W from '../lib/window.js';
 import { approvalEmail } from '../lib/email.js';
@@ -329,7 +330,7 @@ on('POST', '/api/admin/login', async (c) => {
 on('POST', '/api/admin/logout', async (c) => { c.cookies.push(cookie(ADMIN_COOKIE, '', { maxAge: 0, secure: c.secure })); return json({ ok: true }); });
 on('GET', '/api/admin/me', async (c) => {
   const u = await adminUser(c);
-  return json({ admin: Boolean(u), user: u ? userView(u) : null, permissions: u ? permissionsOf(u) : {}, slip_auto_verify: slipOkEnabled(c.env), payment_ready: qrConfigured(c.env), payment_mode: paymentMode(c.env), public_base_url: (c.env.PUBLIC_BASE_URL || '').replace(/\/+$/, ''), file_storage: usingR2(c.env) ? 'r2' : 'd1' });
+  return json({ admin: Boolean(u), user: u ? userView(u) : null, permissions: u ? permissionsOf(u) : {}, slip_auto_verify: slipOkEnabled(c.env), payment_ready: qrConfigured(c.env), payment_mode: paymentMode(c.env), reset_orders_at: (c.env.RESET_ORDERS_AT || '').trim(), order_early_hours: parseFloat(c.env.ORDER_EARLY_HOURS || '0') || 0, public_base_url: (c.env.PUBLIC_BASE_URL || '').replace(/\/+$/, ''), file_storage: usingR2(c.env) ? 'r2' : 'd1' });
 });
 on('POST', '/api/admin/me/password', async (c) => {
   const u = await requirePerm(c, 'orders_view'); const { current = '', password = '' } = await body(c);
@@ -370,6 +371,12 @@ on('PATCH', '/api/admin/users/:id', async (c) => {
   }
   await c.db.run('UPDATE users SET display_name = ?, department = ?, role = ?, active = ?, updated_at = ? WHERE id = ?', String(next.display_name).slice(0, 80), String(next.department).slice(0, 80), next.role, next.active, now(), u.id);
   return json(userView(await c.db.get('SELECT * FROM users WHERE id = ?', u.id)));
+});
+// ล้างออเดอร์ทั้งหมด (ข้อมูลทดสอบ) — IT-Admin เท่านั้น ต้องส่ง confirm: 'RESET'
+on('POST', '/api/admin/reset', async (c) => {
+  await requirePerm(c, 'accounts');
+  const b = await body(c); if (b.confirm !== 'RESET') fail(400, "ต้องยืนยันด้วยคำว่า RESET / Send { confirm: 'RESET' }");
+  return json({ ok: true, ...(await wipeOrders(c.env)) });
 });
 on('DELETE', '/api/admin/users/:id', async (c) => {
   const me = await requirePerm(c, 'accounts');

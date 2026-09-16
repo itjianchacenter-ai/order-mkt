@@ -313,6 +313,15 @@ const dbx = {
       }
     }
 
+    // ล้างออเดอร์ทั้งหมด (IT-Admin): ออเดอร์/สลิปหาย บัญชีลูกค้าและหลังบ้านคงอยู่
+    r = await call('mkt', 'POST', '/api/admin/reset', { confirm: 'RESET' }); check('marketing cannot reset', r.status === 403);
+    r = await call('it', 'POST', '/api/admin/reset', { confirm: 'nope' }); check('reset needs RESET confirmation', r.status === 400);
+    r = await call('it', 'POST', '/api/admin/reset', { confirm: 'RESET' }); check('it-admin resets all orders', r.status === 200 && r.json.orders > 0 && r.json.slips > 0, r.json);
+    r = await call('it', 'GET', '/api/admin/orders'); check('no orders after reset', r.json.total === 0);
+    r = await call('customer', 'GET', '/api/stock'); check('quota + stock back to full after reset', r.json.remaining.total === 1000 && r.json.order_window.today_count === 0, r.json);
+    r = await call('mkt', 'GET', '/api/admin/customers?campaign=all'); check('customers kept after reset', r.json.total >= 2, r.json.total);
+    r = await call('it', 'GET', '/api/admin/users'); check('accounts kept after reset', r.json.length >= 3);
+    if (CF) { const m = await dbx.get("SELECT COUNT(*) AS n FROM meta WHERE key LIKE 'reset:%'"); check('scheduled reset (RESET_ORDERS_AT in the past) ran once on first request', m && m.n === 1, m); }
     r = await call('it', 'POST', '/api/admin/logout'); r = await call('it', 'GET', '/api/admin/orders'); check('logout works', r.status === 401);
     r = await fetch(base + '/backend'); check('back-office served at /backend', r.status === 200 && /JIANCHA Page/.test(await r.text()));
     r = await fetch(base + '/backend/'); check('back-office served at /backend/', r.status === 200 && /JIANCHA Page/.test(await r.text()));

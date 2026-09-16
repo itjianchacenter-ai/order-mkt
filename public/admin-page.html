@@ -174,7 +174,18 @@
     app.innerHTML = `
       <div class="toolbar"><input class="search" id="q" placeholder="Search …"><button type="button" class="btn" id="new" style="padding:10px 20px;font-size:17px">+ New</button></div>
       <div id="acc-form"></div>
-      <div class="camp-grid" id="users"></div>`;
+      <div class="camp-grid" id="users"></div>
+      <div class="cform" id="danger" style="margin-top:28px;border-color:#b00020">
+        <h3 style="margin:0 0 4px;color:#b00020">ล้างออเดอร์ทั้งหมด (ข้อมูลทดสอบ)</h3>
+        <p class="th" style="font-size:13px;margin:0 0 10px;color:var(--muted)">ลบออเดอร์ รายการ สลิป และรหัสโปรโมชันที่ออกไปแล้วทั้งหมด (เลขออเดอร์เริ่มนับใหม่) — บัญชีหลังบ้าน แคมเปญ/Design และบัญชีลูกค้าไม่ถูกลบ ใช้ก่อนเปิดขายจริงเท่านั้น${me.reset_orders_at ? ` · ตั้งล้างอัตโนมัติไว้: <b>${esc(me.reset_orders_at)}</b> (เวลาไทย)` : ''}</p>
+        <div class="actions"><button type="button" class="btn ghost" id="reset-all" style="border-color:#b00020;color:#b00020">ล้างออเดอร์ทั้งหมด…</button></div><div class="err" id="reset-err"></div>
+      </div>`;
+    $('#reset-all').addEventListener('click', async () => {
+      const word = prompt('การล้างข้อมูลย้อนกลับไม่ได้ พิมพ์ RESET เพื่อยืนยัน'); if (word == null) return;
+      if (word.trim() !== 'RESET') { $('#reset-err').textContent = 'ต้องพิมพ์ RESET ให้ตรง'; return; }
+      try { const r = await api('/api/admin/reset', { method: 'POST', body: { confirm: 'RESET' } }); $('#reset-err').textContent = ''; alert(`ล้างแล้ว: ออเดอร์ ${r.orders} ใบ, สลิป ${r.slips} รูป, รหัสโปรโมชันคืน ${r.promo_codes} รหัส`); }
+      catch (err) { $('#reset-err').textContent = err.message; }
+    });
     const draw = (filter = '') => {
       const f = filter.trim().toLowerCase();
       $('#users').innerHTML = users.filter((u) => !f || [u.username, u.display_name, u.department, u.role].join(' ').toLowerCase().includes(f)).map((u) => `

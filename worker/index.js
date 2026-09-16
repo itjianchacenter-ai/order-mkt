@@ -1,5 +1,6 @@
 /* Cloudflare Pages worker: API + uploads + page routing; everything else is a static asset from public/ */
 import { ensureSchema } from './schema.js';
+import { maybeScheduledReset } from './reset.js';
 import { makeContext, withCookies, handleApi, serveSlip, serveDesign, campaignBySlug } from './api.js';
 
 const CAMPAIGN_PAGES = { '': 'home', cart: 'cart', orders: 'orders', stores: 'stores', pay: 'pay', receipt: 'receipt' };
@@ -24,6 +25,7 @@ export default {
     if (/^\/(css|js|img|fonts)\//.test(p) || (!p.startsWith('/uploads/') && /\.(css|js|png|jpg|jpeg|webp|svg|ico|ttf|woff2?|txt|xml)$/i.test(p))) return env.ASSETS.fetch(request);
     if (!env.DB) return new Response('Cloudflare Pages: bind a D1 database as "DB" (Settings → Bindings). Optional: an R2 bucket as "FILES" for slip images; without it images are stored in D1.', { status: 500, headers: { 'content-type': 'text/plain; charset=utf-8' } });
     await ensureSchema(env);
+    await maybeScheduledReset(env);   // RESET_ORDERS_AT: ล้างออเดอร์ทดสอบอัตโนมัติครั้งเดียวเมื่อถึงเวลา
     const c = await makeContext(request, env, ctx);
     let res;
     if (p === '/api' || p.startsWith('/api/')) res = await handleApi(c);
