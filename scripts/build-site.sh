@@ -1,15 +1,27 @@
 #!/usr/bin/env bash
-# สร้างเว็บ preview แบบ static ลงโฟลเดอร์ _site (ใช้ได้ทั้ง GitHub Pages และ Cloudflare Pages)
-#   bash scripts/build-site.sh            → _site/index.html, _site/404.html, _site/img/...
-# ตัวแปร GOOGLE_CLIENT_ID (ถ้ามี) จะถูกฝังเพื่อเปิด Sign in with Google บน preview
+# สร้างเว็บลงโฟลเดอร์ _site
+#   SITE_MODE=real     → เว็บจริงสำหรับ Cloudflare Pages: หน้าเว็บจาก public/ + _worker.js (API บน D1/R2)  [ค่าเริ่มต้นเมื่อ build บน Cloudflare Pages]
+#   SITE_MODE=preview  → เว็บ preview ไฟล์เดียวไม่มีเซิร์ฟเวอร์ (GitHub Pages)                            [ค่าเริ่มต้นที่อื่น]
 set -euo pipefail
 cd "$(dirname "$0")/.."
 OUT="${OUT:-_site}"
-rm -rf "$OUT"; mkdir -p "$OUT/img"
-node scripts/build-preview.js "$OUT/index.html"
-cp "$OUT/index.html" "$OUT/404.html"
-touch "$OUT/.nojekyll"
-cp -r public/img/. "$OUT/img/"
-# Cloudflare Pages: กันไม่ให้ cache หน้า HTML ค้าง (รูปยัง cache ได้)
-printf '/index.html\n  Cache-Control: no-cache\n/404.html\n  Cache-Control: no-cache\n/\n  Cache-Control: no-cache\n' > "$OUT/_headers"
-echo "built $OUT ($(du -sh "$OUT" | cut -f1))"
+MODE="${SITE_MODE:-}"
+if [ -z "$MODE" ]; then if [ "${CF_PAGES:-}" = "1" ]; then MODE=real; else MODE=preview; fi; fi
+rm -rf "$OUT"; mkdir -p "$OUT"
+if [ "$MODE" = "real" ]; then
+  cp -r public/. "$OUT/"
+  mv "$OUT/index.html" "$OUT/home.html"        # / คือหน้า landing, หน้าแคมเปญ (index.html) ถูก worker เสิร์ฟที่ /<slug>/ และ /index
+  node scripts/build-worker.js "$OUT/_worker.js"
+  # ไฟล์ static (css/js/img/fonts) ไม่ต้องผ่าน worker; ที่เหลือ (API, หน้าเว็บ, uploads) ผ่าน worker
+  printf '{ "version": 1, "include": ["/*"], "exclude": ["/css/*", "/js/*", "/img/*", "/fonts/*"] }\n' > "$OUT/_routes.json"
+  printf '/*.html\n  Cache-Control: no-cache\n/css/*\n  Cache-Control: public, max-age=3600\n/js/*\n  Cache-Control: public, max-age=3600\n' > "$OUT/_headers"
+  echo "built $OUT (real site: pages + _worker.js, $(du -sh "$OUT" | cut -f1))"
+else
+  mkdir -p "$OUT/img"
+  node scripts/build-preview.js "$OUT/index.html"
+  cp "$OUT/index.html" "$OUT/404.html"
+  touch "$OUT/.nojekyll"
+  cp -r public/img/. "$OUT/img/"
+  printf '/index.html\n  Cache-Control: no-cache\n/404.html\n  Cache-Control: no-cache\n/\n  Cache-Control: no-cache\n' > "$OUT/_headers"
+  echo "built $OUT (preview, $(du -sh "$OUT" | cut -f1))"
+fi
