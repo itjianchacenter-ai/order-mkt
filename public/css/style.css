@@ -371,6 +371,18 @@ a.btn{text-decoration:none}
 .paybox h3{margin:0 0 4px;font-size:20px}
 .paybox .sub{font-size:13px;display:block;margin-bottom:16px}
 .qr{width:260px;height:260px;margin:0 auto;display:block}
+/* โอนเข้าบัญชีธนาคาร (หน้า pay) */
+.bank-card{margin:14px 0 8px;border:1px solid #000;border-radius:14px;overflow:hidden;background:#fff}
+.bank-row{display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid #e5e5e5;flex-wrap:wrap}
+.bank-row:first-child{border-top:0}
+.bank-row .k{font-size:12px;color:var(--muted);flex:0 0 150px}
+.bank-row b{font-size:16px;word-break:break-all}
+.bank-row .acct{font-family:Montserrat,monospace;font-size:22px;letter-spacing:1px}
+.bank-row.total{background:#f6f6f6}
+.bank-row .amt{font-size:22px}
+.bank-row .copy{margin-left:auto;font-size:12px;padding:4px 12px;cursor:pointer}
+.bank-note{display:block;color:var(--muted);font-size:13px;line-height:1.5}
+@media(max-width:480px){.bank-row .k{flex:1 0 100%}}
 .drop{display:block;border:1px dashed var(--line);border-radius:12px;padding:24px;text-align:center;background:var(--bg);cursor:pointer}
 .drop img{max-width:100%;max-height:260px;border-radius:8px}
 .hidden{display:none!important}

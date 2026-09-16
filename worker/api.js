@@ -1,7 +1,9 @@
 /* /api/* of the ordering system on Cloudflare (Pages Functions + D1 + R2). Same contract as server.js so public/*.html work unchanged. */
 import { json, fail, HttpError, signToken, verifyToken, hashPassword, checkPassword, parseCookies, cookie, sql, uuid, randomHex, randomInt } from './util.js';
 import { MENU, STORES } from './data.js';
-import { generateQR, qrConfigured } from './qr.js';
+import { generateQR } from './qr.js';
+import { bankAccount, paymentMode } from '../lib/payment.js';
+const qrConfigured = (env) => Boolean(paymentMode(env));
 import { sendMail } from './mail.js';
 import { verifySlip, slipOkEnabled } from './slip.js';
 import { putFile, getFile, deleteFile, fileMax, usingR2 } from './files.js';
@@ -194,7 +196,7 @@ on('POST', '/api/auth/logout', async (c) => { const cid = uuid(); await setCusto
 on('GET', '/api/menu', async (c) => { const camp = await requestCampaign(c); return json({ ...menuFor(camp), campaign: campaignPublic(camp), stock: await stockView(c, camp) }); });
 on('GET', '/api/stock', async (c) => json(await stockView(c, await requestCampaign(c))));
 on('GET', '/api/stores', async () => json(STORES));
-on('GET', '/api/config', async (c) => json({ payment_ready: qrConfigured(c.env), slip_auto_verify: slipOkEnabled(c.env), login_required: loginRequired(c.env), google_client_id: (c.env.GOOGLE_CLIENT_ID || '').trim() }));
+on('GET', '/api/config', async (c) => json({ payment_ready: qrConfigured(c.env), payment_mode: paymentMode(c.env), slip_auto_verify: slipOkEnabled(c.env), login_required: loginRequired(c.env), google_client_id: (c.env.GOOGLE_CLIENT_ID || '').trim() }));
 
 /** Body: { store_id, note, phone, pickup_date, pickup_time, campaign?: slug, lines: [{set_id, quantity}] } */
 on('POST', '/api/orders', async (c) => {
@@ -260,8 +262,11 @@ on('GET', '/api/orders/:id', async (c) => json(await orderView(c, await ownOrder
 on('GET', '/api/orders/:id/qr', async (c) => {
   const o = await ownOrder(c, c.params.id);
   if (!PAYABLE.includes(o.status)) fail(400, 'คำสั่งซื้อนี้ไม่ได้อยู่ในสถานะรอชำระเงิน');
-  if (!qrConfigured(c.env)) fail(503, 'ยังไม่ได้ตั้งค่า PromptPay ของร้าน (PROMPTPAY_ID)');
+  if (!qrConfigured(c.env)) fail(503, 'ยังไม่ได้ตั้งค่าบัญชีรับเงินของร้าน (BANK_ACCOUNT_NO หรือ PROMPTPAY_ID)');
   if (!(o.total > 0)) fail(400, 'ยอดคำสั่งซื้อเป็น 0 ไม่ต้องชำระเงิน');
+  // โอนเข้าบัญชีธนาคาร: ส่งรายละเอียดบัญชีให้ลูกค้าโอนเอง; PromptPay: ส่ง QR ตามยอด
+  const bank = bankAccount(c.env);
+  if (bank) return json({ bank, amount: o.total });
   return json({ qr_data_url: generateQR(c.env, o.total), amount: o.total });
 });
 // POS promotion code for a paid order: a random unused number in the campaign's range, assigned once
@@ -323,7 +328,7 @@ on('POST', '/api/admin/login', async (c) => {
 on('POST', '/api/admin/logout', async (c) => { c.cookies.push(cookie(ADMIN_COOKIE, '', { maxAge: 0, secure: c.secure })); return json({ ok: true }); });
 on('GET', '/api/admin/me', async (c) => {
   const u = await adminUser(c);
-  return json({ admin: Boolean(u), user: u ? userView(u) : null, permissions: u ? permissionsOf(u) : {}, slip_auto_verify: slipOkEnabled(c.env), payment_ready: qrConfigured(c.env), public_base_url: (c.env.PUBLIC_BASE_URL || '').replace(/\/+$/, ''), file_storage: usingR2(c.env) ? 'r2' : 'd1' });
+  return json({ admin: Boolean(u), user: u ? userView(u) : null, permissions: u ? permissionsOf(u) : {}, slip_auto_verify: slipOkEnabled(c.env), payment_ready: qrConfigured(c.env), payment_mode: paymentMode(c.env), public_base_url: (c.env.PUBLIC_BASE_URL || '').replace(/\/+$/, ''), file_storage: usingR2(c.env) ? 'r2' : 'd1' });
 });
 on('POST', '/api/admin/me/password', async (c) => {
   const u = await requirePerm(c, 'orders_view'); const { current = '', password = '' } = await body(c);

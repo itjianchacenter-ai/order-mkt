@@ -103,6 +103,14 @@ const dbx = {
     r = await call('other', 'GET', '/api/orders'); check('other browser sees nothing', r.json.length === 0);
     r = await call('other', 'GET', `/api/orders/${order.id}`); check('other browser cannot read order', r.status === 404);
     r = await call('customer', 'GET', `/api/orders/${order.id}/qr`); check('qr generated for order', r.status === 200 && /^data:image\/(png|svg\+xml)/.test(r.json.qr_data_url) && r.json.amount === 1117, r.json);
+    if (!CF) {
+      // โอนเข้าบัญชีธนาคารแทน PromptPay: ตั้ง BANK_* → /qr ส่งรายละเอียดบัญชี + ยอด แทน QR
+      Object.assign(process.env, { BANK_NAME: 'กสิกรไทย', BANK_ACCOUNT_NAME: 'บริษัท เจียนฉา จำกัด', BANK_ACCOUNT_NO: '123-4-56789-0' });
+      r = await call('customer', 'GET', `/api/orders/${order.id}/qr`); check('bank transfer mode returns account details instead of QR', r.status === 200 && r.json.qr_data_url === undefined && r.json.bank.account_no === '123-4-56789-0' && r.json.bank.bank === 'กสิกรไทย' && r.json.amount === 1117, r.json);
+      r = await call('customer', 'GET', '/api/config'); check('config reports bank payment mode', r.json.payment_ready === true && r.json.payment_mode === 'bank', r.json);
+      for (const k of ['BANK_NAME', 'BANK_ACCOUNT_NAME', 'BANK_ACCOUNT_NO']) delete process.env[k];
+      r = await call('customer', 'GET', '/api/config'); check('config back to promptpay mode', r.json.payment_mode === 'promptpay', r.json);
+    }
 
     // ── customer: slips ──
     r = await call('customer', 'POST', `/api/orders/${order.id}/slip`, png(1)); check('slip -> finance review queue', r.status === 200 && r.json.status === 'slip_uploaded', r.json);
