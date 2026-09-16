@@ -85,11 +85,12 @@ function stockView(c) {
   return { limits, used, remaining, sold_out: ['total', 'drink', 'dessert'].some((k) => remaining[k] === 0), order_window: orderWindow(c) };
 }
 // ─── ช่วงเปิดรับออเดอร์ + โควตาต่อวัน (นับตามวันเวลาไทย; lib/window.js) ───
-const bangkokToday = () => W.bangkokToday(process.env.ORDER_DAY_OVERRIDE);
+// วันของรอบสั่ง: วันนี้ (เวลาไทย) หรือรอบวันแรกเมื่ออยู่ในช่วงเปิดล่วงหน้า ORDER_EARLY_HOURS ชั่วโมงก่อนวันแรก
+const bangkokToday = (menu) => W.effectiveOrderDay((menu || loadMenu()).order_days, { override: process.env.ORDER_DAY_OVERRIDE, earlyHours: parseFloat(process.env.ORDER_EARLY_HOURS || '0') || 0 });
 const { fmtDayTH, fmtDayEN } = W;
 /** สถานะการรับออเดอร์ของแคมเปญวันนี้: open | before | closed | full (+ ข้อความแจ้งลูกค้า) */
 function orderWindow(c) {
-  const menu = menuFor(c); const days = menu.order_days || []; const today = bangkokToday();
+  const menu = menuFor(c); const days = menu.order_days || []; const today = bangkokToday(menu);
   const today_count = db.prepare("SELECT COUNT(*) AS n FROM orders WHERE campaign_id = ? AND order_day = ? AND status <> 'cancelled'").get(c.id, today).n;
   const total_count = days.length ? db.prepare(`SELECT COUNT(*) AS n FROM orders WHERE campaign_id = ? AND status <> 'cancelled' AND order_day IN (${days.map(() => '?').join(',')})`).get(c.id, ...days).n : today_count;
   return W.computeOrderWindow(menu, today, { today_count, total_count });
@@ -254,7 +255,7 @@ app.post('/api/orders', (req, res) => {
   const menu = menuFor(campaign);
   // วันที่รับของ: บังคับเลือกเมื่อแคมเปญกำหนดวันไว้ และต้องเป็นวันในรายการ
   // วันรับของกำหนดจากรอบสั่ง (ตาราง pickup_map: สั่ง 18 ก.ย. → รับ 25 ก.ย. …) ลูกค้าไม่ต้องเลือก; แคมเปญที่ไม่มีตารางยังให้เลือกจากรายการได้
-  const mustPickup = (menu.pickup_map || {})[bangkokToday()];
+  const mustPickup = (menu.pickup_map || {})[bangkokToday(menu)];
   const pickup_date = mustPickup || String((req.body && req.body.pickup_date) || '').trim();
   if (!mustPickup && menu.pickup_dates.length && !menu.pickup_dates.includes(pickup_date)) return res.status(400).json({ error: 'กรุณาเลือกวันที่รับของ / Please choose a pick-up date', field: 'pickup_date' });
   const pickup_time = String((req.body && req.body.pickup_time) || '').trim();
