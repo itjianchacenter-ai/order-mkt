@@ -16,7 +16,8 @@ const YEAR = 365 * 24 * 3600;
 const secretOf = (env) => (env.JWT_SECRET || '').trim() || 'dev-secret-order-jianchatea';
 const baseUrlOf = (c) => ((c.env.PUBLIC_BASE_URL || '').trim() || c.url.origin).replace(/\/+$/, '');
 const now = () => W.bangkokNow();
-const todayOf = (c) => W.bangkokToday(c.env.TEST_MODE ? (c.req.headers.get('x-test-day') || c.env.ORDER_DAY_OVERRIDE) : c.env.ORDER_DAY_OVERRIDE);
+// วันของรอบสั่ง: วันนี้ (เวลาไทย) หรือรอบวันแรกเมื่ออยู่ในช่วงเปิดล่วงหน้า ORDER_EARLY_HOURS ชั่วโมงก่อนวันแรก (x-test-day ใช้เฉพาะ TEST_MODE)
+const todayOf = (c, menu) => W.effectiveOrderDay(menu ? menu.order_days : MENU.order_days, { override: c.env.TEST_MODE ? (c.req.headers.get('x-test-day') || c.env.ORDER_DAY_OVERRIDE) : c.env.ORDER_DAY_OVERRIDE, earlyHours: parseFloat(c.env.ORDER_EARLY_HOURS || '0') || 0 });
 
 // ─── campaigns ───
 const campaignDesign = (c) => M.campaignDesign(c, MENU);
@@ -50,7 +51,7 @@ async function stockView(c, camp) {
   return { limits, used: { drink: used.drink, dessert: used.dessert, total: used.total }, remaining, sold_out: ['total', 'drink', 'dessert'].some((k) => remaining[k] === 0), order_window: await orderWindow(c, camp) };
 }
 async function orderWindow(c, camp) {
-  const menu = menuFor(camp); const days = menu.order_days || []; const today = todayOf(c);
+  const menu = menuFor(camp); const days = menu.order_days || []; const today = todayOf(c, menu);
   const today_count = (await c.db.get("SELECT COUNT(*) AS n FROM orders WHERE campaign_id = ? AND order_day = ? AND status <> 'cancelled'", camp.id, today)).n;
   const total_count = days.length ? (await c.db.get(`SELECT COUNT(*) AS n FROM orders WHERE campaign_id = ? AND status <> 'cancelled' AND order_day IN (${days.map(() => '?').join(',')})`, camp.id, ...days)).n : today_count;
   return W.computeOrderWindow(menu, today, { today_count, total_count });
@@ -209,7 +210,7 @@ on('POST', '/api/orders', async (c) => {
   if (!Array.isArray(lines) || lines.length === 0) fail(400, 'ยังไม่มีรายการในตะกร้า');
   const campaign = await requestCampaign(c, b);
   if (campaign.orders_open === 0) fail(400, 'แคมเปญนี้ปิดรับคำสั่งซื้อแล้ว / This campaign is closed');
-  const menu = menuFor(campaign); const today = todayOf(c);
+  const menu = menuFor(campaign); const today = todayOf(c, menu);
   // วันรับของกำหนดจากรอบสั่ง (pickup_map) ลูกค้าไม่ต้องเลือก; แคมเปญที่ไม่มีตารางยังให้เลือกจากรายการได้
   const mustPickup = (menu.pickup_map || {})[today];
   const pickup_date = mustPickup || String(b.pickup_date || '').trim();

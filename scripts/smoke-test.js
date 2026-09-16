@@ -257,6 +257,14 @@ const dbx = {
     r = await call('it', 'GET', '/api/admin/summary?campaign=jiancha-x-navori'); check('summary per campaign', r.status === 200 && r.json.stock.remaining.total === 990);
 
     // ── ช่วงเปิดรับออเดอร์ 18–22 ก.ย. 2026 + โควตา 200 ออเดอร์/วัน ──
+    { // เปิดรับล่วงหน้า N ชั่วโมงก่อนวันแรก (lib/window.effectiveOrderDay)
+      const { effectiveOrderDay } = require('../lib/window'); const days = ['2026-09-18', '2026-09-19'];
+      const at = (s) => new Date(s + '+07:00');
+      check('early open: 12h before -> first order day', effectiveOrderDay(days, { earlyHours: 12, now: at('2026-09-17T12:00:00') }) === '2026-09-18');
+      check('early open: 12h01 before -> still closed (actual day)', effectiveOrderDay(days, { earlyHours: 12, now: at('2026-09-17T11:59:00') }) === '2026-09-17');
+      check('early open: not set -> actual day', effectiveOrderDay(days, { earlyHours: 0, now: at('2026-09-17T23:00:00') }) === '2026-09-17');
+      check('early open: override wins', effectiveOrderDay(days, { override: '2026-09-20', earlyHours: 12, now: at('2026-09-17T12:00:00') }) === '2026-09-20');
+    }
     r = await call('customer', 'GET', '/api/stock'); const ow = r.json.order_window;
     check('order window: open today (18 Sep), 5 days x 200 = 1000, counts today', ow.open === true && ow.status === 'open' && ow.days.length === 5 && ow.per_day === 200 && ow.total_max === 1000 && ow.today === '2026-09-18' && ow.today_count > 0 && ow.today_remaining === 200 - ow.today_count && ow.range.th === '18–22 กันยายน 2569', ow);
     setDay('2026-09-17');
