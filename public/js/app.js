@@ -418,7 +418,13 @@ function openPdpaModal(onAccept) {
   m.classList.add('open'); document.body.classList.add('pdpa-lock');
 }
 /* เรียกตอนเปิดหน้าแคมเปญ: ยังไม่เคยยอมรับ → เปิด pop-up (ปิดไม่ได้จนกว่าจะยอมรับ) */
-async function requirePdpa() { await loadMe(); if (!pdpaAccepted()) openPdpaModal(); }
+async function requirePdpa() {
+  await loadMe();
+  // เคยกดยอมรับในเบราว์เซอร์นี้แล้ว แต่ server ยังไม่มีบันทึกของตัวตนนี้ (เช่น cookie ใหม่) → ส่งไปบันทึกให้ ออเดอร์จะได้มีหลักฐาน PDPA
+  let local = ''; try { local = localStorage.getItem(PDPA_KEY) || ''; } catch (e) { /* ignore */ }
+  if (local && !(ME && ME.pdpa_accepted_at)) { try { ME = await api('/api/pdpa', { method: 'POST', body: { accepted_at: local } }); } catch (e) { /* ignore */ } }
+  if (!pdpaAccepted()) openPdpaModal();
+}
 
 /* คำสั่งซื้อฉบับร่าง (ยังไม่มีในระบบ): เก็บไว้ในเบราว์เซอร์ระหว่างไปหน้าชำระเงิน — ออเดอร์จะถูกบันทึกเมื่อส่งสลิปแล้วเท่านั้น */
 const DRAFT_KEY = 'jc_draft' + (campaignSlug() ? ':' + campaignSlug() : '');
@@ -478,7 +484,7 @@ function orderCard(o, { light = false, open = false, extra = '', badge = '', asi
     </button>
     <div class="body ${open ? '' : 'hidden'}">
       <table>${rows}</table>
-      ${o.customer_email ? `<div class="meta"><span>${ICONS.user} <b>Google account:</b> ${esc(o.customer_email)}${o.customer_name && o.customer_name !== o.customer_email ? ` (${esc(o.customer_name)})` : ''}</span></div>` : ''}
+      ${o.customer_google && o.customer_email ? `<div class="meta"><span>${ICONS.user} <b>Google account:</b> ${esc(o.customer_email)}${o.customer_name && o.customer_name !== o.customer_email ? ` (${esc(o.customer_name)})` : ''}</span></div>` : ''}
       ${o.phone || light ? `<div class="meta"><span><b>Contact number:</b> ${o.phone ? esc(o.phone) : '-'}</span></div>` : ''}
       ${o.email || light ? `<div class="meta"><span><b>Email:</b> ${o.email ? esc(o.email) : '-'}</span></div>` : ''}
       ${light ? `<div class="meta"><span><b>PDPA consent:</b> ${o.pdpa_accepted_at ? 'ยอมรับแล้ว ' + esc(fmtDateTime(o.pdpa_accepted_at)) : '-'}</span></div>` : ''}

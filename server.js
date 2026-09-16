@@ -264,7 +264,7 @@ function orderView(o, { admin = false } = {}) {
   };
   // หลังบ้านเห็นบัญชี Google (อีเมล/ชื่อ) ของผู้สั่ง เผื่อต้องติดต่อ (บัญชีที่เตรียมไว้ล่วงหน้ายังไม่ล็อกอินก็แสดงอีเมล)
   if (admin) {
-    const c = customerRow(o.customer_id); Object.assign(v, { customer_email: (c && c.email) || '', customer_name: (c && c.name) || '' });
+    const c = customerRow(o.customer_id); Object.assign(v, { customer_email: (c && c.email) || '', customer_name: (c && c.name) || '', customer_google: Boolean(c && c.google_sub) });
     const m = db.prepare("SELECT to_email, status, error, created_at FROM mail_log WHERE order_id = ? AND kind = 'approved' ORDER BY id DESC LIMIT 1").get(o.id);
     v.approval_mail = m ? { to: m.to_email, status: m.status, error: m.error || '', at: m.created_at } : null;
   }

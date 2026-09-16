@@ -127,7 +127,7 @@ async function orderView(c, o, { admin = false } = {}) {
     // หลังบ้านเห็นบัญชี Google (อีเมล/ชื่อ) ของผู้สั่ง + ผลอีเมลยืนยัน + เวลายอมรับ PDPA + สลิป
     const cu = await customerRow(c.db, o.customer_id);
     const m = await c.db.get("SELECT to_email, status, error, created_at FROM mail_log WHERE order_id = ? AND kind = 'approved' ORDER BY id DESC LIMIT 1", o.id);
-    Object.assign(v, { customer_email: (cu && cu.email) || '', customer_name: (cu && cu.name) || '', approval_mail: m ? { to: m.to_email, status: m.status, error: m.error || '', at: m.created_at } : null,
+    Object.assign(v, { customer_email: (cu && cu.email) || '', customer_name: (cu && cu.name) || '', customer_google: Boolean(cu && cu.google_sub), approval_mail: m ? { to: m.to_email, status: m.status, error: m.error || '', at: m.created_at } : null,
       pdpa_accepted_at: o.pdpa_accepted_at || '', customer_id: o.customer_id, slip_url: o.slip_path ? `/uploads/${o.slip_path.split('/').pop()}` : '', slip_ref: o.slip_ref, slip_amount: o.slip_amount, slip_verified: o.slip_verified, cancelled_at: o.cancelled_at });
   }
   return v;

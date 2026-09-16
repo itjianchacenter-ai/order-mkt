@@ -116,7 +116,7 @@ function pvCampaignView(c) { const dz = pvDesign(c); return { ...c, url: `/${c.s
 function pvCampaignName(d, id) { const c = d.campaigns.find((x) => x.id === id); return c ? c.name : ''; }
 function pvView(d, o, admin) {
   const v = { id: o.id, order_number: o.order_number, campaign_id: o.campaign_id, campaign_name: pvCampaignName(d, o.campaign_id), store_id: o.store_id, store_name: o.store_name, total: o.total, status: o.status, note: o.note, phone: o.phone || '', email: o.email || '', pickup_date: o.pickup_date || '', pickup_time: o.pickup_time || '', created_at: o.created_at, paid_at: o.paid_at, picked_up_at: o.picked_up_at, has_slip: Boolean(o.slip_url), slip_reason: o.slip_reason, lines: o.lines, promo_code: o.promo_code || null, code_available: ['paid', 'picked_up'].includes(o.status), payable: ['pending', 'slip_rejected'].includes(o.status) };
-  if (admin) { const c = pvCustomerOf(d, o.customer_id); Object.assign(v, { customer_email: c ? c.email : '', customer_name: c ? c.name : '', pdpa_accepted_at: o.pdpa_accepted_at || '', approval_mail: o.approval_mail || null }); }
+  if (admin) { const c = pvCustomerOf(d, o.customer_id); Object.assign(v, { customer_email: c ? c.email : '', customer_name: c ? c.name : '', customer_google: true, pdpa_accepted_at: o.pdpa_accepted_at || '', approval_mail: o.approval_mail || null }); }
   if (admin) Object.assign(v, { customer_id: o.customer_id, slip_url: o.slip_url, slip_ref: o.slip_ref, slip_amount: o.slip_amount, slip_verified: o.slip_verified, cancelled_at: o.cancelled_at });
   return v;
 }
