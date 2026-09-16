@@ -160,7 +160,7 @@ const dbx = {
     r = await call('it', 'GET', `/api/admin/orders/${order.id}`); check('approval email status visible to back-office', r.json.approval_mail && r.json.approval_mail.status === 'sent');
     r = await call('customer', 'GET', `/api/orders/${order.id}`); check('customer view does not expose mail log', r.json.approval_mail === undefined);
     r = await call('customer', 'POST', `/api/orders/${order.id}/code`);
-    check('promo code issued in range', r.status === 200 && /^\d{10}$/.test(r.json.promo_code) && Number(r.json.promo_code) >= 2026090001 && Number(r.json.promo_code) <= 2026092000, r.json);
+    check('promo code issued in range NVR260001–NVR262000', r.status === 200 && /^NVR26\d{4}$/.test(r.json.promo_code) && Number(r.json.promo_code.slice(5)) >= 1 && Number(r.json.promo_code.slice(5)) <= 2000, r.json);
     const code1 = r.json.promo_code;
     r = await call('customer', 'POST', `/api/orders/${order.id}/code`); check('same code on repeat', r.json.promo_code === code1);
     r = await call('other', 'POST', `/api/orders/${order.id}/code`); check('stranger cannot get code', r.status === 404);
@@ -189,8 +189,10 @@ const dbx = {
     // ── campaigns ──
     r = await call('fin', 'GET', '/api/admin/campaigns'); check('everyone lists campaigns', r.status === 200 && r.json.length === 1 && r.json[0].active && r.json[0].stats.orders === 2, r.json);
     r = await call('fin', 'POST', '/api/admin/campaigns', { name: 'X' }); check('finance cannot create campaigns', r.status === 403);
-    r = await call('it', 'POST', '/api/admin/campaigns', { name: 'JIANCHA x SUMMER', stock_total: 500, promo_from: 2026100001, promo_to: 2026100500 }); check('campaign created inactive', r.status === 201 && r.json.id === 'jiancha-x-summer' && r.json.active === false && r.json.stock.total === 500);
+    r = await call('it', 'POST', '/api/admin/campaigns', { name: 'JIANCHA x SUMMER', stock_total: 500, promo_from: 2026100001, promo_to: 2026100500 }); check('campaign created inactive', r.status === 201 && r.json.id === 'jiancha-x-summer' && r.json.active === false && r.json.stock.total === 500 && r.json.promo_code.first === '2026100001' && r.json.promo_code.prefix === '');
     const camp2 = r.json;
+    r = await call('it', 'PATCH', '/api/admin/campaigns/jiancha-x-summer', { promo_prefix: 'sm-26', promo_from: 1, promo_to: 500 }); check('campaign promo prefix + zero-padded range', r.status === 200 && r.json.promo_code.prefix === 'SM-26' && r.json.promo_code.first === 'SM-26001' && r.json.promo_code.last === 'SM-26500' && r.json.promo_code.count === 500, r.json.promo_code);
+    r = await call('it', 'GET', '/api/admin/campaigns'); check('navori campaign uses NVR26 range (2000 codes)', r.json.find((c) => c.id === 'jiancha-x-navori').promo_code.first === 'NVR260001' && r.json.find((c) => c.id === 'jiancha-x-navori').promo_code.last === 'NVR262000', r.json.map((c) => c.promo_code));
     r = await call('it', 'POST', '/api/admin/campaigns', { name: 'JIANCHA x SUMMER', promo_from: 5, promo_to: 1 }); check('bad promo range rejected', r.status === 400);
     r = await call('it', 'PATCH', `/api/admin/campaigns/${camp2.id}`, { active: true }); check('campaign activated', r.json.active === true);
     r = await call('customer', 'GET', '/api/menu'); check('customer site follows active campaign', r.json.campaign.id === camp2.id && r.json.stock.limits.total === 500 && r.json.stock.used.total === 0);

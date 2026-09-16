@@ -63,7 +63,7 @@
           ${P.campaigns ? `<button type="button" class="wrench" data-edit="${esc(c.id)}" aria-label="แก้ไข">${ICONS.wrench}</button>` : ''}
           ${c.cover ? `<img class="cover" src="${esc(c.cover)}" alt="">` : ''}
           <b>${esc(c.name)}</b>
-          <small>${c.active ? 'Active' : 'Inactive'}${c.orders_open === false ? ' · ปิดรับออเดอร์' : ''} · ${c.stats.orders} orders${c.stock.total != null ? ` · stock ${c.stock_view.used.total}/${c.stock.total}` : ''}${c.set_count != null ? ` · ${c.set_count} sets` : ''}</small>
+          <small>${c.active ? 'Active' : 'Inactive'}${c.orders_open === false ? ' · ปิดรับออเดอร์' : ''} · ${c.stats.orders} orders${c.stock.total != null ? ` · stock ${c.stock_view.used.total}/${c.stock.total}` : ''}${c.set_count != null ? ` · ${c.set_count} sets` : ''}${c.promo_code && c.promo_code.first ? ` · code ${esc(c.promo_code.first)}–${esc(c.promo_code.last)}` : ''}</small>
           <small class="camp-url"><a href="${esc(siteUrl(c))}" target="_blank" rel="noopener" data-stop="1">${esc(siteUrl(c).replace(/^https?:\/\//, ''))}</a></small>
           ${P.campaigns ? `<span class="camp-acts"><button type="button" class="btn ghost sm" data-design="${esc(c.id)}">${ICONS.brush} Design</button><button type="button" class="btn ghost sm" data-copy="${esc(siteUrl(c))}">Copy link</button></span>` : ''}
         </div>`);
@@ -92,8 +92,9 @@
           <label>Campaign name<input name="name" required value="${esc(c ? c.name : '')}" placeholder="JIANCHA x NAVORI"></label>
           <label>Campaign link (URL) <span class="th" style="font-weight:400">a-z, 0-9 — ว่าง = ตั้งจากชื่อ</span><input name="slug" pattern="[a-z0-9]{2,40}" value="${esc(c ? c.slug : '')}" placeholder="jianchaxnavori"><span class="th" style="font-size:12px;color:var(--muted)">${esc((me.public_base_url || location.origin) + '/')}<b id="slug-preview">${esc(c ? c.slug : '…')}</b>/</span></label>
           <label>Stock (total pieces)<input name="stock_total" type="number" min="0" value="${c && c.stock.total != null ? c.stock.total : (isNew ? 1000 : '')}" placeholder="ว่าง = ไม่จำกัด"></label>
-          <label>Promo code from<input name="promo_from" type="number" required value="${c ? c.promo_code.from : 2026090001}"></label>
-          <label>Promo code to<input name="promo_to" type="number" required value="${c ? c.promo_code.to : 2026092000}"></label>
+          <label>Promo code prefix <span class="th" style="font-weight:400">เช่น NVR26 (ว่าง = เลขล้วน)</span><input name="promo_prefix" maxlength="12" value="${esc(c ? c.promo_code.prefix || '' : 'NVR26')}" placeholder="NVR26"></label>
+          <label>Promo code from <span class="th" style="font-weight:400">เลขเริ่ม</span><input name="promo_from" type="number" required value="${c ? c.promo_code.from : 1}"></label>
+          <label>Promo code to <span class="th" style="font-weight:400">เลขสุดท้าย (เติมศูนย์ให้ยาวเท่ากัน)</span><input name="promo_to" type="number" required value="${c ? c.promo_code.to : 2000}"></label>
         </div>
         <label class="chk"><input type="checkbox" name="active" ${c && c.active ? 'checked' : ''}> <span>Active <span class="th">(แคมเปญหลักที่แสดงเมื่อเปิด ${esc((me.public_base_url || location.origin).replace(/^https?:\/\//, ''))}/ มีได้ครั้งละ 1 แคมเปญ ทุกแคมเปญยังเปิดได้จากลิงก์ของตัวเอง)</span></span></label>
         <label class="chk"><input type="checkbox" name="orders_open" ${!c || c.orders_open !== false ? 'checked' : ''}> <span>เปิดรับคำสั่งซื้อ <span class="th">(ปิด = ลูกค้ายังเปิดหน้าแคมเปญได้แต่สั่งซื้อไม่ได้)</span></span></label>
@@ -105,7 +106,7 @@
       $('#cf').name.addEventListener('input', showSlug); $('#cf').slug.addEventListener('input', showSlug);
       $('#cf').addEventListener('submit', async (e) => {
         e.preventDefault(); const f = new FormData(e.target);
-        const body = { name: f.get('name'), slug: String(f.get('slug') || '').trim(), stock_total: f.get('stock_total'), promo_from: f.get('promo_from'), promo_to: f.get('promo_to'), active: f.get('active') === 'on', orders_open: f.get('orders_open') === 'on' };
+        const body = { name: f.get('name'), slug: String(f.get('slug') || '').trim(), stock_total: f.get('stock_total'), promo_prefix: String(f.get('promo_prefix') || '').trim(), promo_from: f.get('promo_from'), promo_to: f.get('promo_to'), active: f.get('active') === 'on', orders_open: f.get('orders_open') === 'on' };
         try { await api(isNew ? '/api/admin/campaigns' : '/api/admin/campaigns/' + encodeURIComponent(c.id), { method: isNew ? 'POST' : 'PATCH', body }); location.reload(); }
         catch (err) { $('#cf-err').textContent = err.message; }
       });

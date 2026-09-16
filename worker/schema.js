@@ -43,7 +43,7 @@ const DDL = [
   `CREATE TABLE IF NOT EXISTS campaigns (
     id TEXT PRIMARY KEY, slug TEXT, name TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 0, orders_open INTEGER NOT NULL DEFAULT 1,
     stock_total INTEGER, stock_drink INTEGER, stock_dessert INTEGER,
-    promo_from INTEGER NOT NULL DEFAULT 2026090001, promo_to INTEGER NOT NULL DEFAULT 2026092000,
+    promo_from INTEGER NOT NULL DEFAULT 2026090001, promo_to INTEGER NOT NULL DEFAULT 2026092000, promo_prefix TEXT DEFAULT '',
     design_json TEXT, created_at TEXT DEFAULT (${NOW}), updated_at TEXT DEFAULT (${NOW}))`,
   'CREATE UNIQUE INDEX IF NOT EXISTS idx_campaigns_slug ON campaigns(slug)',
   `CREATE TABLE IF NOT EXISTS customer_campaigns (
@@ -66,6 +66,8 @@ export function ensureSchema(env) {
 async function migrate(env) {
   const db = sql(env);
   await db.batch(DDL.map((q) => db.stmt(q)));
+  // ฐานข้อมูลที่สร้างก่อนมี promo_prefix
+  try { await db.run("ALTER TABLE campaigns ADD COLUMN promo_prefix TEXT DEFAULT ''"); } catch (e) { /* มีอยู่แล้ว */ }
   // First run: the three back-office accounts (change the passwords in the Account page before going live)
   if ((await db.get('SELECT COUNT(*) AS n FROM users')).n === 0) {
     const seed = [['it-admin', 'jiancha2026', 'it_admin', 'IT - Admin', 'IT'], ['admin', 'marketing', 'admin', 'Admin', 'Marketing'], ['finance', 'jiancha', 'finance', 'Finance', 'Finance']];
@@ -75,7 +77,12 @@ async function migrate(env) {
   }
   // First campaign: stock / promo range from data/menu.json
   if ((await db.get('SELECT COUNT(*) AS n FROM campaigns')).n === 0) {
-    await db.run('INSERT OR IGNORE INTO campaigns(id, slug, name, active, stock_total, stock_drink, stock_dessert, promo_from, promo_to) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?)',
-      'jiancha-x-navori', 'jianchaxnavori', 'JIANCHA x NAVORI', MENU.stock.total ?? 1000, MENU.stock.drink ?? null, MENU.stock.dessert ?? null, MENU.promo_code.from || 2026090001, MENU.promo_code.to || 2026092000);
+    await db.run('INSERT OR IGNORE INTO campaigns(id, slug, name, active, stock_total, stock_drink, stock_dessert, promo_from, promo_to, promo_prefix) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?)',
+      'jiancha-x-navori', 'jianchaxnavori', 'JIANCHA x NAVORI', MENU.stock.total ?? 1000, MENU.stock.drink ?? null, MENU.stock.dessert ?? null, MENU.promo_code.from || 2026090001, MENU.promo_code.to || 2026092000, MENU.promo_code.prefix || '');
+  }
+  // แคมเปญแรกที่ยังใช้ช่วงรหัสเริ่มต้นเดิม (2026090001–2026092000) และยังไม่เคยออกรหัส → เปลี่ยนเป็นช่วงของแม่แบบ (NVR260001–NVR262000) ครั้งเดียว
+  if (MENU.promo_code.prefix && !(await db.get("SELECT 1 AS x FROM meta WHERE key = 'promo_range_v2'"))) {
+    await db.run("UPDATE campaigns SET promo_prefix = ?, promo_from = ?, promo_to = ? WHERE id = 'jiancha-x-navori' AND (promo_prefix IS NULL OR promo_prefix = '') AND promo_from = 2026090001 AND promo_to = 2026092000 AND NOT EXISTS (SELECT 1 FROM orders WHERE campaign_id = 'jiancha-x-navori' AND promo_code IS NOT NULL)", MENU.promo_code.prefix, MENU.promo_code.from || 1, MENU.promo_code.to || 2000);
+    await db.run("INSERT OR IGNORE INTO meta(key, value) VALUES ('promo_range_v2', ?)", MENU.promo_code.prefix);
   }
 }

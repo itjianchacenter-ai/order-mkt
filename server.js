@@ -45,7 +45,7 @@ const menuFor = (c) => M.menuFor(c, loadMenu());
 // First run: the three back-office accounts and the first campaign (stock / promo range seeded from menu.json)
 {
   const m = loadMenu();
-  seedDefaults({ campaign: { stock_total: m.stock.total, stock_drink: m.stock.drink, stock_dessert: m.stock.dessert, promo_from: m.promo_code.from, promo_to: m.promo_code.to } });
+  seedDefaults({ campaign: { stock_total: m.stock.total, stock_drink: m.stock.drink, stock_dessert: m.stock.dessert, promo_from: m.promo_code.from, promo_to: m.promo_code.to, promo_prefix: m.promo_code.prefix } });
 }
 
 // ─── Campaigns, stock, promotion codes ───
@@ -66,7 +66,7 @@ function requestCampaign(req) {
 }
 function campaignView(c) {
   const d = campaignDesign(c);
-  return { id: c.id, slug: c.slug, url: `/${c.slug}/`, name: c.name, active: Boolean(c.active), orders_open: c.orders_open !== 0, stock: { total: c.stock_total, drink: c.stock_drink, dessert: c.stock_dessert }, promo_code: { from: c.promo_from, to: c.promo_to }, created_at: c.created_at,
+  return { id: c.id, slug: c.slug, url: `/${c.slug}/`, name: c.name, active: Boolean(c.active), orders_open: c.orders_open !== 0, stock: { total: c.stock_total, drink: c.stock_drink, dessert: c.stock_dessert }, promo_code: M.promoRangeView(c), created_at: c.created_at,
     cover: d.promote_images[0] || '', set_count: d.sets.filter((x) => x.active).length, has_design: Boolean(c.design_json) };
 }
 const campaignPublic = (c) => ({ id: c.id, slug: c.slug, url: `/${c.slug}/`, name: c.name, active: Boolean(c.active), orders_open: c.orders_open !== 0 });
@@ -306,12 +306,14 @@ const assignPromoCode = db.transaction((orderId) => {
   if (!['paid', 'picked_up'].includes(o.status)) { const e = new Error('รับ code ได้เมื่อชำระเงินเรียบร้อยแล้ว / Available after payment'); e.status = 400; throw e; }
   const c = getCampaign(o.campaign_id) || activeCampaign();
   const from = c.promo_from, to = c.promo_to;
-  const used = new Set(db.prepare('SELECT promo_code FROM orders WHERE promo_code IS NOT NULL').all().map((r) => Number(r.promo_code)));
-  if (used.size >= to - from + 1) { const e = new Error('รหัสโปรโมชันถูกใช้ครบแล้ว กรุณาติดต่อเจ้าหน้าที่'); e.status = 409; throw e; }
+  // รหัสที่ออกไปแล้ว (ทุกแคมเปญ กันซ้ำข้ามแคมเปญ) — รหัสสุ่มในช่วงของแคมเปญ รูปแบบ prefix + เลขเติมศูนย์ เช่น NVR260001
+  const used = new Set(db.prepare('SELECT promo_code FROM orders WHERE promo_code IS NOT NULL').all().map((r) => String(r.promo_code)));
+  const usedHere = db.prepare('SELECT COUNT(*) AS n FROM orders WHERE campaign_id = ? AND promo_code IS NOT NULL').get(c.id).n;
+  if (usedHere >= to - from + 1) { const e = new Error('รหัสโปรโมชันถูกใช้ครบแล้ว กรุณาติดต่อเจ้าหน้าที่'); e.status = 409; throw e; }
   let code;
-  do { code = from + crypto.randomInt(to - from + 1); } while (used.has(code));
-  db.prepare('UPDATE orders SET promo_code = ? WHERE id = ?').run(String(code), orderId);
-  return String(code);
+  do { code = M.formatPromoCode(c, from + crypto.randomInt(to - from + 1)); } while (used.has(code));
+  db.prepare('UPDATE orders SET promo_code = ? WHERE id = ?').run(code, orderId);
+  return code;
 });
 app.post('/api/orders/:id/code', (req, res) => {
   const o = ownOrderOr404(req, res); if (!o) return;
@@ -530,15 +532,15 @@ app.get('/api/admin/campaigns', requireAdmin, (req, res) => {
 });
 const setActiveCampaign = db.transaction((id) => { db.exec('UPDATE campaigns SET active = 0'); db.prepare('UPDATE campaigns SET active = 1 WHERE id = ?').run(id); });
 app.post('/api/admin/campaigns', requirePerm('campaigns'), (req, res) => {
-  const v = readCampaignBody(req.body || {}, { promo_from: 2026090001, promo_to: 2026092000, stock_total: 1000 });
+  const v = readCampaignBody(req.body || {}, { promo_from: 2026090001, promo_to: 2026092000, promo_prefix: '', stock_total: 1000 });
   if (v.error) return res.status(400).json({ error: v.error });
   if (!v.name) return res.status(400).json({ error: 'กรุณาใส่ชื่อแคมเปญ' });
   if (!v.slug || v.slug.length < 2) return res.status(400).json({ error: 'ลิงก์แคมเปญ (URL) ต้องเป็น a-z, 0-9 อย่างน้อย 2 ตัว' });
   if (db.prepare('SELECT 1 FROM campaigns WHERE slug = ?').get(v.slug)) return res.status(409).json({ error: `ลิงก์ /${v.slug}/ ถูกใช้แล้ว กรุณาตั้งใหม่` });
   let id = slugify(v.name); let n = 2;
   while (getCampaign(id)) id = `${slugify(v.name)}-${n++}`;
-  db.prepare('INSERT INTO campaigns(id, slug, name, active, orders_open, stock_total, stock_drink, stock_dessert, promo_from, promo_to) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?)')
-    .run(id, v.slug, v.name, v.orders_open, v.stock_total, v.stock_drink, v.stock_dessert, v.promo_from, v.promo_to);
+  db.prepare('INSERT INTO campaigns(id, slug, name, active, orders_open, stock_total, stock_drink, stock_dessert, promo_from, promo_to, promo_prefix) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)')
+    .run(id, v.slug, v.name, v.orders_open, v.stock_total, v.stock_drink, v.stock_dessert, v.promo_from, v.promo_to, v.promo_prefix);
   if (req.body && req.body.active) setActiveCampaign(id);
   res.status(201).json(campaignStats(getCampaign(id)));
 });
@@ -550,8 +552,8 @@ app.patch('/api/admin/campaigns/:id', requirePerm('campaigns'), (req, res) => {
   if (!v.name) return res.status(400).json({ error: 'กรุณาใส่ชื่อแคมเปญ' });
   if (!v.slug || v.slug.length < 2) return res.status(400).json({ error: 'ลิงก์แคมเปญ (URL) ต้องเป็น a-z, 0-9 อย่างน้อย 2 ตัว' });
   if (db.prepare('SELECT 1 FROM campaigns WHERE slug = ? AND id <> ?').get(v.slug, c.id)) return res.status(409).json({ error: `ลิงก์ /${v.slug}/ ถูกใช้แล้ว กรุณาตั้งใหม่` });
-  db.prepare("UPDATE campaigns SET name = ?, slug = ?, orders_open = ?, stock_total = ?, stock_drink = ?, stock_dessert = ?, promo_from = ?, promo_to = ?, updated_at = datetime('now','localtime') WHERE id = ?")
-    .run(v.name, v.slug, v.orders_open, v.stock_total, v.stock_drink, v.stock_dessert, v.promo_from, v.promo_to, c.id);
+  db.prepare("UPDATE campaigns SET name = ?, slug = ?, orders_open = ?, stock_total = ?, stock_drink = ?, stock_dessert = ?, promo_from = ?, promo_to = ?, promo_prefix = ?, updated_at = datetime('now','localtime') WHERE id = ?")
+    .run(v.name, v.slug, v.orders_open, v.stock_total, v.stock_drink, v.stock_dessert, v.promo_from, v.promo_to, v.promo_prefix, c.id);
   if (req.body && req.body.active === true) setActiveCampaign(c.id);
   res.json(campaignStats(getCampaign(c.id)));
 });

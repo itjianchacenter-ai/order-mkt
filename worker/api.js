@@ -39,7 +39,7 @@ async function requestCampaign(c, body) {
 }
 function campaignView(c) {
   const d = campaignDesign(c);
-  return { id: c.id, slug: c.slug, url: `/${c.slug}/`, name: c.name, active: Boolean(c.active), orders_open: c.orders_open !== 0, stock: { total: c.stock_total, drink: c.stock_drink, dessert: c.stock_dessert }, promo_code: { from: c.promo_from, to: c.promo_to }, created_at: c.created_at,
+  return { id: c.id, slug: c.slug, url: `/${c.slug}/`, name: c.name, active: Boolean(c.active), orders_open: c.orders_open !== 0, stock: { total: c.stock_total, drink: c.stock_drink, dessert: c.stock_dessert }, promo_code: M.promoRangeView(c), created_at: c.created_at,
     cover: d.promote_images[0] || '', set_count: d.sets.filter((x) => x.active).length, has_design: Boolean(c.design_json) };
 }
 const campaignPublic = (c) => ({ id: c.id, slug: c.slug, url: `/${c.slug}/`, name: c.name, active: Boolean(c.active), orders_open: c.orders_open !== 0 });
@@ -338,12 +338,14 @@ async function assignPromoCode(c, orderId) {
   if (!['paid', 'picked_up'].includes(o.status)) fail(400, 'รับ code ได้เมื่อชำระเงินเรียบร้อยแล้ว / Available after payment');
   const camp = (await getCampaign(db, o.campaign_id)) || (await activeCampaign(db));
   const from = camp.promo_from, to = camp.promo_to;
-  const used = new Set((await db.all('SELECT promo_code FROM orders WHERE promo_code IS NOT NULL')).map((r) => Number(r.promo_code)));
-  if (used.size >= to - from + 1) fail(409, 'รหัสโปรโมชันถูกใช้ครบแล้ว กรุณาติดต่อเจ้าหน้าที่');
+  // รหัสที่ออกไปแล้ว (ทุกแคมเปญ กันซ้ำข้ามแคมเปญ) — รหัสสุ่มในช่วงของแคมเปญ รูปแบบ prefix + เลขเติมศูนย์ เช่น NVR260001
+  const used = new Set((await db.all('SELECT promo_code FROM orders WHERE promo_code IS NOT NULL')).map((r) => String(r.promo_code)));
+  const usedHere = (await db.get('SELECT COUNT(*) AS n FROM orders WHERE campaign_id = ? AND promo_code IS NOT NULL', camp.id)).n;
+  if (usedHere >= to - from + 1) fail(409, 'รหัสโปรโมชันถูกใช้ครบแล้ว กรุณาติดต่อเจ้าหน้าที่');
   for (let attempt = 0; attempt < 5; attempt++) {
-    let code; do { code = from + randomInt(to - from + 1); } while (used.has(code));
+    let code; do { code = M.formatPromoCode(camp, from + randomInt(to - from + 1)); } while (used.has(code));
     // ตั้งเฉพาะเมื่อยังไม่มี code (กันกดซ้ำพร้อมกัน); unique index กันเลขซ้ำ
-    try { const r = await db.run('UPDATE orders SET promo_code = ? WHERE id = ? AND promo_code IS NULL', String(code), orderId); if (r.meta.changes > 0) return String(code); } catch (e) { used.add(code); continue; }
+    try { const r = await db.run('UPDATE orders SET promo_code = ? WHERE id = ? AND promo_code IS NULL', code, orderId); if (r.meta.changes > 0) return code; } catch (e) { used.add(code); continue; }
     return (await db.get('SELECT promo_code FROM orders WHERE id = ?', orderId)).promo_code;
   }
   fail(409, 'ออกรหัสโปรโมชันไม่สำเร็จ กรุณาลองใหม่');
@@ -460,14 +462,14 @@ on('GET', '/api/admin/campaigns', async (c) => {
 const setActiveCampaign = (db, id) => db.batch([db.stmt('UPDATE campaigns SET active = 0'), db.stmt('UPDATE campaigns SET active = 1 WHERE id = ?', id)]);
 on('POST', '/api/admin/campaigns', async (c) => {
   await requirePerm(c, 'campaigns'); const b = await body(c);
-  const v = M.readCampaignBody(b, { promo_from: 2026090001, promo_to: 2026092000, stock_total: 1000 });
+  const v = M.readCampaignBody(b, { promo_from: 2026090001, promo_to: 2026092000, promo_prefix: '', stock_total: 1000 });
   if (v.error) fail(400, v.error);
   if (!v.name) fail(400, 'กรุณาใส่ชื่อแคมเปญ');
   if (!v.slug || v.slug.length < 2) fail(400, 'ลิงก์แคมเปญ (URL) ต้องเป็น a-z, 0-9 อย่างน้อย 2 ตัว');
   if (await c.db.get('SELECT 1 AS x FROM campaigns WHERE slug = ?', v.slug)) fail(409, `ลิงก์ /${v.slug}/ ถูกใช้แล้ว กรุณาตั้งใหม่`);
   let id = M.slugify(v.name); let n = 2;
   while (await getCampaign(c.db, id)) id = `${M.slugify(v.name)}-${n++}`;
-  await c.db.run('INSERT INTO campaigns(id, slug, name, active, orders_open, stock_total, stock_drink, stock_dessert, promo_from, promo_to, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)', id, v.slug, v.name, v.orders_open, v.stock_total, v.stock_drink, v.stock_dessert, v.promo_from, v.promo_to, now(), now());
+  await c.db.run('INSERT INTO campaigns(id, slug, name, active, orders_open, stock_total, stock_drink, stock_dessert, promo_from, promo_to, promo_prefix, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)', id, v.slug, v.name, v.orders_open, v.stock_total, v.stock_drink, v.stock_dessert, v.promo_from, v.promo_to, v.promo_prefix, now(), now());
   if (b.active) await setActiveCampaign(c.db, id);
   return json(await campaignStats(c, await getCampaign(c.db, id)), 201);
 });
@@ -479,7 +481,7 @@ on('PATCH', '/api/admin/campaigns/:id', async (c) => {
   if (!v.name) fail(400, 'กรุณาใส่ชื่อแคมเปญ');
   if (!v.slug || v.slug.length < 2) fail(400, 'ลิงก์แคมเปญ (URL) ต้องเป็น a-z, 0-9 อย่างน้อย 2 ตัว');
   if (await c.db.get('SELECT 1 AS x FROM campaigns WHERE slug = ? AND id <> ?', v.slug, camp.id)) fail(409, `ลิงก์ /${v.slug}/ ถูกใช้แล้ว กรุณาตั้งใหม่`);
-  await c.db.run('UPDATE campaigns SET name = ?, slug = ?, orders_open = ?, stock_total = ?, stock_drink = ?, stock_dessert = ?, promo_from = ?, promo_to = ?, updated_at = ? WHERE id = ?', v.name, v.slug, v.orders_open, v.stock_total, v.stock_drink, v.stock_dessert, v.promo_from, v.promo_to, now(), camp.id);
+  await c.db.run('UPDATE campaigns SET name = ?, slug = ?, orders_open = ?, stock_total = ?, stock_drink = ?, stock_dessert = ?, promo_from = ?, promo_to = ?, promo_prefix = ?, updated_at = ? WHERE id = ?', v.name, v.slug, v.orders_open, v.stock_total, v.stock_drink, v.stock_dessert, v.promo_from, v.promo_to, v.promo_prefix, now(), camp.id);
   if (b.active === true) await setActiveCampaign(c.db, camp.id);
   return json(await campaignStats(c, await getCampaign(c.db, camp.id)));
 });

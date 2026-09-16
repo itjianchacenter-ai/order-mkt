@@ -4,8 +4,9 @@
     "total": 1000
   },
   "promo_code": {
-    "from": 2026090001,
-    "to": 2026092000
+    "prefix": "NVR26",
+    "from": 1,
+    "to": 2000
   },
   "order_days": [
     "2026-09-18",

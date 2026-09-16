@@ -162,6 +162,8 @@ if (!db.prepare("SELECT 1 FROM pragma_table_info('campaigns') WHERE name = 'orde
 }
 
 // campaigns.design_json: what the customer homepage shows for this campaign (promote images + Match Sets), edited on the IT-Admin Design page
+// campaigns.promo_prefix: คำนำหน้ารหัสโปรโมชัน POS (เช่น NVR26 → NVR260001..NVR262000)
+if (!db.prepare("SELECT 1 FROM pragma_table_info('campaigns') WHERE name = 'promo_prefix'").get()) db.exec("ALTER TABLE campaigns ADD COLUMN promo_prefix TEXT DEFAULT ''");
 if (!db.prepare("SELECT 1 FROM pragma_table_info('campaigns') WHERE name = 'design_json'").get()) {
   db.exec('ALTER TABLE campaigns ADD COLUMN design_json TEXT');
 }
@@ -193,8 +195,13 @@ function seedDefaults({ campaign } = {}) {
   }
   if (db.prepare('SELECT COUNT(*) AS n FROM campaigns').get().n === 0) {
     const c = campaign || {};
-    db.prepare('INSERT INTO campaigns(id, slug, name, active, stock_total, stock_drink, stock_dessert, promo_from, promo_to) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?)')
-      .run(c.id || 'jiancha-x-navori', c.slug || 'jianchaxnavori', c.name || 'JIANCHA x NAVORI', c.stock_total ?? 1000, c.stock_drink ?? null, c.stock_dessert ?? null, c.promo_from || 2026090001, c.promo_to || 2026092000);
+    db.prepare('INSERT INTO campaigns(id, slug, name, active, stock_total, stock_drink, stock_dessert, promo_from, promo_to, promo_prefix) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?)')
+      .run(c.id || 'jiancha-x-navori', c.slug || 'jianchaxnavori', c.name || 'JIANCHA x NAVORI', c.stock_total ?? 1000, c.stock_drink ?? null, c.stock_dessert ?? null, c.promo_from || 2026090001, c.promo_to || 2026092000, c.promo_prefix || '');
+  }
+  // แคมเปญแรกที่ยังใช้ช่วงรหัสเริ่มต้นเดิม (2026090001–2026092000) และยังไม่เคยออกรหัส → เปลี่ยนเป็นช่วงของแม่แบบ (NVR260001–NVR262000) ครั้งเดียว
+  if (campaign && campaign.promo_prefix && !db.prepare("SELECT 1 FROM meta WHERE key = 'promo_range_v2'").get()) {
+    db.prepare("UPDATE campaigns SET promo_prefix = ?, promo_from = ?, promo_to = ? WHERE id = 'jiancha-x-navori' AND promo_prefix = '' AND promo_from = 2026090001 AND promo_to = 2026092000 AND NOT EXISTS (SELECT 1 FROM orders WHERE campaign_id = 'jiancha-x-navori' AND promo_code IS NOT NULL)").run(campaign.promo_prefix, campaign.promo_from || 1, campaign.promo_to || 2000);
+    db.prepare("INSERT INTO meta(key, value) VALUES ('promo_range_v2', ?)").run(campaign.promo_prefix);
   }
   // orders created before campaigns existed belong to the active campaign
   const active = db.prepare('SELECT id FROM campaigns WHERE active = 1 ORDER BY created_at LIMIT 1').get();
