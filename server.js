@@ -10,6 +10,9 @@ const { db, nextOrderNumber, DB_PATH, ROLES, hashPassword, checkPassword, seedDe
 const { generateQR, isConfigured: qrConfigured } = require('./qr');
 const { verifySlip, isEnabled: slipOkEnabled } = require('./slip-verify');
 const mailer = require('./mailer');
+const M = require('./lib/menu');
+const W = require('./lib/window');
+const { approvalEmail: approvalEmailOf } = require('./lib/email');
 
 const PORT = parseInt(process.env.PORT || '3870', 10);
 const IS_PROD = process.env.NODE_ENV === 'production';
@@ -29,89 +32,26 @@ if (IS_PROD && JWT_SECRET === 'dev-secret-order-jianchatea') {
 function readJson(name, fallback) {
   try { return JSON.parse(fs.readFileSync(path.join(DATA_DIR, name), 'utf8')); } catch (e) { return fallback; }
 }
-function loadMenu() {
-  const m = readJson('menu.json', { sets: [] });
-  const norm = (x) => ({ id: String(x.id), name_en: x.name_en || '', name_th: x.name_th || '', price: Number(x.price) || 0, image: x.image || '', active: x.active !== false });
-  // A Match Set is what the customer orders: one card with a price, up to 3 thumbnails and the items inside it.
-  const normSet = (x) => {
-    const items = (x.items || []).map((i) => ({ name_en: i.name_en || '', name_th: i.name_th || '', kind: i.kind === 'drink' ? 'drink' : (i.kind === 'dessert' ? 'dessert' : '') }));
-    const pieces = Number.isInteger(Number(x.pieces)) && Number(x.pieces) > 0 ? Number(x.pieces) : 1;
-    return { ...norm(x), label: x.label || `SET ${String(x.id)}`, images: Array.isArray(x.images) ? x.images.slice(0, 3).map((u) => u || '') : [], items, pieces,
-      drink_pieces: items.filter((i) => i.kind === 'drink').length, dessert_pieces: items.filter((i) => i.kind === 'dessert').length };
-  };
-  const pickup_dates = (Array.isArray(m.pickup_dates) ? m.pickup_dates : []).map((x) => String(x || '').trim()).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x));
-  const pickup_times = (Array.isArray(m.pickup_times) ? m.pickup_times : []).map((x) => String(x || '').trim().slice(0, 40)).filter(Boolean);
-  // ช่วงวันที่เปิดรับออเดอร์ + โควตาออเดอร์ต่อวัน (ว่าง/null = ไม่จำกัด)
-  const order_days = (Array.isArray(m.order_days) ? m.order_days : []).map((x) => String(x || '').trim()).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x)).sort();
-  const orders_per_day = Number.isInteger(Number(m.orders_per_day)) && Number(m.orders_per_day) > 0 ? Number(m.orders_per_day) : null;
-  return { banner: m.banner || '', sets: (m.sets || []).map(normSet).filter((x) => x.active), drinks: (m.drinks || []).map(norm).filter((x) => x.active), desserts: (m.desserts || []).map(norm).filter((x) => x.active), pickup_dates, pickup_times, order_days, orders_per_day, pickup_map: normPickupMap(m.pickup_map) };
-}
-/** รอบสั่ง → รอบรับ: { 'YYYY-MM-DD (วันสั่ง)': 'YYYY-MM-DD (วันรับ)' } วันสั่งไหนไม่อยู่ในตาราง = เลือกวันรับได้ตามรายการปกติ */
-function normPickupMap(src) {
-  const out = {}; if (!src || typeof src !== 'object' || Array.isArray(src)) return out;
-  for (const [k, v] of Object.entries(src).slice(0, 62)) { const a = String(k || '').trim(), b = String(v || '').trim(); if (/^\d{4}-\d{2}-\d{2}$/.test(a) && /^\d{4}-\d{2}-\d{2}$/.test(b)) out[a] = b; }
-  return out;
-}
-function loadStores() {
-  return readJson('stores.json', []).filter((s) => s.active !== false).map((s) => ({ id: String(s.id), brand: s.brand || 'JIANCHA', name: s.name || '', map_url: s.map_url || '' }));
-}
-
-// ─── Campaign design: promote images + Match Sets shown on the customer homepage ───
-// Stored per campaign (campaigns.design_json). A campaign without a saved design uses data/menu.json as its template.
-const isImageUrl = (u) => typeof u === 'string' && u.length <= 2000 && (/^\/uploads\/design\/[A-Za-z0-9._-]+$/.test(u) || /^\/img\//.test(u) || /^https?:\/\//.test(u) || /^data:image\//.test(u));
-const imgOr = (u) => (isImageUrl(u) ? u : '');
-function normalizeDesign(d) {
-  const src = d && typeof d === 'object' ? d : {};
-  const promote_images = (Array.isArray(src.promote_images) ? src.promote_images : []).filter(isImageUrl).slice(0, 10);
-  const seen = new Set(); const sets = [];
-  for (const x of (Array.isArray(src.sets) ? src.sets : []).slice(0, 12)) {
-    if (!x || typeof x !== 'object') continue;
-    let id = String(x.id || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 20);
-    if (!id || seen.has(id)) { let n = 1; do { id = 'S' + n++; } while (seen.has(id)); }
-    seen.add(id);
-    const items = (Array.isArray(x.items) ? x.items : []).slice(0, 8).map((i) => ({ name_en: String((i && i.name_en) || '').slice(0, 80), name_th: String((i && i.name_th) || '').slice(0, 80), kind: i && i.kind === 'drink' ? 'drink' : (i && i.kind === 'dessert' ? 'dessert' : '') })).filter((i) => i.name_en || i.name_th);
-    const pieces = Number.isInteger(Number(x.pieces)) && Number(x.pieces) > 0 ? Number(x.pieces) : 1;
-    const price = Number.isFinite(Number(x.price)) && Number(x.price) >= 0 ? Math.round(Number(x.price) * 100) / 100 : 0;
-    sets.push({ id, label: String(x.label || `SET ${id}`).slice(0, 20), name_en: String(x.name_en || '').slice(0, 80), name_th: String(x.name_th || '').slice(0, 80), price, image: imgOr(x.image),
-      images: [0, 1, 2].map((k) => imgOr((x.images || [])[k])), items, pieces, active: x.active !== false,
-      drink_pieces: items.filter((i) => i.kind === 'drink').length, dessert_pieces: items.filter((i) => i.kind === 'dessert').length });
-  }
-  // pickup_dates: วันที่รับของให้ลูกค้าเลือก (YYYY-MM-DD) ว่าง = ใช้ของ template (data/menu.json)
-  const pickup_dates = [...new Set((Array.isArray(src.pickup_dates) ? src.pickup_dates : []).map((x) => String(x || '').trim()).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x)))].sort().slice(0, 31);
-  // pickup_times: ช่วงเวลารับของ (ข้อความ) ว่าง = ใช้ของ template
-  const pickup_times = [...new Set((Array.isArray(src.pickup_times) ? src.pickup_times : []).map((x) => String(x || '').trim().slice(0, 40)).filter(Boolean))].slice(0, 24);
-  // order_days / orders_per_day: วันที่เปิดรับออเดอร์และโควตาต่อวันของแคมเปญ (ว่าง = ใช้ของ template)
-  const order_days = [...new Set((Array.isArray(src.order_days) ? src.order_days : []).map((x) => String(x || '').trim()).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x)))].sort().slice(0, 62);
-  const orders_per_day = Number.isInteger(Number(src.orders_per_day)) && Number(src.orders_per_day) > 0 ? Number(src.orders_per_day) : null;
-  // pickup_map: รอบสั่ง → รอบรับ ของแคมเปญ (ว่าง = ใช้ของ template)
-  const pickup_map = normPickupMap(src.pickup_map);
-  return { promote_images, sets, pickup_dates, pickup_times, order_days, orders_per_day, pickup_map };
-}
-function defaultDesign() { const m = loadMenu(); return normalizeDesign({ promote_images: m.banner ? [m.banner] : [], sets: m.sets, pickup_dates: m.pickup_dates, pickup_times: m.pickup_times, order_days: m.order_days, orders_per_day: m.orders_per_day, pickup_map: m.pickup_map }); }
-function campaignDesign(c) {
-  if (c && c.design_json) { try { return normalizeDesign(JSON.parse(c.design_json)); } catch (e) { /* fall through */ } }
-  return defaultDesign();
-}
+function loadMenu() { return M.normalizeMenu(readJson('menu.json', { sets: [] })); }
+function loadStores() { return M.normalizeStores(readJson('stores.json', [])); }
+// Campaign design (promote images + Match Sets) lives in lib/menu.js; a campaign without a saved design uses data/menu.json as its template.
+const { normalizeDesign, slugOf, slugify, lim, readCampaignBody } = M;
+const campaignDesign = (c) => M.campaignDesign(c, loadMenu());
 /** What the customer site sells for a campaign: its design's active sets and promote images. */
-function menuFor(c) {
-  const d = campaignDesign(c); const m = loadMenu();
-  return { banner: d.promote_images[0] || '', banners: d.promote_images, sets: d.sets.filter((x) => x.active), drinks: m.drinks, desserts: m.desserts, pickup_dates: d.pickup_dates.length ? d.pickup_dates : (Array.isArray(m.pickup_dates) ? m.pickup_dates : []), pickup_times: d.pickup_times.length ? d.pickup_times : (Array.isArray(m.pickup_times) ? m.pickup_times : []), order_days: d.order_days.length ? d.order_days : m.order_days, orders_per_day: d.orders_per_day || m.orders_per_day, pickup_map: Object.keys(d.pickup_map).length ? d.pickup_map : m.pickup_map };
-}
+const menuFor = (c) => M.menuFor(c, loadMenu());
 
 // First run: the three back-office accounts and the first campaign (stock / promo range seeded from menu.json)
 {
-  const m = readJson('menu.json', {});
-  seedDefaults({ campaign: { stock_total: (m.stock || {}).total ?? 1000, stock_drink: (m.stock || {}).drink ?? null, stock_dessert: (m.stock || {}).dessert ?? null, promo_from: (m.promo_code || {}).from, promo_to: (m.promo_code || {}).to } });
+  const m = loadMenu();
+  seedDefaults({ campaign: { stock_total: m.stock.total, stock_drink: m.stock.drink, stock_dessert: m.stock.dessert, promo_from: m.promo_code.from, promo_to: m.promo_code.to } });
 }
 
 // ─── Campaigns, stock, promotion codes ───
-const lim = (v) => (v == null || v === '' ? null : (Number.isFinite(Number(v)) && Number(v) >= 0 ? Math.floor(Number(v)) : null));
 function activeCampaign() {
   return db.prepare('SELECT * FROM campaigns WHERE active = 1 ORDER BY created_at LIMIT 1').get()
     || db.prepare('SELECT * FROM campaigns ORDER BY created_at LIMIT 1').get();
 }
 function getCampaign(id) { return db.prepare('SELECT * FROM campaigns WHERE id = ?').get(id); }
-const slugOf = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 40);
 /** Campaign by its customer URL slug (order.jianchatea.com/<slug>/); also accepts the id for older links. */
 function campaignBySlug(slug) {
   const s = slugOf(slug); if (!s) return null;
@@ -142,57 +82,17 @@ function stockView(c) {
   for (const k of ['total', 'drink', 'dessert']) remaining[k] = limits[k] == null ? null : Math.max(0, limits[k] - used[k]);
   return { limits, used, remaining, sold_out: ['total', 'drink', 'dessert'].some((k) => remaining[k] === 0), order_window: orderWindow(c) };
 }
-// ─── ช่วงเปิดรับออเดอร์ + โควตาต่อวัน (นับตามวันเวลาไทย) ───
-// วันนี้ = เวลาไทย (ORDER_DAY_OVERRIDE ใช้ตอนทดสอบ)
-const bangkokToday = () => (process.env.ORDER_DAY_OVERRIDE || '').trim() || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
-const TH_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
-const EN_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-function fmtDayTH(iso) { const [y, mo, d] = iso.split('-').map(Number); return `${d} ${TH_MONTHS[mo - 1]} ${y + 543}`; }
-function fmtDayEN(iso) { const [y, mo, d] = iso.split('-').map(Number); return `${d} ${EN_MONTHS[mo - 1]} ${y}`; }
-function fmtDayRange(days) {
-  if (!days.length) return { th: '', en: '' };
-  const a = days[0], b = days[days.length - 1];
-  if (a === b) return { th: fmtDayTH(a), en: fmtDayEN(a) };
-  const sameMonth = a.slice(0, 7) === b.slice(0, 7);
-  return { th: sameMonth ? `${Number(a.slice(8))}–${fmtDayTH(b)}` : `${fmtDayTH(a)} – ${fmtDayTH(b)}`, en: sameMonth ? `${Number(a.slice(8))}–${fmtDayEN(b)}` : `${fmtDayEN(a)} – ${fmtDayEN(b)}` };
-}
+// ─── ช่วงเปิดรับออเดอร์ + โควตาต่อวัน (นับตามวันเวลาไทย; lib/window.js) ───
+const bangkokToday = () => W.bangkokToday(process.env.ORDER_DAY_OVERRIDE);
+const { fmtDayTH, fmtDayEN } = W;
 /** สถานะการรับออเดอร์ของแคมเปญวันนี้: open | before | closed | full (+ ข้อความแจ้งลูกค้า) */
 function orderWindow(c) {
-  const menu = menuFor(c); const days = menu.order_days || []; const per_day = menu.orders_per_day || null; const today = bangkokToday();
-  const countDay = (d) => db.prepare("SELECT COUNT(*) AS n FROM orders WHERE campaign_id = ? AND order_day = ? AND status <> 'cancelled'").get(c.id, d).n;
-  const today_count = countDay(today);
+  const menu = menuFor(c); const days = menu.order_days || []; const today = bangkokToday();
+  const today_count = db.prepare("SELECT COUNT(*) AS n FROM orders WHERE campaign_id = ? AND order_day = ? AND status <> 'cancelled'").get(c.id, today).n;
   const total_count = days.length ? db.prepare(`SELECT COUNT(*) AS n FROM orders WHERE campaign_id = ? AND status <> 'cancelled' AND order_day IN (${days.map(() => '?').join(',')})`).get(c.id, ...days).n : today_count;
-  const range = fmtDayRange(days);
-  let status = 'open', message = '';
-  if (days.length && !days.includes(today)) {
-    status = today < days[0] ? 'before' : 'closed';
-    message = status === 'before' ? `ยังไม่เปิดรับคำสั่งซื้อ เปิดรับวันที่ ${range.th}${per_day ? ` (วันละ ${per_day} ออเดอร์)` : ''} / Orders open ${range.en}` : `ปิดรับคำสั่งซื้อแล้ว (รับเฉพาะวันที่ ${range.th}) / Ordering has closed`;
-  } else if (per_day && today_count >= per_day) {
-    const idx = days.indexOf(today); const next = idx >= 0 ? days[idx + 1] : null;
-    status = 'full';
-    message = next ? `วันนี้รับครบ ${per_day} ออเดอร์แล้ว กรุณาสั่งใหม่วันที่ ${fmtDayTH(next)} / Today's ${per_day} orders are full, please order again on ${fmtDayEN(next)}` : `รับออเดอร์ครบ ${per_day} ออเดอร์ของวันสุดท้ายแล้ว ปิดรับคำสั่งซื้อ / All orders are full, ordering has closed`;
-  }
-  // รอบสั่งวันนี้รับของได้วันไหน (ตาราง pickup_map) + ตารางคู่ทั้งหมดไว้แสดงให้ลูกค้า
-  const pickup_map = menu.pickup_map || {}; const pickup_date = pickup_map[today] || null;
-  const pickup_pairs = pickupPairs(pickup_map);
-  return { days, per_day, today, today_count, today_remaining: per_day ? Math.max(0, per_day - today_count) : null, total_max: days.length && per_day ? days.length * per_day : null, total_count, range, status, open: status === 'open', message, pickup_date, pickup_map, pickup_pairs };
+  return W.computeOrderWindow(menu, today, { today_count, total_count });
 }
-/** จัดกลุ่มตาราง รอบสั่ง → รอบรับ เป็นแถว เช่น สั่ง 21–22 ก.ย. → รับ 28 ก.ย. */
-function pickupPairs(map) {
-  const byPickup = new Map();
-  for (const [o, p] of Object.entries(map).sort()) { if (!byPickup.has(p)) byPickup.set(p, []); byPickup.get(p).push(o); }
-  return [...byPickup.entries()].map(([pickup, orderDays]) => ({ order_days: orderDays, pickup, order_range: fmtDayRange(orderDays), pickup_th: fmtDayTH(pickup), pickup_en: fmtDayEN(pickup) }));
-}
-function stockShortfall(want, c) {
-  const { remaining } = stockView(c);
-  const label = { total: 'สินค้า', drink: 'เครื่องดื่ม', dessert: 'ของหวาน' };
-  for (const k of ['total', 'drink', 'dessert']) {
-    if (remaining[k] != null && want[k] > remaining[k]) {
-      return remaining[k] === 0 ? `${label[k]}หมดแล้ว / Sold out` : `${label[k]}เหลือเพียง ${remaining[k]} ชุด (สั่ง ${want[k]} ชุด) / Only ${remaining[k]} left`;
-    }
-  }
-  return '';
-}
+const stockShortfall = (want, c) => M.stockShortfall(want, stockView(c).remaining);
 
 const app = express();
 app.set('trust proxy', 1);   // อยู่หลัง reverse proxy / Cloudflare: อ่าน IP และ https จาก X-Forwarded-*
@@ -338,8 +238,6 @@ app.get('/api/stock', (req, res) => res.json(stockView(requestCampaign(req))));
 app.get('/api/stores', (req, res) => res.json(loadStores()));
 app.get('/api/config', (req, res) => res.json({ payment_ready: qrConfigured(), slip_auto_verify: slipOkEnabled(), login_required: loginRequired(), google_client_id: GOOGLE_CLIENT_ID }));
 
-const money = (n) => Math.round(Number(n) * 100) / 100;
-
 /** Body: { store_id, note, campaign?: slug, lines: [{set_id, quantity}] } (drink_id/dessert_id lines are still accepted for older clients) */
 app.post('/api/orders', (req, res) => {
   if (loginRequired() && !customerLoggedIn(req.customerId)) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบด้วย Google ก่อนยืนยันคำสั่งซื้อ / Please sign in with Google first', login_required: true });
@@ -359,35 +257,9 @@ app.post('/api/orders', (req, res) => {
   if (!mustPickup && menu.pickup_dates.length && !menu.pickup_dates.includes(pickup_date)) return res.status(400).json({ error: 'กรุณาเลือกวันที่รับของ / Please choose a pick-up date', field: 'pickup_date' });
   const pickup_time = String((req.body && req.body.pickup_time) || '').trim();
   if (menu.pickup_times.length && !menu.pickup_times.includes(pickup_time)) return res.status(400).json({ error: 'กรุณาเลือกเวลาที่รับของ / Please choose a pick-up time', field: 'pickup_time' });
-  const drinks = Object.fromEntries(menu.drinks.map((d) => [d.id, d]));
-  const desserts = Object.fromEntries(menu.desserts.map((d) => [d.id, d]));
-  const sets = Object.fromEntries(menu.sets.map((s) => [s.id, s]));
-  const rows = [];
-  for (const l of lines) {
-    const qty0 = parseInt(l.quantity, 10);
-    if (l.set_id) {
-      const set = sets[String(l.set_id)];
-      if (!set) return res.status(400).json({ error: 'มีเซ็ตที่ไม่มีให้บริการแล้ว กรุณาเลือกใหม่' });
-      if (!Number.isInteger(qty0) || qty0 < 1 || qty0 > 99) return res.status(400).json({ error: 'รายการสินค้าไม่ถูกต้อง' });
-      rows.push({ set_id: set.id, set_label: set.label, set_name: set.name_en, items_json: JSON.stringify(set.items), pieces: set.pieces, drink_pieces: set.drink_pieces, dessert_pieces: set.dessert_pieces,
-        drink_id: '', drink_name: '', dessert_id: '', dessert_name: '', quantity: qty0, unit_price: money(set.price), line_total: money(set.price * qty0) });
-      continue;
-    }
-    const drink = l.drink_id ? drinks[String(l.drink_id)] : null;
-    const dessert = l.dessert_id ? desserts[String(l.dessert_id)] : null;
-    const qty = parseInt(l.quantity, 10);
-    if ((!drink && !dessert) || !Number.isInteger(qty) || qty < 1 || qty > 99) return res.status(400).json({ error: 'รายการสินค้าไม่ถูกต้อง' });
-    if ((l.drink_id && !drink) || (l.dessert_id && !dessert)) return res.status(400).json({ error: 'มีเมนูที่ไม่มีให้บริการแล้ว กรุณาเลือกใหม่' });
-    const unit = money((drink ? drink.price : 0) + (dessert ? dessert.price : 0));
-    rows.push({
-      set_id: '', set_label: '', set_name: '', items_json: '', pieces: (drink ? 1 : 0) + (dessert ? 1 : 0), drink_pieces: drink ? 1 : 0, dessert_pieces: dessert ? 1 : 0,
-      drink_id: drink ? drink.id : '', drink_name: drink ? drink.name_en : '',
-      dessert_id: dessert ? dessert.id : '', dessert_name: dessert ? dessert.name_en : '',
-      quantity: qty, unit_price: unit, line_total: money(unit * qty),
-    });
-  }
-  const total = money(rows.reduce((s, r) => s + r.line_total, 0));
-  const want = rows.reduce((w, r) => { w.total += r.quantity * r.pieces; w.drink += r.quantity * r.drink_pieces; w.dessert += r.quantity * r.dessert_pieces; return w; }, { drink: 0, dessert: 0, total: 0 });
+  const built = M.buildOrderRows(lines, menu);
+  if (built.error) return res.status(400).json({ error: built.error });
+  const { rows, want, total } = built;
   const id = crypto.randomUUID();
   const create = db.transaction(() => {
     const short = stockShortfall(want, campaign); // checked inside the write transaction so two customers cannot both take the last pieces
@@ -600,21 +472,6 @@ function campaignStats(c) {
 app.get('/api/admin/campaigns', requireAdmin, (req, res) => {
   res.json(db.prepare('SELECT * FROM campaigns ORDER BY active DESC, created_at DESC').all().map(campaignStats));
 });
-const slugify = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'campaign';
-function readCampaignBody(b, base = {}) {
-  const promo_from = b.promo_from == null ? base.promo_from : parseInt(b.promo_from, 10);
-  const promo_to = b.promo_to == null ? base.promo_to : parseInt(b.promo_to, 10);
-  if (!Number.isInteger(promo_from) || !Number.isInteger(promo_to) || promo_from > promo_to || promo_from < 0) return { error: 'ช่วงรหัสโปรโมชันไม่ถูกต้อง' };
-  return {
-    name: String(b.name ?? base.name ?? '').trim().slice(0, 80),
-    slug: slugOf('slug' in b && b.slug !== '' ? b.slug : (b.name != null && !base.slug ? b.name : base.slug)),
-    orders_open: 'orders_open' in b ? (b.orders_open ? 1 : 0) : (base.orders_open == null ? 1 : base.orders_open),
-    stock_total: 'stock_total' in b ? lim(b.stock_total) : base.stock_total ?? null,
-    stock_drink: 'stock_drink' in b ? lim(b.stock_drink) : base.stock_drink ?? null,
-    stock_dessert: 'stock_dessert' in b ? lim(b.stock_dessert) : base.stock_dessert ?? null,
-    promo_from, promo_to,
-  };
-}
 const setActiveCampaign = db.transaction((id) => { db.exec('UPDATE campaigns SET active = 0'); db.prepare('UPDATE campaigns SET active = 1 WHERE id = ?').run(id); });
 app.post('/api/admin/campaigns', requirePerm('campaigns'), (req, res) => {
   const v = readCampaignBody(req.body || {}, { promo_from: 2026090001, promo_to: 2026092000, stock_total: 1000 });
@@ -746,33 +603,9 @@ app.post('/api/admin/orders/:id/status', requireAdmin, async (req, res) => {
 
 // ─── อีเมลยืนยันการอนุมัติ (ส่งถึงอีเมล Google ที่ลูกค้าใช้สั่ง) ───
 function approvalEmail(o, c, baseUrl) {
-  const th = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
-  const money = (n) => (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  // โลโก้แนบไปกับอีเมล (cid) และฟอนต์ DB Helvethaica X จากเว็บ (ไคลเอนต์ที่รองรับ @font-face เช่น Apple Mail จะใช้ ที่เหลือใช้ Arial)
-  const fontCss = baseUrl ? ['Regular:400', 'Medium:500', 'Bold:700'].map((f) => { const [n, w] = f.split(':'); return `@font-face{font-family:'DB HelvethaicaX';font-weight:${w};src:url('${baseUrl}/fonts/DBHelvethaicaX-${n}.ttf') format('truetype')}`; }).join('') : '';
-  const FONT = "'DB HelvethaicaX','DB Helvethaica X',Arial,'Noto Sans Thai',sans-serif";
-  const attachments = [
-    { filename: 'logo-jiancha.png', path: path.join(PUBLIC_DIR, 'img', 'logo-jiancha.png'), cid: 'logo-jiancha' },
-    { filename: 'logo-navori.png', path: path.join(PUBLIC_DIR, 'img', 'logo-navori.png'), cid: 'logo-navori' },
-  ];
-  const isNavori = !c || /navori/i.test(c.name || '');
-  const header = isNavori
-    ? `<div style="margin:0 0 6px"><img src="cid:logo-jiancha" alt="JIANCHA" height="28" style="height:28px;vertical-align:middle"> <span style="font-size:22px;vertical-align:middle;margin:0 8px">x</span> <img src="cid:logo-navori" alt="NAVORI" height="28" style="height:28px;vertical-align:middle"></div>`
-    : `<div style="margin:0 0 6px"><img src="cid:logo-jiancha" alt="JIANCHA" height="28" style="height:28px;vertical-align:middle"><span style="font-size:22px;font-weight:700;vertical-align:middle;margin-left:10px">${th(c.name)}</span></div>`;
-  const rows = o.lines.map((l) => `<tr><td style="padding:6px 8px;border-bottom:1px solid #ddd">${th(l.name)}${l.items && l.items.length ? `<br><small style="color:#666">${th(l.items.map((i) => i.name_en).join(', '))}</small>` : ''}</td><td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:center">x ${l.quantity}</td><td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:right">${money(l.line_total)} ฿</td></tr>`).join('');
-  const link = baseUrl ? `${baseUrl}/${c ? c.slug + '/' : ''}orders` : '';
-  const pick = [o.pickup_date ? `${fmtDayTH(o.pickup_date)} (${fmtDayEN(o.pickup_date)})` : '', o.pickup_time || ''].filter(Boolean).join(' · ');
-  const html = `${fontCss ? `<style>${fontCss}</style>` : ''}<div style="font-family:${FONT};font-size:20px;line-height:1.35;max-width:600px;margin:0 auto;color:#000">
-    ${header}
-    <p style="margin:0 0 16px;color:#444;font-size:18px">ยืนยันคำสั่งซื้อ / Order confirmed</p>
-    <p>คำสั่งซื้อหมายเลข <b>${th(o.order_number)}</b> ของคุณได้รับการตรวจสอบยอดโอนและ<b>อนุมัติเรียบร้อยแล้ว</b><br>Your payment has been verified and your order is confirmed.</p>
-    <table style="width:100%;border-collapse:collapse;margin:12px 0"><thead><tr><th style="text-align:left;padding:6px 8px;border-bottom:2px solid #000">รายการ / Item</th><th style="padding:6px 8px;border-bottom:2px solid #000">จำนวน</th><th style="text-align:right;padding:6px 8px;border-bottom:2px solid #000">ราคา</th></tr></thead>
-    <tbody>${rows}</tbody><tfoot><tr><td colspan="2" style="padding:8px;text-align:right"><b>ยอดรวม / Total</b></td><td style="padding:8px;text-align:right"><b>${money(o.total)} ฿</b></td></tr></tfoot></table>
-    <p><b>สถานที่รับของ / Pick-up:</b> ${th(o.store_name)}${pick ? `<br><b>วัน-เวลารับของ / Pick-up date &amp; time:</b> ${th(pick)}` : ''}${o.phone ? `<br><b>เบอร์ติดต่อ:</b> ${th(o.phone)}` : ''}${o.note ? `<br><b>หมายเหตุ:</b> ${th(o.note)}` : ''}</p>
-    <p>กรุณาแสดงอีเมลนี้หรือหน้า Order History ที่หน้าร้านในวันรับของ${link ? ` <a href="${th(link)}">${th(link)}</a>` : ''}<br>Please show this email or your Order History page at the store on pick-up day.</p>
-    <p style="color:#444">ขอบคุณที่มาสั่งซื้อกับเรา / Thank you for ordering with us.<br><img src="cid:logo-jiancha" alt="JIANCHA" height="20" style="height:20px;vertical-align:middle">${isNavori ? ` <span style="vertical-align:middle">x</span> <img src="cid:logo-navori" alt="NAVORI" height="20" style="height:20px;vertical-align:middle">` : ''}</p></div>`;
-  const text = `ยืนยันคำสั่งซื้อ ${o.order_number} อนุมัติเรียบร้อยแล้ว\n` + o.lines.map((l) => `- ${l.name} x${l.quantity} = ${money(l.line_total)} ฿`).join('\n') + `\nยอดรวม ${money(o.total)} ฿\nรับของที่ ${o.store_name}${pick ? ' ' + pick : ''}${link ? '\n' + link : ''}`;
-  return { subject: `ยืนยันคำสั่งซื้อ ${o.order_number} อนุมัติแล้ว / Order confirmed – ${c ? c.name : 'JIANCHA'}`, html, text, attachments };
+  const m = approvalEmailOf(o, c, baseUrl, { logos: 'cid' });   // โลโก้แนบไปกับอีเมล (cid)
+  m.attachments = m.attachments.map((a) => ({ filename: a.filename, path: path.join(PUBLIC_DIR, 'img', a.filename), cid: a.cid }));
+  return m;
 }
 async function notifyApproved(orderId) {
   const row = getOrder(orderId); if (!row) return;

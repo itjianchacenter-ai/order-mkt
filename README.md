@@ -4,8 +4,8 @@
 
 ระบบนี้เป็นแอปแยกเดี่ยว ไม่เชื่อมกับระบบอื่น (repo: `itjianchacenter-ai/order-mkt`)
 
-- **Preview (GitHub Pages):** https://itjianchacenter-ai.github.io/order-mkt/ → จะผูกเป็น https://order.jianchatea.com
-- Preview ถูก build อัตโนมัติจาก `.github/workflows/pages.yml` ทุกครั้งที่ push ขึ้น `main`
+- **ระบบจริง (Cloudflare Pages + D1 + R2):** https://order.jianchatea.com — โค้ดเดียวกันรันเป็น worker บน Cloudflare (`worker/`) ฐานข้อมูลกลาง (ลูกค้าทุกคนที่ล็อกอิน, ออเดอร์, โควตา 200/วัน, สลิป) ดูวิธีตั้งค่าที่หัวข้อ **ขึ้นระบบจริงบน Cloudflare Pages**
+- **Preview (GitHub Pages):** https://itjianchacenter-ai.github.io/order-mkt/ — เวอร์ชันไม่มีเซิร์ฟเวอร์ ข้อมูลอยู่ในเบราว์เซอร์ build อัตโนมัติจาก `.github/workflows/pages.yml` ทุกครั้งที่ push ขึ้น `main`
 - แถบ PREVIEW สีดำ (ข้อมูลทดลอง + บัญชีหลังบ้าน + ปุ่มรีเซ็ต) แสดงเฉพาะหน้าหลังบ้าน `/backend/` หน้าลูกค้า (`/`, `/<แคมเปญ>/`) ไม่แสดง
 
 ## หน้าเว็บ
@@ -31,7 +31,7 @@
 - ในช่วงวัน: ป้าย "วันนี้เหลือ N / 200 ออเดอร์" เมื่อครบ 200 จะขึ้น "วันนี้ครบ 200 ออเดอร์แล้ว" และแจ้งให้สั่งใหม่วันถัดไป (ตรวจใน transaction เดียวกับสต๊อก กันสั่งเกินพร้อมกัน) ยกเลิกออเดอร์คืนโควตา
 - หลังบ้าน (เมนู Slip Issue) แสดง "วันนี้ X / 200 ออเดอร์ · รวม Y / 1000"; `/api/stock` และ `/api/menu` มี `order_window` (`days`, `per_day`, `today`, `today_count`, `today_remaining`, `total_count`, `total_max`, `status`, `message`)
 - design ของแคมเปญกำหนด `order_days` / `orders_per_day` ของตัวเองได้ (ว่าง = ใช้ของแม่แบบ); ตัวแปร `ORDER_DAY_OVERRIDE=YYYY-MM-DD` ใช้จำลองวันตอนทดสอบ
-- **ข้อจำกัด preview (GitHub Pages)**: ไม่มี server กลาง โควตาต่อวันนับเฉพาะออเดอร์ในเบราว์เซอร์นั้น การจำกัด 200 ออเดอร์/วันจริงต้องรันบน server (`node server.js`)
+- **ข้อจำกัด preview (GitHub Pages)**: ไม่มี server กลาง โควตาต่อวันนับเฉพาะออเดอร์ในเบราว์เซอร์นั้น การจำกัด 200 ออเดอร์/วันจริงอยู่บนระบบจริง (Cloudflare Pages + D1 หรือ `node server.js`)
 
 ## PDPA (ความยินยอมเก็บ/ใช้ข้อมูลส่วนบุคคล)
 
@@ -45,7 +45,7 @@
 ลูกค้าดูเมนู เลือกเซ็ต เลือกสาขาได้โดยไม่ต้องล็อกอิน แต่เมื่อกด **Confirm** ระบบจะเปิด pop-up "Sign in with Google" ให้ล็อกอินด้วยอีเมล Google ก่อน (ล็อกอินเสร็จจะยืนยันคำสั่งซื้อต่อให้อัตโนมัติ) ประวัติการสั่งซื้อ (`/orders`) ผูกกับบัญชี Google จึงเปิดดูได้จากทุกเครื่อง หัวเว็บแสดงชื่อ/รูปบัญชีและปุ่ม Sign out
 
 - เปิดใช้ด้วยตัวแปร `GOOGLE_CLIENT_ID` (OAuth 2.0 Client ID ชนิด Web application จาก https://console.cloud.google.com/apis/credentials) ใส่ **Authorized JavaScript origins** = `https://order.jianchatea.com` (และ `http://localhost:3870` สำหรับทดสอบ) ไม่ต้องใส่ redirect URI
-- server: ใส่ใน `.env` — preview (GitHub Pages): ตั้ง Repository variable ชื่อ `GOOGLE_CLIENT_ID` (Settings → Secrets and variables → Actions → Variables) แล้ว push/rerun workflow
+- Cloudflare Pages: ใส่ตัวแปร `GOOGLE_CLIENT_ID` ใน Settings → Variables (ดูหัวข้อ Cloudflare) · server: ใส่ใน `.env` · preview (GitHub Pages): ตั้ง Repository variable ชื่อ `GOOGLE_CLIENT_ID` (Settings → Secrets and variables → Actions → Variables) แล้ว push/rerun workflow
 - ถ้ายังไม่ตั้งค่า: server จะให้สั่งซื้อแบบไม่ล็อกอินเหมือนเดิม ส่วน preview จะแสดงปุ่ม "ทดลองเข้าสู่ระบบ (preview)" ให้พิมพ์อีเมลเองเพื่อทดสอบ flow
 - ฝั่ง server ตรวจ ID token กับ Google (`oauth2.googleapis.com/tokeninfo`) และเช็ค client id / ผู้ออก / วันหมดอายุ / อีเมลยืนยันแล้ว ก่อนบันทึกบัญชี (`customers.google_sub/email/name/picture`) ออเดอร์ที่สั่งไว้ในเบราว์เซอร์ก่อนล็อกอินจะย้ายไปอยู่กับบัญชีให้
 - **ประวัติการสั่งซื้อแยกตามบัญชี Google**: `/orders` แสดงเฉพาะออเดอร์ที่สั่งด้วยบัญชีที่ล็อกอินอยู่ (ยังไม่ล็อกอิน = ไม่มีออเดอร์) ออเดอร์เดิมทั้งหมดที่มีอยู่ก่อนแยกตามบัญชี ย้ายไปอยู่กับบัญชี `whenwendy.yake@gmail.com` (server: ทำครั้งเดียวตอนเริ่ม ตั้งอีเมลอื่นได้ด้วย `LEGACY_ORDERS_OWNER` — สร้างแถวลูกค้าไว้ล่วงหน้าด้วยอีเมล เมื่อเจ้าของล็อกอินด้วย Google อีเมลนั้นครั้งแรกจะผูกบัญชีให้อัตโนมัติ; preview: ข้อมูลใน localStorage ของเบราว์เซอร์นั้นย้ายให้ตอนเปิดหน้า) ผู้ใช้อื่นล็อกอินเข้ามาจะไม่เห็นออเดอร์เหล่านี้
@@ -164,7 +164,72 @@ node scripts/reset-data.js --yes
 - หัวอีเมลเป็นโลโก้ JIANCHA x NAVORI (แนบไปกับอีเมลแบบ inline) ใช้ฟอนต์ DB Helvethaica X จาก `public/fonts/` (ไคลเอนต์ที่รองรับ @font-face เช่น Apple Mail/iOS จะแสดงฟอนต์นี้ Gmail จะใช้ Arial แทน) ทดสอบการตั้งค่า SMTP ได้ด้วย `node scripts/send-test-mail.js you@example.com`
 - preview บน GitHub Pages ไม่มี server จึงส่งอีเมลจริงไม่ได้ จะแสดงเป็น "อีเมลยืนยัน (preview จำลอง)" แทน
 
-## Deploy บนเซิร์ฟเวอร์จริง (ขึ้นระบบ)
+## ขึ้นระบบจริงบน Cloudflare Pages (แนะนำ)
+
+ระบบทั้งหมด (API, ฐานข้อมูล, รูปสลิป, อีเมล, หลังบ้าน) รันบน Cloudflare โดยไม่ต้องมีเซิร์ฟเวอร์: หน้าเว็บจาก `public/` + `_worker.js` (bundle จาก `worker/` ด้วย `scripts/build-worker.js`) ใช้ **D1** (SQLite ของ Cloudflare) เป็นฐานข้อมูลกลาง และ **R2** เก็บรูปสลิป/รูป Design ตารางและ API เหมือน `server.js` ทุกอย่าง (ตารางถูกสร้างและ seed บัญชีหลังบ้าน + แคมเปญแรกให้เองตอนเปิดใช้ครั้งแรก) ลูกค้าทุกคนที่ล็อกอิน Google จากทุกเครื่อง/เบราว์เซอร์จะอยู่ในเมนู **Customer** ของหลังบ้าน
+
+### 1. สร้างฐานข้อมูลและที่เก็บไฟล์ (ทำครั้งเดียว)
+
+ใน Cloudflare dashboard (บัญชีที่ถือโดเมน jianchatea.com)
+
+| เมนู | ทำอะไร |
+|---|---|
+| Storage & Databases → **D1 SQL Database** → Create | ตั้งชื่อ `jc-order` (ไม่ต้องสร้างตารางเอง) |
+| Storage & Databases → **R2 Object Storage** → Create bucket | ตั้งชื่อ `jc-files` (ต้องเปิดใช้ R2 ครั้งแรก ผูกบัตรได้ แต่ปริมาณของเว็บนี้อยู่ใน free tier) |
+
+### 2. สร้าง Pages project จาก repo
+
+Workers & Pages → Create → **Pages** → Connect to Git → เลือก repo `itjianchacenter-ai/order-mkt`
+
+| ช่อง | ค่า |
+|---|---|
+| Production branch | `main` |
+| Build command | `bash scripts/build-site.sh` (บน Cloudflare จะ build เป็นเว็บจริงอัตโนมัติ ตัวแปร `CF_PAGES=1`) |
+| Build output directory | `_site` |
+
+**Environment variables** (Settings → Variables and Secrets ใส่ทั้ง Production และ Preview):
+
+| ตัวแปร | ค่า | จำเป็น |
+|---|---|---|
+| `NODE_VERSION` | `22` | ✅ |
+| `JWT_SECRET` | ข้อความสุ่มยาว ๆ (ใช้เซ็น cookie ล็อกอิน) — ชนิด Secret | ✅ |
+| `GOOGLE_CLIENT_ID` | OAuth Client ID ชนิด Web (origin `https://order.jianchatea.com`) — ถ้าว่าง ลูกค้าจะสั่งได้โดยไม่ล็อกอินและหลังบ้านจะไม่มีรายชื่อลูกค้า | ✅ |
+| `PROMPTPAY_ID` | เบอร์/เลขนิติบุคคล PromptPay ที่รับเงิน (สร้าง QR) หรือใส่ `PROMPTPAY_QR_PAYLOAD` จาก QR ร้าน | ✅ |
+| `PUBLIC_BASE_URL` | `https://order.jianchatea.com` (ลิงก์ในอีเมล/หลังบ้าน) | ✅ |
+| `RESEND_API_KEY` + `MAIL_FROM` | ส่งอีเมลยืนยันเมื่อ Approve ผ่าน https://resend.com (ยืนยันโดเมน jianchatea.com ใน Resend ก่อน) ว่าง = ไม่ส่งจริง บันทึกสถานะ "logged" | แนะนำ |
+| `SLIPOK_API_KEY` + `SLIPOK_BRANCH_ID` | ตรวจสลิปอัตโนมัติ (ว่าง = บัญชีตรวจเอง) | ไม่บังคับ |
+| `ORDER_DAY_OVERRIDE` | `YYYY-MM-DD` จำลองวันที่ (ใช้ทดสอบเท่านั้น ห้ามตั้งบน Production) | — |
+
+**Bindings** (Settings → Bindings → Add ทั้ง Production และ Preview) — ชื่อตัวแปรต้องตรงตามนี้:
+
+| ชนิด | Variable name | เลือก |
+|---|---|---|
+| D1 database | `DB` | `jc-order` |
+| R2 bucket | `FILES` | `jc-files` |
+
+ถ้ายังไม่ได้ผูก เว็บจะแสดงข้อความบอกให้ผูก `DB` และ `FILES` แทนหน้าเว็บ หลังเพิ่ม bindings/ตัวแปรให้กด **Retry deployment** (หรือ push ใหม่) 1 ครั้ง
+
+> ถ้า build ล้มตอน `npm install` (แพ็กเกจ `better-sqlite3` ของเวอร์ชันเซิร์ฟเวอร์ต้อง compile) ให้เพิ่มตัวแปร `SKIP_INSTALL_DEPS` = `true` และเปลี่ยน Build command เป็น `npm ci --ignore-scripts && bash scripts/build-site.sh`
+
+### 3. ผูกโดเมน
+
+Pages project → Custom domains → Set up a custom domain → `order.jianchatea.com` (Cloudflare สร้าง CNAME แทน record เดิมที่ชี้ GitHub Pages ให้เอง) รอ 1–5 นาที แล้วเปิด https://order.jianchatea.com — Workers & Pages ไม่ต้องตั้ง Cache Rules เพิ่ม (`_routes.json` ให้เฉพาะ css/js/img/fonts ผ่าน CDN ส่วน API/หน้าเว็บ/สลิปผ่าน worker ทุกครั้งและส่ง `Cache-Control: no-store`)
+
+### 4. ก่อนเปิดขาย
+
+- เข้า https://order.jianchatea.com/backend ด้วย `it-admin` / `jiancha2026` แล้ว**เปลี่ยนรหัสผ่านทั้ง 3 บัญชี**ในหน้า Account (บัญชีเริ่มต้นชุดเดียวกับตารางด้านบน แต่ฐานข้อมูลบน D1 เริ่มว่าง ไม่มีออเดอร์ทดสอบจาก preview)
+- หน้า Design: ตรวจรูป/ราคา/วันรับของ กด Save
+- ทดลองสั่ง 1 ออเดอร์ด้วยบัญชี Google → สแกน QR → ส่งสลิป → Approve ในหลังบ้าน → ได้อีเมล → รับ code แล้วยกเลิกออเดอร์ทดสอบ (ยกเลิกคืนโควตาและสต๊อก)
+- แก้เมนู/สาขา/วันรับของ: แก้ `data/menu.json`, `data/stores.json` แล้ว push เข้า `main` (Cloudflare build ใหม่เอง ~1 นาที) หรือแก้ในหน้า Design ของแคมเปญโดยไม่ต้อง push
+
+### ทดสอบเครื่องตัวเอง
+
+```bash
+npm run test:cf   # build เว็บจริง + รัน wrangler pages dev (D1/R2 จำลองในเครื่อง) + smoke test ชุดเดียวกับ npm test
+npm run dev:cf    # เปิดเว็บจริงที่ http://localhost:8788 ด้วย D1/R2 จำลอง (ไม่มี Google login: GOOGLE_CLIENT_ID ว่าง)
+```
+
+## ทางเลือก: Deploy บนเซิร์ฟเวอร์ของตัวเอง (Node + SQLite)
 
 **ต้องมี** เครื่อง Ubuntu 22.04/24.04 ที่มี IP สาธารณะ (VPS 1 vCPU / 1 GB พอ เช่น DigitalOcean, Vultr, Linode หรือเซิร์ฟเวอร์ของบริษัท) และเข้าถึงด้วย SSH ได้
 
@@ -203,20 +268,7 @@ curl -fsSL https://raw.githubusercontent.com/itjianchacenter-ai/order-mkt/main/d
 
 โค้ดตั้ง `trust proxy` ไว้แล้ว จึงอ่าน IP จริงของลูกค้าและรู้ว่าเป็น https ผ่าน Cloudflare ได้ถูกต้อง (cookie ล็อกอินทำงานปกติ)
 
-> **หมายเหตุ** Cloudflare Pages / Workers รันเซิร์ฟเวอร์ตัวนี้ (Node + SQLite + ไฟล์สลิป) ไม่ได้ ระบบจริง (โควตา 200 ออเดอร์/วัน, สลิป, อีเมล, หลังบ้าน) ต้องรัน `server.js` บนเครื่อง VPS/Docker แล้วให้ Cloudflare เป็น DNS/proxy ด้านหน้าตามตารางข้างบน
-
-### ทางเลือก: Cloudflare Pages สำหรับเว็บ preview (แทน GitHub Pages)
-
-ถ้าอยากย้ายเว็บ preview (ไม่มีเซิร์ฟเวอร์ ข้อมูลอยู่ในเบราว์เซอร์) ไปอยู่บน Cloudflare Pages: Workers & Pages → Create → Pages → Connect to Git → เลือก repo `order-mkt` แล้วตั้งค่า
-
-| ช่อง | ค่า |
-|---|---|
-| Production branch | `main` |
-| Build command | `bash scripts/build-site.sh` |
-| Build output directory | `_site` |
-| Environment variables | `NODE_VERSION` = `22`, `GOOGLE_CLIENT_ID` = Client ID (ถ้ามี) |
-
-จากนั้น Custom domains → เพิ่ม `order.jianchatea.com` (Cloudflare จะสร้าง CNAME ให้เอง) ทุก push เข้า `main` จะ build ใหม่อัตโนมัติเหมือน GitHub Pages ข้อจำกัดเหมือน preview เดิมทุกอย่าง
+> ทางนี้ใช้เมื่ออยากรัน `server.js` เอง (Node + SQLite + ไฟล์สลิปในเครื่อง) ถ้าใช้ Cloudflare Pages ตามหัวข้อก่อนหน้าไม่ต้องทำส่วนนี้ — ทั้งสองทางใช้ตรรกะร่วมกันใน `lib/` (เมนู/design, ช่วงเปิดรับออเดอร์, PromptPay, อีเมล)
 
 ### 4. ก่อนเปิดใช้งาน
 
@@ -238,7 +290,8 @@ sudo /opt/order-mkt/deploy/update.sh     # backup → git pull → npm ci → re
 ## ทดสอบ
 
 ```bash
-npm test                        # smoke test ของ API ทั้งหมดบนฐานข้อมูลชั่วคราว
+npm test                        # smoke test ของ API ทั้งหมดบนฐานข้อมูลชั่วคราว (server.js)
+npm run test:cf                 # smoke test ชุดเดียวกันกับ worker บน Cloudflare (wrangler pages dev + D1/R2 จำลอง)
 node scripts/build-preview.js   # สร้าง dist/preview.html เวอร์ชันทดลองไม่ต้องมีเซิร์ฟเวอร์
 ```
 

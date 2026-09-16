@@ -1,4 +1,5 @@
-/* End-to-end API smoke test against a temp database. Run: npm test */
+/* End-to-end API smoke test. Run: npm test (Node server on a temp database) or npm run test:cf (Cloudflare worker via wrangler pages dev, BASE_URL set) */
+const CF = Boolean(process.env.BASE_URL);   // ทดสอบ worker ที่รันอยู่แล้ว (scripts/test-cf.js) แทน server.js
 process.env.DB_PATH = require('path').join(require('os').tmpdir(), `jc-order-test-${Date.now()}.db`);
 process.env.PROMPTPAY_ID = '0812345678';
 process.env.JWT_SECRET = 'test'; process.env.NODE_ENV = 'test'; process.env.SLIPOK_API_KEY = '';
@@ -6,14 +7,15 @@ process.env.ORDER_DAY_OVERRIDE = '2026-09-18'; // อยู่ในช่วง
 process.env.MAIL_TRANSPORT = 'json'; // อีเมลยืนยันผ่าน nodemailer แบบไม่ออกเครือข่าย
 process.env.GOOGLE_CLIENT_ID = 'test-client-id'; // เปิดบังคับล็อกอิน; token ตรวจกับ stub ด้านล่างแทน Google
 const fs = require('fs'); const path = require('path');
-const app = require('../server');
+const app = CF ? null : require('../server');
 // แม่แบบ data/menu.json มีแบนเนอร์หรือไม่ (แคมเปญที่ยังไม่ตั้งค่า Design ต้องได้ค่าตามแม่แบบ)
 const TEMPLATE_BANNERS = require('../data/menu.json').banner ? 1 : 0;
 
-let base; const jars = {};
+let base; const jars = {}; let testDay = '2026-09-18';
+const setDay = (d) => { testDay = d; process.env.ORDER_DAY_OVERRIDE = d; };   // วันนี้ (เวลาไทย) ที่ระบบเห็น: env (Node) / header x-test-day (worker, TEST_MODE)
 function cookieHeader(who) { return jars[who] ? { cookie: jars[who] } : {}; }
 async function call(who, method, p, body, extraHeaders = {}) {
-  const init = { method, headers: { ...cookieHeader(who), ...extraHeaders } };
+  const init = { method, headers: { ...cookieHeader(who), ...(CF ? { 'x-test-day': testDay } : {}), ...extraHeaders } };
   if (body instanceof FormData) init.body = body; else if (body) { init.headers['content-type'] = 'application/json'; init.body = JSON.stringify(body); }
   const r = await fetch(base + p, init);
   const set = r.headers.getSetCookie ? r.headers.getSetCookie() : [];
@@ -26,9 +28,14 @@ function check(name, cond, info) { if (cond) console.log('  ok  ', name); else {
 const tinyPng = (seed) => Buffer.concat([Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64'), Buffer.from([seed])]);
 const png = (seed) => { const f = new FormData(); f.append('slip', new Blob([tinyPng(seed)], { type: 'image/png' }), 'slip.png'); return f; };
 const login = (who, username, password) => call(who, 'POST', '/api/admin/login', { username, password });
+// ฐานข้อมูลตรง: better-sqlite3 (Node) หรือ /api/_test/sql ของ worker (TEST_MODE)
+const dbx = {
+  run: async (q, ...args) => (CF ? (await call('sys', 'POST', '/api/_test/sql', { sql: q, args, mode: 'run' })).json.result : require('../db').db.prepare(q).run(...args)),
+  get: async (q, ...args) => (CF ? (await call('sys', 'POST', '/api/_test/sql', { sql: q, args, mode: 'get' })).json.result : require('../db').db.prepare(q).get(...args)),
+};
 
 (async () => {
-  const server = app.listen(0); base = `http://127.0.0.1:${server.address().port}`;
+  const server = CF ? null : app.listen(0); base = CF ? process.env.BASE_URL.replace(/\/+$/, '') : `http://127.0.0.1:${server.address().port}`;
   // stub ของ oauth2.googleapis.com/tokeninfo: id_token = ชื่อผู้ใช้จำลอง ('bad' = ไม่ผ่าน)
   const http = require('http');
   const tokeninfo = http.createServer((req, res) => {
@@ -37,7 +44,7 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     const wrongAud = t.endsWith('@wrong');
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ iss: 'https://accounts.google.com', aud: wrongAud ? 'other-client' : 'test-client-id', sub: 'sub-' + t, email: t + '@gmail.com', email_verified: 'true', name: 'Test ' + t, picture: '', exp: String(Math.floor(Date.now() / 1000) + 3600) }));
-  }).listen(0);
+  }).listen(CF ? parseInt(process.env.TOKENINFO_PORT || '8765', 10) : 0);
   process.env.GOOGLE_TOKENINFO_URL = `http://127.0.0.1:${tokeninfo.address().port}/tokeninfo`;
   try {
     let r = await call('customer', 'GET', '/api/menu');
@@ -70,10 +77,10 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '12345', lines: [{ set_id: A, quantity: 1 }] }); check('order with bad contact number rejected', r.status === 400 && r.json.field === 'phone');
     r = await call('customer', 'GET', '/api/stock'); check('order window tells today\'s pick-up date + pairs', r.json.order_window.pickup_date === '2026-09-25' && r.json.order_window.pickup_pairs.length === 4 && r.json.order_window.pickup_pairs[3].order_days.join() === '2026-09-21,2026-09-22' && r.json.order_window.pickup_pairs[3].pickup === '2026-09-28' && r.json.order_window.pickup_pairs[3].order_range.th === '21–22 กันยายน 2569', r.json.order_window.pickup_pairs);
     for (const [day, pick] of [['2026-09-20', '2026-09-27'], ['2026-09-21', '2026-09-28'], ['2026-09-22', '2026-09-28']]) {
-      process.env.ORDER_DAY_OVERRIDE = day;
+      setDay(day);
       r = await call('customer', 'GET', '/api/stock'); check(`round ${day} -> pick-up ${pick}`, r.json.order_window.pickup_date === pick, r.json.order_window.pickup_date);
     }
-    process.env.ORDER_DAY_OVERRIDE = '2026-09-18';
+    setDay('2026-09-18');
     r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-25', lines: [{ set_id: A, quantity: 1 }] }); check('order without pick-up time rejected', r.status === 400 && r.json.field === 'pickup_time', r.json);
     r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-25', pickup_time: '09:00-10:00 น.', lines: [{ set_id: A, quantity: 1 }] }); check('order with a time outside the campaign list rejected', r.status === 400 && r.json.field === 'pickup_time', r.json);
     r = await call('customer', 'POST', '/api/orders', { store_id: storeId, note: 'no sugar', phone: '081-234-5678', pickup_date: '2026-09-27', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 2 }, { set_id: B, quantity: 1 }] }); // วันรับของถูกกำหนดจากรอบสั่ง (18 ก.ย. → 25 ก.ย.) ค่าที่ส่งมาถูกแทนที่
@@ -95,7 +102,7 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     r = await call('customer', 'GET', '/api/orders'); check('history lists own orders', r.status === 200 && r.json.length === 2);
     r = await call('other', 'GET', '/api/orders'); check('other browser sees nothing', r.json.length === 0);
     r = await call('other', 'GET', `/api/orders/${order.id}`); check('other browser cannot read order', r.status === 404);
-    r = await call('customer', 'GET', `/api/orders/${order.id}/qr`); check('qr generated for order', r.status === 200 && /^data:image\/png/.test(r.json.qr_data_url) && r.json.amount === 1117, r.json);
+    r = await call('customer', 'GET', `/api/orders/${order.id}/qr`); check('qr generated for order', r.status === 200 && /^data:image\/(png|svg\+xml)/.test(r.json.qr_data_url) && r.json.amount === 1117, r.json);
 
     // ── customer: slips ──
     r = await call('customer', 'POST', `/api/orders/${order.id}/slip`, png(1)); check('slip -> finance review queue', r.status === 200 && r.json.status === 'slip_uploaded', r.json);
@@ -244,12 +251,12 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     // ── ช่วงเปิดรับออเดอร์ 18–22 ก.ย. 2026 + โควตา 200 ออเดอร์/วัน ──
     r = await call('customer', 'GET', '/api/stock'); const ow = r.json.order_window;
     check('order window: open today (18 Sep), 5 days x 200 = 1000, counts today', ow.open === true && ow.status === 'open' && ow.days.length === 5 && ow.per_day === 200 && ow.total_max === 1000 && ow.today === '2026-09-18' && ow.today_count > 0 && ow.today_remaining === 200 - ow.today_count && ow.range.th === '18–22 กันยายน 2569', ow);
-    process.env.ORDER_DAY_OVERRIDE = '2026-09-17';
+    setDay('2026-09-17');
     r = await call('customer', 'GET', '/api/stock'); check('before the window: status before + message', r.json.order_window.status === 'before' && /ยังไม่เปิดรับ/.test(r.json.order_window.message), r.json.order_window);
     r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-25', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 1 }] }); check('order before the window rejected (409)', r.status === 409 && /ยังไม่เปิดรับ/.test(r.json.error), r.json);
-    process.env.ORDER_DAY_OVERRIDE = '2026-09-23';
+    setDay('2026-09-23');
     r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-25', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 1 }] }); check('order after the window rejected (409)', r.status === 409 && /ปิดรับ/.test(r.json.error), r.json);
-    process.env.ORDER_DAY_OVERRIDE = '2026-09-19';
+    setDay('2026-09-19');
     r = await call('customer', 'GET', '/api/stock'); check('next window day starts at 0 orders', r.json.order_window.open === true && r.json.order_window.today_count === 0);
     const dzw = (await call('it', 'GET', '/api/admin/campaigns/jiancha-x-navori/design')).json.design;
     r = await call('it', 'PUT', '/api/admin/campaigns/jiancha-x-navori/design', { ...dzw, orders_per_day: 2 }); check('campaign design can set its own per-day quota', r.status === 200 && r.json.design.orders_per_day === 2, r.json.design);
@@ -262,14 +269,13 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 1 }] }); check('quota: slot reused after cancel', r.status === 201, r.json.error);
     r = await call('it', 'PUT', '/api/admin/campaigns/jiancha-x-navori/design', { ...dzw, orders_per_day: null }); check('design without per-day quota falls back to template (200)', r.status === 200 && (await call('customer', 'GET', '/api/stock')).json.order_window.per_day === 200);
     r = await call('it', 'GET', '/api/admin/summary?campaign=jiancha-x-navori'); check('admin summary carries the order window', r.json.stock.order_window && r.json.stock.order_window.per_day === 200 && r.json.stock.order_window.total_count >= 3);
-    process.env.ORDER_DAY_OVERRIDE = '2026-09-18';
+    setDay('2026-09-18');
 
     // ── ออเดอร์แยกตามบัญชี Google + หลังบ้านเห็นอีเมล/เบอร์ + บัญชีที่เตรียมไว้ล่วงหน้าด้วยอีเมล ──
     {
-      const { db } = require('../db');
       const placeholderId = 'pre-' + Date.now();
-      db.prepare('INSERT INTO customers(id, email, name) VALUES (?, ?, ?)').run(placeholderId, 'wendy@gmail.com', 'wendy');
-      db.prepare('UPDATE orders SET customer_id = ? WHERE id = ?').run(placeholderId, order2.id);
+      await dbx.run('INSERT INTO customers(id, email, name) VALUES (?, ?, ?)', placeholderId, 'wendy@gmail.com', 'wendy');
+      await dbx.run('UPDATE orders SET customer_id = ? WHERE id = ?', placeholderId, order2.id);
       r = await call('customer', 'GET', '/api/orders'); check('order moved to the pre-assigned account leaves alice history', !r.json.some((o) => o.id === order2.id));
       r = await call('it', 'GET', `/api/admin/orders/${order2.id}`); check('back-office shows google account email + contact number for the order', r.json.customer_email === 'wendy@gmail.com' && r.json.phone === '0812345678', r.json);
       check('back-office order carries pdpa consent time', r.json.pdpa_accepted_at === pdpaAt, r.json.pdpa_accepted_at);
@@ -278,7 +284,8 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
       r = await call('wendy', 'GET', '/api/orders'); check('not signed in = no order history', r.json.length === 0);
       r = await call('wendy', 'POST', '/api/auth/google', { credential: 'wendy' }); check('pre-assigned email claims its account on first google login', r.json.logged_in === true && r.json.email === 'wendy@gmail.com');
       r = await call('wendy', 'GET', '/api/orders'); check('claimed account sees the pre-assigned order', r.json.length === 1 && r.json[0].id === order2.id, r.json.map((o) => o.id));
-      check('placeholder row became the google account (no duplicate customer)', db.prepare('SELECT COUNT(*) AS n FROM customers WHERE email = ?').get('wendy@gmail.com').n === 1 && db.prepare('SELECT google_sub FROM customers WHERE id = ?').get(placeholderId).google_sub === 'sub-wendy');
+      check('placeholder row became the google account (no duplicate customer)', (await dbx.get('SELECT COUNT(*) AS n FROM customers WHERE email = ?', 'wendy@gmail.com')).n === 1 && (await dbx.get('SELECT google_sub FROM customers WHERE id = ?', placeholderId)).google_sub === 'sub-wendy');
+      if (!CF) {
       // db.js migration: ออเดอร์เดิมที่ไม่ผูกบัญชี Google → บัญชีเจ้าของ (LEGACY_ORDERS_OWNER) ทำครั้งเดียว
       const { execFileSync } = require('child_process'); const mdb = process.env.DB_PATH + '-legacy.db';
       const runDb = (js) => execFileSync(process.execPath, ['-e', `const { db } = require(${JSON.stringify(path.join(__dirname, '..', 'db.js'))}); ${js}`], { env: { ...process.env, DB_PATH: mdb, LEGACY_ORDERS_OWNER: 'owner@gmail.com' }, encoding: 'utf8' }).trim();
@@ -287,6 +294,7 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
       const mig = JSON.parse(out);
       check('legacy migration: orders without google account move to the owner email (once), google-owned orders stay', mig.owner && mig.moved === 'o1,o2' && mig.g1 === 'g1' && mig.flag === 'owner@gmail.com' && mig.camp === 1, mig);
       for (const suf of ['', '-wal', '-shm']) { try { fs.unlinkSync(mdb + suf); } catch (e) { /* ignore */ } }
+      }
     }
 
     r = await call('it', 'POST', '/api/admin/logout'); r = await call('it', 'GET', '/api/admin/orders'); check('logout works', r.status === 401);
@@ -297,9 +305,10 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     r = await fetch(base + '/'); check('root is the Order with us landing', r.status === 200 && /Order with us/.test(await r.text()));
     r = await fetch(base + '/index'); check('/index is the active campaign home', r.status === 200 && /id="sets"/.test(await r.text()));
   } finally {
-    server.close();
-    for (const dir of ['uploads', 'uploads/design']) for (const f of fs.readdirSync(path.join(__dirname, '..', dir))) if (/^\d{13}-/.test(f) && Date.now() - Number(f.slice(0, 13)) < 60000) fs.unlinkSync(path.join(__dirname, '..', dir, f));
-    try { fs.unlinkSync(process.env.DB_PATH); fs.unlinkSync(process.env.DB_PATH + '-wal'); fs.unlinkSync(process.env.DB_PATH + '-shm'); } catch (e) { /* ignore */ }
+    tokeninfo.close();
+    if (server) server.close();
+    if (!CF) for (const dir of ['uploads', 'uploads/design']) for (const f of fs.readdirSync(path.join(__dirname, '..', dir))) if (/^\d{13}-/.test(f) && Date.now() - Number(f.slice(0, 13)) < 60000) fs.unlinkSync(path.join(__dirname, '..', dir, f));
+    if (!CF) try { fs.unlinkSync(process.env.DB_PATH); fs.unlinkSync(process.env.DB_PATH + '-wal'); fs.unlinkSync(process.env.DB_PATH + '-shm'); } catch (e) { /* ignore */ }
   }
   console.log(failed ? `\n${failed} check(s) FAILED` : '\nall checks passed');
   process.exit(failed ? 1 : 0);
