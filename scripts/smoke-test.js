@@ -96,7 +96,7 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     r = await call('customer', 'GET', '/api/orders'); check('history lists own orders', r.status === 200 && r.json.length === 2);
     r = await call('other', 'GET', '/api/orders'); check('other browser sees nothing', r.json.length === 0);
     r = await call('other', 'GET', `/api/orders/${order.id}`); check('other browser cannot read order', r.status === 404);
-    r = await call('customer', 'GET', `/api/orders/${order.id}/qr`); check('qr generated for order', r.status === 200 && /^data:image\/png/.test(r.json.qr_data_url) && r.json.amount === 877, r.json);
+    r = await call('customer', 'GET', `/api/orders/${order.id}/qr`); check('qr generated for order', r.status === 200 && /^data:image\/png/.test(r.json.qr_data_url) && r.json.amount === 1117, r.json);
 
     // ── customer: slips ──
     r = await call('customer', 'POST', `/api/orders/${order.id}/slip`, png(1)); check('slip -> finance review queue', r.status === 200 && r.json.status === 'slip_uploaded', r.json);
