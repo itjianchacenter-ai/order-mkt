@@ -107,7 +107,7 @@
   let q;
   try { q = await api('/api/quote', { method: 'POST', body: draft }); }
   catch (e) {
-    if (/HTTP 401|เข้าสู่ระบบ|sign in/i.test(e.message)) { await loadMe(true); refreshAccountSlot(); head.innerHTML = `<div class="empty">กรุณาเข้าสู่ระบบด้วย Google ก่อนชำระเงิน / Please sign in first.</div>`; openLoginModal(() => location.reload()); return; }
+    if (/HTTP 401|เข้าสู่ระบบ|sign in/i.test(e.message)) { await loadMe(true); refreshAccountSlot(); head.innerHTML = `<div class="empty">กรุณาเข้าสู่ระบบก่อนชำระเงิน / Please sign in first.</div>`; openLoginModal(() => location.reload()); return; }
     head.innerHTML = `<div class="empty">${esc(e.message)}<br><a href="${H()}/cart">กลับไปที่ตะกร้า / Back to cart</a></div>`; return;
   }
   const pseudo = { id: '', order_number: '—', store_name: q.store_name, pickup_date: q.pickup_date, pickup_time: q.pickup_time, lines: q.lines, total: q.total, status: 'draft', phone: q.phone, email: q.email, note: q.note, created_at: '' };

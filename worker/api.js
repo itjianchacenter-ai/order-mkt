@@ -532,7 +532,7 @@ on('GET', '/api/admin/customers', async (c) => {
   const total = (await c.db.get(`SELECT COUNT(*) AS n ${body_}`, ...allArgs)).n;
   const exp = qp.get('export') === '1';
   const page = exp ? 1 : Math.max(1, parseInt(qp.get('page'), 10) || 1);
-  const rows = await c.db.all(`SELECT c.id, c.email, c.name, c.picture, c.created_at, c.last_login_at, COALESCE(o.orders, 0) AS orders, COALESCE(o.paid_total, 0) AS paid_total, o.last_order_at${camp ? ', cc.first_seen_at AS joined_at' : ''} ${body_}
+  const rows = await c.db.all(`SELECT c.id, c.email, c.name, c.picture, c.created_at, c.last_login_at, c.last_seen_at, COALESCE(o.orders, 0) AS orders, COALESCE(o.paid_total, 0) AS paid_total, o.last_order_at${camp ? ', cc.first_seen_at AS joined_at' : ''} ${body_}
     ORDER BY COALESCE(c.last_login_at, c.last_seen_at) DESC, c.created_at DESC ${exp ? '' : 'LIMIT ? OFFSET ?'}`, ...allArgs, ...(exp ? [] : [PAGE_SIZE, (page - 1) * PAGE_SIZE]));
   return json({ campaign: camp ? campaignPublic(camp) : null, page, pages: exp ? 1 : Math.max(1, Math.ceil(total / PAGE_SIZE)), total, rows });
 });
