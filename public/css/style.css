@@ -432,9 +432,12 @@ a.btn{text-decoration:none}
 .dz-savebar.dirty{border-color:#000;box-shadow:0 -6px 18px rgba(0,0,0,.08)}
 .dz-savebar.dirty .th{color:#000;font-weight:700}
 .dz-savebar .btn:disabled{opacity:.45;cursor:default}
-/* root landing page: one button into the active campaign */
-.landing{min-height:calc(100vh - 88px);display:flex;align-items:center;justify-content:center;padding-top:8vh}
-.landing-btn{font-size:24px;font-weight:800;padding:6px 28px;letter-spacing:-.2px}
+/* root landing page (order.jianchatea.com): แบนเนอร์เต็มจอเป็นพื้นหลัง — PC ใช้ Banner Pre order, มือถือใช้ป้ายแคมเปญแนวตั้ง — ปุ่ม Order with us อยู่ด้านล่าง */
+body.landing-page{background:#efe5dc url(/img/landing-desktop.jpg) center center/contain no-repeat;min-height:100vh;min-height:100dvh}  /* contain = เห็นแบนเนอร์เต็มทุกขนาดจอ ไม่ตัดตัวหนังสือ */
+body.landing-page .wrap{padding:0;max-width:none}
+.landing{min-height:100vh;min-height:100dvh;display:flex;align-items:flex-end;justify-content:center;padding:0 16px 7vh}
+.landing-btn{font-size:24px;font-weight:800;padding:8px 32px;letter-spacing:-.2px;background:#000;color:#fff;border-color:#000;box-shadow:0 6px 18px rgba(0,0,0,.25)}
+@media (max-width:700px){body.landing-page{background-image:url(/img/landing-mobile.jpg)}.landing{padding-bottom:9vh}.landing-btn{font-size:20px}}
 /* รอบสั่ง → รอบรับ (ใต้ปุ่มวันที่รับของ) */
 .pair-note{margin-top:12px;font-size:13px}
 .pair-note b{display:block;margin-bottom:6px;font-weight:700}
