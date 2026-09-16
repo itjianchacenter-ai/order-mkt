@@ -27,14 +27,10 @@ jobs:
         with:
           node-version: 22
       # ตั้ง Repository variable GOOGLE_CLIENT_ID (Settings → Secrets and variables → Actions → Variables) เพื่อเปิด Sign in with Google บน preview
-      - run: node scripts/build-preview.js _site/index.html
+      # สคริปต์เดียวกับที่ใช้บน Cloudflare Pages (scripts/build-site.sh)
+      - run: bash scripts/build-site.sh
         env:
           GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
-      - run: |
-          touch _site/.nojekyll
-          cp _site/index.html _site/404.html
-          # รูปเมนู/แบนเนอร์ (public/img) ต้องไปด้วย ไม่งั้น /img/... 404 บน Pages
-          mkdir -p _site/img && cp -r public/img/. _site/img/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

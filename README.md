@@ -187,9 +187,36 @@ curl -fsSL https://raw.githubusercontent.com/itjianchacenter-ai/order-mkt/main/d
 
 ทดสอบอีเมล: `node scripts/send-test-mail.js you@example.com`
 
-### 3. ชี้โดเมนมาที่เซิร์ฟเวอร์ (Cloudflare → jianchatea.com → DNS)
+### 3. ชี้โดเมนมาที่เซิร์ฟเวอร์ผ่าน Cloudflare (jianchatea.com → DNS)
 
-แก้ record `order` จาก CNAME `itjianchacenter-ai.github.io` เป็น **A record = IP ของเซิร์ฟเวอร์** (Proxy status: DNS only ได้เลย Caddy ออกใบรับรองให้เอง; ถ้าเปิด Proxied ให้ตั้ง SSL/TLS = Full) รอ 1–5 นาที แล้วเปิด https://order.jianchatea.com
+แก้ record `order` จาก CNAME `itjianchacenter-ai.github.io` เป็น **A record = IP ของเซิร์ฟเวอร์** รอ 1–5 นาที แล้วเปิด https://order.jianchatea.com
+
+**ตั้งค่า Cloudflare เมื่อเปิด Proxied (เมฆส้ม) ให้ Cloudflare อยู่หน้าเซิร์ฟเวอร์** (แนะนำ ได้ CDN/กัน DDoS):
+
+| เมนู Cloudflare | ตั้งค่า |
+|---|---|
+| DNS → `order` A record | IP เซิร์ฟเวอร์, Proxy status **Proxied** |
+| SSL/TLS → Overview | **Full (strict)** (Caddy บนเซิร์ฟเวอร์มีใบรับรอง Let's Encrypt ผ่าน Cloudflare ได้ตามปกติ) |
+| SSL/TLS → Edge Certificates | Always Use HTTPS = On |
+| Caching → Cache Rules | เพิ่ม rule **Bypass cache** สำหรับ URI path starts with `/api/`, `/uploads/`, `/backend` (server ส่ง `Cache-Control: no-store` ให้ `/api` และ `/uploads` อยู่แล้ว rule นี้เป็นชั้นกันพลาด) |
+| Speed → Optimization | ปิด Rocket Loader / Auto Minify JS (กันแก้ไฟล์ JS ของแอป) |
+
+โค้ดตั้ง `trust proxy` ไว้แล้ว จึงอ่าน IP จริงของลูกค้าและรู้ว่าเป็น https ผ่าน Cloudflare ได้ถูกต้อง (cookie ล็อกอินทำงานปกติ)
+
+> **หมายเหตุ** Cloudflare Pages / Workers รันเซิร์ฟเวอร์ตัวนี้ (Node + SQLite + ไฟล์สลิป) ไม่ได้ ระบบจริง (โควตา 200 ออเดอร์/วัน, สลิป, อีเมล, หลังบ้าน) ต้องรัน `server.js` บนเครื่อง VPS/Docker แล้วให้ Cloudflare เป็น DNS/proxy ด้านหน้าตามตารางข้างบน
+
+### ทางเลือก: Cloudflare Pages สำหรับเว็บ preview (แทน GitHub Pages)
+
+ถ้าอยากย้ายเว็บ preview (ไม่มีเซิร์ฟเวอร์ ข้อมูลอยู่ในเบราว์เซอร์) ไปอยู่บน Cloudflare Pages: Workers & Pages → Create → Pages → Connect to Git → เลือก repo `order-mkt` แล้วตั้งค่า
+
+| ช่อง | ค่า |
+|---|---|
+| Production branch | `main` |
+| Build command | `bash scripts/build-site.sh` |
+| Build output directory | `_site` |
+| Environment variables | `NODE_VERSION` = `22`, `GOOGLE_CLIENT_ID` = Client ID (ถ้ามี) |
+
+จากนั้น Custom domains → เพิ่ม `order.jianchatea.com` (Cloudflare จะสร้าง CNAME ให้เอง) ทุก push เข้า `main` จะ build ใหม่อัตโนมัติเหมือน GitHub Pages ข้อจำกัดเหมือน preview เดิมทุกอย่าง
 
 ### 4. ก่อนเปิดใช้งาน
 
