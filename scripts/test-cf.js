@@ -5,7 +5,7 @@ const PORT = parseInt(process.env.CF_PORT || '8790', 10), TOKENINFO_PORT = parse
 const persist = fs.mkdtempSync(path.join(os.tmpdir(), 'jc-cf-'));
 execSync('bash scripts/build-site.sh', { cwd: ROOT, stdio: 'inherit', env: { ...process.env, SITE_MODE: 'real', OUT: '_site' } });
 console.log(process.env.NO_R2 ? '[test:cf] files stored in D1 (no R2 binding)' : '[test:cf] files stored in R2');
-const bindings = { JWT_SECRET: 'test', TEST_MODE: '1', GOOGLE_CLIENT_ID: 'test-client-id', GOOGLE_TOKENINFO_URL: `http://127.0.0.1:${TOKENINFO_PORT}/tokeninfo`, PROMPTPAY_ID: '0812345678', MAIL_TRANSPORT: 'json', ORDER_DAY_OVERRIDE: '2026-09-18' };
+const bindings = { JWT_SECRET: 'test', TEST_MODE: '1', GOOGLE_CLIENT_ID: 'test-client-id', GOOGLE_TOKENINFO_URL: `http://127.0.0.1:${TOKENINFO_PORT}/tokeninfo`, PROMPTPAY_ID: '0812345678', MAIL_TRANSPORT: 'json', ORDER_DAY_OVERRIDE: '2026-09-18', RESET_ORDERS_AT: '2026-09-01 00:00' };
 const args = ['wrangler', 'pages', 'dev', '_site', '--port', String(PORT), '--ip', '127.0.0.1', '--persist-to', persist, '--d1', 'DB=jc-order', ...(process.env.NO_R2 ? [] : ['--r2', 'FILES=jc-files']), '--compatibility-date=2026-09-01', '--log-level', 'warn'];
 for (const [k, v] of Object.entries(bindings)) args.push('--binding', `${k}=${v}`);
 const wr = spawn('npx', args, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
