@@ -11,6 +11,9 @@ rm -rf "$OUT"; mkdir -p "$OUT"
 if [ "$MODE" = "real" ]; then
   cp -r public/. "$OUT/"
   mv "$OUT/index.html" "$OUT/home.html"        # / คือหน้า landing, หน้าแคมเปญ (index.html) ถูก worker เสิร์ฟที่ /<slug>/ และ /index
+  # cache-busting: อ้าง /js/app.js และ /css/style.css ด้วย ?v=<commit> ทุกหน้า → เบราว์เซอร์โหลดไฟล์ใหม่ทันทีหลัง deploy (ไม่ต้องรอ cache หมดอายุ)
+  VER="${CF_PAGES_COMMIT_SHA:-$(git rev-parse --short HEAD 2>/dev/null || date +%s)}"; VER="${VER:0:12}"
+  for f in "$OUT"/*.html; do sed -i -e "s#\(src=\"/js/[a-z-]*\.js\)\"#\1?v=$VER\"#g" -e "s#\(href=\"/css/style\.css\)\"#\1?v=$VER\"#g" "$f"; done
   node scripts/build-worker.js "$OUT/_worker.js"
   # ไฟล์ static (css/js/img/fonts) ไม่ต้องผ่าน worker; ที่เหลือ (API, หน้าเว็บ, uploads) ผ่าน worker
   printf '{ "version": 1, "include": ["/*"], "exclude": ["/css/*", "/js/*", "/img/*", "/fonts/*"] }\n' > "$OUT/_routes.json"
