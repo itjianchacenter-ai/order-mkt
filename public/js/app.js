@@ -408,6 +408,11 @@ function openPdpaModal(onAccept) {
 /* เรียกตอนเปิดหน้าแคมเปญ: ยังไม่เคยยอมรับ → เปิด pop-up (ปิดไม่ได้จนกว่าจะยอมรับ) */
 async function requirePdpa() { await loadMe(); if (!pdpaAccepted()) openPdpaModal(); }
 
+/* คำสั่งซื้อฉบับร่าง (ยังไม่มีในระบบ): เก็บไว้ในเบราว์เซอร์ระหว่างไปหน้าชำระเงิน — ออเดอร์จะถูกบันทึกเมื่อส่งสลิปแล้วเท่านั้น */
+const DRAFT_KEY = 'jc_draft' + (campaignSlug() ? ':' + campaignSlug() : '');
+function saveDraft(d) { try { localStorage.setItem(DRAFT_KEY, JSON.stringify(d)); } catch (e) { /* ignore */ } }
+function loadDraft() { try { const d = JSON.parse(localStorage.getItem(DRAFT_KEY)); return d && Array.isArray(d.lines) && d.lines.length ? d : null; } catch (e) { return null; } }
+function clearDraft() { try { localStorage.removeItem(DRAFT_KEY); } catch (e) { /* ignore */ } }
 async function submitOrder({ storeId, note, phone = '', pickupDate = '', pickupDates = [], pickupTime = '', pickupTimes = [], errEl, btn, onFail }) {
   errEl.textContent = '';
   const lines = loadCart();
@@ -420,9 +425,12 @@ async function submitOrder({ storeId, note, phone = '', pickupDate = '', pickupD
   if (needLogin()) { openLoginModal(() => submitOrder({ storeId, note, phone, pickupDate, pickupDates, pickupTime, pickupTimes, errEl, btn, onFail })); return; }  // ล็อกอินก่อน แล้วยืนยันต่อให้อัตโนมัติ
   btn.disabled = true;
   try {
-    const order = await api('/api/orders', { method: 'POST', body: { store_id: storeId, note, phone: normalizePhone(phone), pickup_date: pickupDate || undefined, pickup_time: pickupTime || undefined, lines, campaign: campaignSlug() || undefined } });
-    cartClear(); setNote('');
-    location.href = `${B()}/pay?order=${encodeURIComponent(order.id)}`;
+    const draft = { store_id: storeId, note, phone: normalizePhone(phone), pickup_date: pickupDate || undefined, pickup_time: pickupTime || undefined, lines, campaign: campaignSlug() || undefined };
+    // ตรวจรายการ/โควตา/สต๊อกกับ server ก่อน (ยังไม่สร้างออเดอร์) แล้วไปหน้าชำระเงิน — ออเดอร์เกิดเมื่อส่งสลิป
+    const q = await api('/api/quote', { method: 'POST', body: draft });
+    if (!q.slip_required) { const order = await api('/api/orders', { method: 'POST', body: draft }); cartClear(); setNote(''); clearDraft(); location.href = `${B()}/pay?order=${encodeURIComponent(order.id)}`; return; }
+    saveDraft(draft); setNote(note);
+    location.href = `${B()}/pay`;
   } catch (e) {
     btn.disabled = false;
     if (/HTTP 401|เข้าสู่ระบบ|sign in/i.test(e.message)) { await loadMe(true); refreshAccountSlot(); openLoginModal(() => submitOrder({ storeId, note, phone, pickupDate, pickupDates, pickupTime, pickupTimes, errEl, btn, onFail })); return; }
@@ -432,7 +440,7 @@ async function submitOrder({ storeId, note, phone = '', pickupDate = '', pickupD
 
 const STATUS_LABEL = {
   pending: ['Awaiting payment', 'รอชำระเงิน'], slip_uploaded: ['Verifying slip', 'รอตรวจสอบสลิป'], paid: ['Approved', 'บัญชีตรวจสอบรายการคำสั่งซื้อเรียบร้อย'], slip_rejected: ['Slip rejected', 'สลิปไม่ผ่าน กรุณาอัปโหลดใหม่'],
-  picked_up: ['Picked up', 'รับสินค้าแล้ว'], cancelled: ['Cancelled', 'ยกเลิก'],
+  picked_up: ['Picked up', 'รับสินค้าแล้ว'], cancelled: ['Cancelled', 'ยกเลิก'], draft: ['Awaiting slip', 'ยังไม่บันทึก — ออเดอร์จะถูกบันทึกเมื่อส่งสลิป'],
 };
 const PRINTABLE = ['paid', 'picked_up']; // ใบรายการพิมพ์ได้เมื่อบัญชี approve แล้วเท่านั้น
 function canPrint(o) { return PRINTABLE.includes(o && o.status); }

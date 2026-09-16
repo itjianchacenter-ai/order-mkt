@@ -261,6 +261,7 @@ a.btn{text-decoration:none}
 .order .status.paid{background:#d7f3dc;border-color:#1e8e3e;color:#000}
 .order .status.paid .th{color:#000}
 .order .status.pending{background:#fff}
+.order .status.draft{background:#fff;border-style:dashed}
 .order .status.cancelled{opacity:.5}
 .order .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;align-items:center}
 .order .body .meta{display:flex;gap:16px;flex-wrap:wrap;align-items:center;font-size:13px;color:var(--muted);margin-top:12px}

@@ -227,19 +227,20 @@ async function api(path, opts = {}) {
   if (p === '/api/stock') return pvStockView(d, reqCamp);
   if (p === '/api/stores') return PREVIEW_STORES;
   if (p === '/api/config') return { payment_ready: true, slip_auto_verify: false };
-  if (p === '/api/orders' && method === 'POST') {
+  // ตรวจคำสั่งซื้อ (ยังไม่บันทึก) → ออเดอร์ที่พร้อมบันทึก
+  const pvPrepare = (ob) => {
     if (!d.customer) pvFail('กรุณาเข้าสู่ระบบด้วย Google ก่อนยืนยันคำสั่งซื้อ / Please sign in with Google first');
-    if (!/^(\+66|0)\d{8,9}$/.test(String(body.phone || '').replace(/[^\d+]/g, ''))) pvFail('กรุณาใส่เบอร์ติดต่อผู้รับขนม (เบอร์มือถือ 10 หลัก) / Contact number is required');
-    d.customer.campaigns = d.customer.campaigns || {}; if (!d.customer.campaigns[reqCamp.id]) d.customer.campaigns[reqCamp.id] = pvNow();
-    const store = PREVIEW_STORES.find((s) => s.id === String(body.store_id)); if (!store) pvFail('กรุณาเลือกสาขาที่รับสินค้า');
-    if (!Array.isArray(body.lines) || !body.lines.length) pvFail('ยังไม่มีรายการในตะกร้า');
-    const camp = reqCamp; if (camp.orders_open === false) pvFail('แคมเปญนี้ปิดรับคำสั่งซื้อแล้ว / This campaign is closed');
-    const pdates = pvPickupDates(camp); const must = pvPickupMap(camp)[pvToday()]; const pickup_date = must || String(body.pickup_date || '').trim();
+    if (!/^(\+66|0)\d{8,9}$/.test(String(ob.phone || '').replace(/[^\d+]/g, ''))) pvFail('กรุณาใส่เบอร์ติดต่อผู้รับขนม (เบอร์มือถือ 10 หลัก) / Contact number is required');
+    const camp = (ob.campaign && d.campaigns.find((x) => x.slug === pvSlugOf(ob.campaign))) || reqCamp;
+    const store = PREVIEW_STORES.find((s) => s.id === String(ob.store_id)); if (!store) pvFail('กรุณาเลือกสาขาที่รับสินค้า');
+    if (!Array.isArray(ob.lines) || !ob.lines.length) pvFail('ยังไม่มีรายการในตะกร้า');
+    if (camp.orders_open === false) pvFail('แคมเปญนี้ปิดรับคำสั่งซื้อแล้ว / This campaign is closed');
+    const pdates = pvPickupDates(camp); const must = pvPickupMap(camp)[pvToday()]; const pickup_date = must || String(ob.pickup_date || '').trim();
     if (!must && pdates.length && !pdates.includes(pickup_date)) pvFail('กรุณาเลือกวันที่รับของ / Please choose a pick-up date');
-    const ptimes = pvPickupTimes(camp); const pickup_time = String(body.pickup_time || '').trim();
+    const ptimes = pvPickupTimes(camp); const pickup_time = String(ob.pickup_time || '').trim();
     if (ptimes.length && !ptimes.includes(pickup_time)) pvFail('กรุณาเลือกเวลาที่รับของ / Please choose a pick-up time');
     const SETS = Object.fromEntries(pvMenuFor(camp).sets.map((x) => [x.id, x]));
-    const lines = body.lines.map((l) => {
+    const lines = ob.lines.map((l) => {
       const s = SETS[String(l.set_id)]; const qty = parseInt(l.quantity, 10);
       if (!s) pvFail('มีเซ็ตที่ไม่มีให้บริการแล้ว กรุณาเลือกใหม่'); if (!(qty >= 1 && qty <= 99)) pvFail('รายการสินค้าไม่ถูกต้อง');
       return pvSetLine(s, qty);
@@ -248,7 +249,25 @@ async function api(path, opts = {}) {
     const want = lines.reduce((w, r) => { w.total += r.quantity * r.pieces; w.drink += r.quantity * r.drink_pieces; w.dessert += r.quantity * r.dessert_pieces; return w; }, { drink: 0, dessert: 0, total: 0 });
     const short = pvStockShortfall(d, camp, want); if (short) pvFail(short);
     const ow = pvOrderWindow(d, camp); if (!ow.open) pvFail(ow.message);
-    const o = { promo_code: null, id: pvUuid(), order_number: pvNextNumber(d), customer_id: me, campaign_id: camp.id, store_id: store.id, store_name: `${store.brand} - ${store.name}`, total, status: total > 0 ? 'pending' : 'paid', note: String(body.note || '').slice(0, 500), phone: String(body.phone || '').replace(/[^\d+]/g, '').slice(0, 20), pickup_date: (must || pdates.length) ? pickup_date : '', pickup_time: ptimes.length ? pickup_time : '', pdpa_accepted_at: (d.customer && d.customer.pdpa_accepted_at) || '', order_day: ow.today, created_at: pvNow(), paid_at: total > 0 ? null : pvNow(), picked_up_at: null, cancelled_at: null, slip_url: '', slip_hash: '', slip_ref: '', slip_amount: null, slip_reason: '', slip_verified: 0, lines };
+    return { camp, o: { promo_code: null, id: pvUuid(), order_number: '', customer_id: me, campaign_id: camp.id, store_id: store.id, store_name: `${store.brand} - ${store.name}`, total, status: total > 0 ? 'pending' : 'paid', note: String(ob.note || '').slice(0, 500), phone: String(ob.phone || '').replace(/[^\d+]/g, '').slice(0, 20), pickup_date: (must || pdates.length) ? pickup_date : '', pickup_time: ptimes.length ? pickup_time : '', pdpa_accepted_at: (d.customer && d.customer.pdpa_accepted_at) || '', order_day: ow.today, created_at: pvNow(), paid_at: total > 0 ? null : pvNow(), picked_up_at: null, cancelled_at: null, slip_url: '', slip_hash: '', slip_ref: '', slip_amount: null, slip_reason: '', slip_verified: 0, lines } };
+  };
+  // สรุปคำสั่งซื้อ + วิธีชำระเงิน (ยังไม่มีออเดอร์จนกว่าจะส่งสลิป)
+  if (p === '/api/quote' && method === 'POST') {
+    const { camp, o } = pvPrepare(body);
+    return { campaign: { id: camp.id, slug: camp.slug, url: `/${camp.slug}/`, name: camp.name }, campaign_name: camp.name, store_id: o.store_id, store_name: o.store_name, phone: o.phone, note: o.note, pickup_date: o.pickup_date, pickup_time: o.pickup_time, order_day: o.order_day, lines: o.lines, total: o.total, amount: o.total, payment: o.total > 0 ? { qr_data_url: pvQrDataUrl(o.total) } : null, slip_required: o.total > 0 };
+  }
+  // สั่งซื้อ = ส่งสลิปพร้อมรายการ (FormData: order = JSON, slip = รูป) — ออเดอร์เกิดเมื่อมีสลิปเท่านั้น (JSON ล้วนใช้ได้เฉพาะยอด 0 บาท)
+  if (p === '/api/orders' && method === 'POST') {
+    const isForm = body instanceof FormData; let ob = body; if (isForm) { try { ob = JSON.parse(body.get('order') || '{}'); } catch (e) { pvFail('ข้อมูลคำสั่งซื้อไม่ถูกต้อง'); } }
+    const { camp, o } = pvPrepare(ob);
+    if (o.total > 0) {
+      const f = isForm ? body.get('slip') : null; if (!f) pvFail('กรุณาแนบสลิปโอนเงิน (jpg/png) / Please attach your transfer slip');
+      const dataUrl = await pvReadFile(f); const hash = pvHash(dataUrl);
+      if (d.orders.some((x) => x.slip_hash === hash && x.status !== 'cancelled')) pvFail('ภาพสลิปนี้เคยถูกใช้แล้ว');
+      Object.assign(o, { slip_url: dataUrl, slip_hash: hash, slip_reason: 'รอเจ้าหน้าที่ตรวจสอบสลิป', status: 'slip_uploaded' });
+    }
+    o.order_number = pvNextNumber(d);
+    d.customer.campaigns = d.customer.campaigns || {}; if (!d.customer.campaigns[camp.id]) d.customer.campaigns[camp.id] = pvNow();
     d.orders.unshift(o); pvSave(d); return pvView(d, o);
   }
   // ประวัติการสั่งซื้อแยกตามบัญชี Google: ยังไม่ล็อกอิน = ไม่มีออเดอร์
