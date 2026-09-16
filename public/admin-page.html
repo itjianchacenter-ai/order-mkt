@@ -11,6 +11,8 @@
 </div>
 <script src="/js/app.js"></script>
 <script>
+// ลิงก์แบบเก่าจากเว็บ preview เช่น /backend/#/backend?view=orders → /backend?view=orders (เว็บจริง)
+if (!window.PREVIEW_MODE && /^#\/backend/.test(location.hash)) { const q = location.hash.includes('?') ? location.hash.slice(location.hash.indexOf('?')) : ''; location.replace('/backend' + q); }
 (async () => {
   const app = $('#app');
   // In the single-file preview the page is re-run on every hash change; stop stale async renders.
