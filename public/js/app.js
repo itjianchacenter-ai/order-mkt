@@ -183,8 +183,20 @@ const setNote = (t) => { try { localStorage.setItem(NOTE_KEY, t); } catch (e) { 
 const PHONE_KEY = 'jc_phone';
 const getPhone = () => { try { return localStorage.getItem(PHONE_KEY) || ''; } catch (e) { return ''; } };
 const setPhone = (t) => { try { localStorage.setItem(PHONE_KEY, t); } catch (e) { /* ignore */ } };
-const contactBox = () => `<div class="notebox telbox"><label for="phone"><b>Contact number</b> <span class="th">( เบอร์ติดต่อผู้รับสาย )</span> <span class="req" title="จำเป็น">*</span></label><input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="08x-xxx-xxxx" maxlength="20" required></div>`;
-const bindContactBox = () => { const f = $('#phone'); if (!f) return; f.value = getPhone(); f.addEventListener('input', (e) => { setPhone(e.target.value); e.target.classList.toggle('invalid', e.target.value.trim() !== '' && !validPhone(e.target.value)); }); };
+const EMAIL_KEY = 'jc_email';
+const getEmail = () => { try { return localStorage.getItem(EMAIL_KEY) || ''; } catch (e) { return ''; } };
+const setEmail = (t) => { try { localStorage.setItem(EMAIL_KEY, t); } catch (e) { /* ignore */ } };
+const normalizeEmail = (t) => String(t || '').trim().toLowerCase();
+const validEmail = (t) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(normalizeEmail(t));
+/* กล่องข้อมูลผู้สั่ง (หน้า Order Summary): เบอร์ติดต่อ + อีเมล — จำเป็นทั้งคู่ก่อนกด Confirm */
+const contactBox = () => `<div class="notebox telbox"><label for="phone"><b>Contact number</b> <span class="th">( เบอร์ติดต่อผู้รับ )</span> <span class="req" title="จำเป็น">*</span></label><input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="08x-xxx-xxxx" maxlength="20" required></div>
+<div class="notebox telbox"><label for="email"><b>Email</b> <span class="th">( อีเมล )</span> <span class="req" title="จำเป็น">*</span></label><input id="email" type="email" inputmode="email" autocomplete="email" placeholder="name@example.com" maxlength="120" required></div>`;
+const bindContactBox = () => {
+  const f = $('#phone'); if (f) { f.value = getPhone(); f.addEventListener('input', (e) => { setPhone(e.target.value); e.target.classList.toggle('invalid', e.target.value.trim() !== '' && !validPhone(e.target.value)); }); }
+  const m = $('#email'); if (!m) return;
+  m.value = getEmail(); m.addEventListener('input', (e) => { setEmail(e.target.value); e.target.classList.toggle('invalid', e.target.value.trim() !== '' && !validEmail(e.target.value)); });
+  if (!m.value) loadMe().then(() => { if (!m.value && ME && ME.email) { m.value = ME.email; setEmail(ME.email); } });   // ล็อกอิน Google แล้ว → เติมอีเมลให้
+};
 const normalizePhone = (t) => String(t || '').replace(/[^\d+]/g, '');
 const validPhone = (t) => /^(\+66|0)\d{8,9}$/.test(normalizePhone(t));
 
@@ -413,7 +425,7 @@ const DRAFT_KEY = 'jc_draft' + (campaignSlug() ? ':' + campaignSlug() : '');
 function saveDraft(d) { try { localStorage.setItem(DRAFT_KEY, JSON.stringify(d)); } catch (e) { /* ignore */ } }
 function loadDraft() { try { const d = JSON.parse(localStorage.getItem(DRAFT_KEY)); return d && Array.isArray(d.lines) && d.lines.length ? d : null; } catch (e) { return null; } }
 function clearDraft() { try { localStorage.removeItem(DRAFT_KEY); } catch (e) { /* ignore */ } }
-async function submitOrder({ storeId, note, phone = '', pickupDate = '', pickupDates = [], pickupTime = '', pickupTimes = [], errEl, btn, onFail }) {
+async function submitOrder({ storeId, note, phone = '', email = '', pickupDate = '', pickupDates = [], pickupTime = '', pickupTimes = [], errEl, btn, onFail }) {
   errEl.textContent = '';
   const lines = loadCart();
   if (!lines.length) { errEl.textContent = 'ยังไม่มีรายการในตะกร้า / Your cart is empty'; return; }
@@ -421,11 +433,12 @@ async function submitOrder({ storeId, note, phone = '', pickupDate = '', pickupD
   if (!window.__pickupByRound && pickupDates.length && !pickupDates.includes(pickupDate)) { errEl.textContent = 'กรุณาเลือกวันที่รับของ / Please choose a pick-up date'; return; }
   if (pickupTimes.length && !pickupTimes.includes(pickupTime)) { errEl.textContent = 'กรุณาเลือกเวลาที่รับของ / Please choose a pick-up time'; return; }
   if (!validPhone(phone)) { errEl.textContent = 'กรุณาใส่เบอร์ติดต่อผู้รับสาย (เบอร์มือถือ 10 หลัก) / Please enter the contact number'; const f = $('#phone'); if (f) { f.focus(); f.classList.add('invalid'); } return; }
+  if (!validEmail(email)) { errEl.textContent = 'กรุณาใส่อีเมลให้ถูกต้อง (ใช้ส่งอีเมลยืนยันคำสั่งซื้อ) / Please enter a valid email'; const f = $('#email'); if (f) { f.focus(); f.classList.add('invalid'); } return; }
   await loadMe();
-  if (needLogin()) { openLoginModal(() => submitOrder({ storeId, note, phone, pickupDate, pickupDates, pickupTime, pickupTimes, errEl, btn, onFail })); return; }  // ล็อกอินก่อน แล้วยืนยันต่อให้อัตโนมัติ
+  if (needLogin()) { openLoginModal(() => submitOrder({ storeId, note, phone, email, pickupDate, pickupDates, pickupTime, pickupTimes, errEl, btn, onFail })); return; }  // ล็อกอินก่อน แล้วยืนยันต่อให้อัตโนมัติ
   btn.disabled = true;
   try {
-    const draft = { store_id: storeId, note, phone: normalizePhone(phone), pickup_date: pickupDate || undefined, pickup_time: pickupTime || undefined, lines, campaign: campaignSlug() || undefined };
+    const draft = { store_id: storeId, note, phone: normalizePhone(phone), email: normalizeEmail(email), pickup_date: pickupDate || undefined, pickup_time: pickupTime || undefined, lines, campaign: campaignSlug() || undefined };
     // ตรวจรายการ/โควตา/สต๊อกกับ server ก่อน (ยังไม่สร้างออเดอร์) แล้วไปหน้าชำระเงิน — ออเดอร์เกิดเมื่อส่งสลิป
     const q = await api('/api/quote', { method: 'POST', body: draft });
     if (!q.slip_required) { const order = await api('/api/orders', { method: 'POST', body: draft }); cartClear(); setNote(''); clearDraft(); location.href = `${B()}/pay?order=${encodeURIComponent(order.id)}`; return; }
@@ -433,7 +446,7 @@ async function submitOrder({ storeId, note, phone = '', pickupDate = '', pickupD
     location.href = `${B()}/pay`;
   } catch (e) {
     btn.disabled = false;
-    if (/HTTP 401|เข้าสู่ระบบ|sign in/i.test(e.message)) { await loadMe(true); refreshAccountSlot(); openLoginModal(() => submitOrder({ storeId, note, phone, pickupDate, pickupDates, pickupTime, pickupTimes, errEl, btn, onFail })); return; }
+    if (/HTTP 401|เข้าสู่ระบบ|sign in/i.test(e.message)) { await loadMe(true); refreshAccountSlot(); openLoginModal(() => submitOrder({ storeId, note, phone, email, pickupDate, pickupDates, pickupTime, pickupTimes, errEl, btn, onFail })); return; }
     errEl.textContent = e.message; if (onFail) onFail();
   }
 }
@@ -467,6 +480,7 @@ function orderCard(o, { light = false, open = false, extra = '', badge = '', asi
       <table>${rows}</table>
       ${o.customer_email ? `<div class="meta"><span>${ICONS.user} <b>Google account:</b> ${esc(o.customer_email)}${o.customer_name && o.customer_name !== o.customer_email ? ` (${esc(o.customer_name)})` : ''}</span></div>` : ''}
       ${o.phone || light ? `<div class="meta"><span><b>Contact number:</b> ${o.phone ? esc(o.phone) : '-'}</span></div>` : ''}
+      ${o.email || light ? `<div class="meta"><span><b>Email:</b> ${o.email ? esc(o.email) : '-'}</span></div>` : ''}
       ${light ? `<div class="meta"><span><b>PDPA consent:</b> ${o.pdpa_accepted_at ? 'ยอมรับแล้ว ' + esc(fmtDateTime(o.pdpa_accepted_at)) : '-'}</span></div>` : ''}
       ${o.note ? `<div class="meta"><span><b>หมายเหตุ:</b> ${esc(o.note)}</span></div>` : ''}
       <div class="meta"><span>${fmtDateTime(o.created_at)}</span>${statusPill(o.status)}${o.slip_reason && ['pending', 'slip_uploaded', 'slip_rejected'].includes(o.status) && o.has_slip ? `<span>${esc(o.slip_reason)}</span>` : ''}</div>

@@ -110,7 +110,7 @@
     if (/HTTP 401|เข้าสู่ระบบ|sign in/i.test(e.message)) { await loadMe(true); refreshAccountSlot(); head.innerHTML = `<div class="empty">กรุณาเข้าสู่ระบบด้วย Google ก่อนชำระเงิน / Please sign in first.</div>`; openLoginModal(() => location.reload()); return; }
     head.innerHTML = `<div class="empty">${esc(e.message)}<br><a href="${H()}/cart">กลับไปที่ตะกร้า / Back to cart</a></div>`; return;
   }
-  const pseudo = { id: '', order_number: '—', store_name: q.store_name, pickup_date: q.pickup_date, pickup_time: q.pickup_time, lines: q.lines, total: q.total, status: 'draft', phone: q.phone, note: q.note, created_at: '' };
+  const pseudo = { id: '', order_number: '—', store_name: q.store_name, pickup_date: q.pickup_date, pickup_time: q.pickup_time, lines: q.lines, total: q.total, status: 'draft', phone: q.phone, email: q.email, note: q.note, created_at: '' };
   head.innerHTML = orderCard(pseudo, { open: true }); bindOrderToggles(head);
   pay.innerHTML = `<div class="paybox"><div id="pay-how">${paymentHtml(q.payment, q.amount)}</div></div>` + uploadBox('อัปโหลดสลิปโอนเงินเพื่อยืนยันคำสั่งซื้อ — <b>ออเดอร์จะถูกบันทึกและได้เลขออเดอร์เมื่อส่งสลิปแล้ว</b> (ระบบย่อรูปให้อัตโนมัติ)');
   bindCopy($('#pay-how'));

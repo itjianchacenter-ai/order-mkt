@@ -14,7 +14,7 @@ const { verifySlip, isEnabled: slipOkEnabled } = require('./slip-verify');
 const mailer = require('./mailer');
 const M = require('./lib/menu');
 const W = require('./lib/window');
-const { approvalEmail: approvalEmailOf } = require('./lib/email');
+const { approvalEmail: approvalEmailOf, normalizeEmail, validEmail } = require('./lib/email');
 
 const PORT = parseInt(process.env.PORT || '3870', 10);
 const IS_PROD = process.env.NODE_ENV === 'production';
@@ -253,7 +253,7 @@ const SLIP_ACCEPTED = ['pending', 'slip_uploaded', 'slip_rejected'];
 function orderView(o, { admin = false } = {}) {
   const v = {
     id: o.id, order_number: o.order_number, campaign_id: o.campaign_id, campaign_name: o.campaign_name || '', store_id: o.store_id, store_name: o.store_name,
-    total: o.total, status: o.status, note: o.note, phone: o.phone || '', pickup_date: o.pickup_date || '', pickup_time: o.pickup_time || '', created_at: o.created_at, paid_at: o.paid_at,
+    total: o.total, status: o.status, note: o.note, phone: o.phone || '', email: o.email || '', pickup_date: o.pickup_date || '', pickup_time: o.pickup_time || '', created_at: o.created_at, paid_at: o.paid_at,
     picked_up_at: o.picked_up_at, has_slip: Boolean(o.slip_path), slip_reason: o.slip_reason,
     promo_code: o.promo_code || null, code_available: ['paid', 'picked_up'].includes(o.status), payable: PAYABLE.includes(o.status),
     lines: (o.lines || []).map((l) => {
@@ -337,6 +337,8 @@ function validateOrder(req, b) {
   const { store_id, note = '', lines } = b || {};
   const phone = String((b && b.phone) || '').replace(/[^\d+]/g, '').slice(0, 20);   // เบอร์ติดต่อผู้รับขนม
   if (!/^(\+66|0)\d{8,9}$/.test(phone)) return bad(400, 'กรุณาใส่เบอร์ติดต่อผู้รับขนม (เบอร์มือถือ 10 หลัก) / Contact number is required', { field: 'phone' });
+  const email = normalizeEmail(b && b.email);   // อีเมลผู้สั่ง (รับอีเมลยืนยัน + รหัสโปรโมชัน)
+  if (!validEmail(email)) return bad(400, 'กรุณาใส่อีเมลให้ถูกต้อง (ใช้ส่งอีเมลยืนยันคำสั่งซื้อ) / A valid email is required', { field: 'email' });
   const store = loadStores().find((s) => s.id === String(store_id));
   if (!store) return bad(400, 'กรุณาเลือกสาขาที่รับสินค้า');
   if (!Array.isArray(lines) || lines.length === 0) return bad(400, 'ยังไม่มีรายการในตะกร้า');
@@ -354,7 +356,7 @@ function validateOrder(req, b) {
   const sv = stockView(campaign);
   if (!sv.order_window.open) return bad(409, sv.order_window.message, { stock: sv });
   const short = M.stockShortfall(built.want, sv.remaining); if (short) return bad(409, short, { stock: sv });
-  return { ok: true, campaign, menu, store, store_name: `${store.brand} - ${store.name}`, phone, note: String(note).slice(0, 500), pickup_date: (mustPickup || menu.pickup_dates.length) ? pickup_date : '', pickup_time: menu.pickup_times.length ? pickup_time : '', rows: built.rows, want: built.want, total: built.total };
+  return { ok: true, campaign, menu, store, store_name: `${store.brand} - ${store.name}`, phone, email, note: String(note).slice(0, 500), pickup_date: (mustPickup || menu.pickup_dates.length) ? pickup_date : '', pickup_time: menu.pickup_times.length ? pickup_time : '', rows: built.rows, want: built.want, total: built.total };
 }
 const sendBad = (res, v) => { const { ok, status, ...rest } = v; return res.status(status).json(rest); };
 /** สรุปคำสั่งซื้อ + วิธีชำระเงิน (ยังไม่มีออเดอร์ในระบบจนกว่าจะส่งสลิป) */
@@ -367,7 +369,7 @@ app.post('/api/quote', async (req, res) => {
     if (!qrConfigured()) return res.status(503).json({ error: 'ยังไม่ได้ตั้งค่าบัญชีรับเงินของร้าน (BANK_ACCOUNT_NO หรือ PROMPTPAY_ID)' });
     const bank = bankAccount(process.env); payment = bank ? { bank } : { qr_data_url: await generateQR(v.total) };
   }
-  res.json({ campaign: campaignPublic(v.campaign), campaign_name: v.campaign.name, store_id: v.store.id, store_name: v.store_name, phone: v.phone, note: v.note, pickup_date: v.pickup_date, pickup_time: v.pickup_time, order_day: bangkokToday(v.menu), lines, total: v.total, amount: v.total, payment, slip_required: v.total > 0 });
+  res.json({ campaign: campaignPublic(v.campaign), campaign_name: v.campaign.name, store_id: v.store.id, store_name: v.store_name, phone: v.phone, email: v.email, note: v.note, pickup_date: v.pickup_date, pickup_time: v.pickup_time, order_day: bangkokToday(v.menu), lines, total: v.total, amount: v.total, payment, slip_required: v.total > 0 });
 });
 /** สั่งซื้อ = ส่งสลิปพร้อมรายการ (multipart: order = JSON, slip = รูป) — ออเดอร์เกิดในระบบเมื่อมีสลิปเท่านั้น (JSON ล้วนใช้ได้เฉพาะยอด 0 บาท) */
 app.post('/api/orders', upload.single('slip'), async (req, res) => {
@@ -396,10 +398,11 @@ app.post('/api/orders', upload.single('slip'), async (req, res) => {
     const ow = orderWindow(campaign); // ช่วงวันเปิดรับ + โควตาต่อวัน ตรวจใน transaction เดียวกัน กันสั่งเกินโควตาพร้อมกัน
     if (!ow.open) { const e = new Error(ow.message); e.status = 409; e.order_window = ow; throw e; }
     touchCustomer(req.customerId); linkCustomerCampaign(req.customerId, campaign.id);
+    db.prepare('UPDATE customers SET email = ? WHERE id = ? AND google_sub IS NULL').run(v.email, req.customerId);   // ทะเบียนลูกค้า (บัญชี Google ใช้อีเมลของ Google)
     const pdpaAt = (customerRow(req.customerId) || {}).pdpa_accepted_at || '';
     const order_number = nextOrderNumber();
-    db.prepare(`INSERT INTO orders(id, order_number, customer_id, campaign_id, store_id, store_name, total, note, phone, pickup_date, pickup_time, pdpa_accepted_at, order_day, status, paid_at, slip_path, slip_hash, slip_ref, slip_amount, slip_reason, slip_verified)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, order_number, req.customerId, campaign.id, store.id, v.store_name, total, v.note, v.phone, v.pickup_date, v.pickup_time, pdpaAt, ow.today,
+    db.prepare(`INSERT INTO orders(id, order_number, customer_id, campaign_id, store_id, store_name, total, note, phone, email, pickup_date, pickup_time, pdpa_accepted_at, order_day, status, paid_at, slip_path, slip_hash, slip_ref, slip_amount, slip_reason, slip_verified)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, order_number, req.customerId, campaign.id, store.id, v.store_name, total, v.note, v.phone, v.email, v.pickup_date, v.pickup_time, pdpaAt, ow.today,
                 status, status === 'paid' ? W.bangkokNow() : null, r ? req.file.path : '', r ? (r.slip_hash || '') : '', r ? (r.ref || '') : '', r ? (r.amount ?? null) : null, r ? (r.reason || '') : '', r && r.verified ? 1 : 0);
     const ins = db.prepare(`INSERT INTO order_lines(order_id, set_id, set_label, set_name, items_json, pieces, drink_pieces, dessert_pieces, drink_id, drink_name, dessert_id, dessert_name, quantity, unit_price, line_total)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -593,7 +596,7 @@ app.get('/api/admin/customers', requireAdmin, (req, res) => {
   const cparam = String(req.query.campaign || '');
   const camp = cparam === 'all' ? null : (cparam ? getCampaign(cparam) : activeCampaign());
   if (cparam && cparam !== 'all' && !camp) return res.status(404).json({ error: 'ไม่พบแคมเปญ' });
-  const where = ['c.google_sub IS NOT NULL']; const args = [];
+  const where = ["(c.google_sub IS NOT NULL OR COALESCE(c.email, '') <> '')"]; const args = [];   // บัญชี Google หรือลูกค้าที่กรอกอีเมลตอนสั่งซื้อ
   const ordersWhere = ["status <> 'cancelled'" + (camp ? ' AND campaign_id = ?' : '')]; const oargs = camp ? [camp.id] : [];
   if (camp) { where.push('(cc.customer_id IS NOT NULL OR o.customer_id IS NOT NULL)'); }
   if (q) { where.push('(lower(c.email) LIKE ? OR lower(c.name) LIKE ?)'); args.push(`%${q}%`, `%${q}%`); }
@@ -607,7 +610,7 @@ app.get('/api/admin/customers', requireAdmin, (req, res) => {
   const exp = req.query.export === '1';
   const page = exp ? 1 : Math.max(1, parseInt(req.query.page, 10) || 1);
   const rows = db.prepare(`SELECT c.id, c.email, c.name, c.picture, c.created_at, c.last_login_at, COALESCE(o.orders, 0) AS orders, COALESCE(o.paid_total, 0) AS paid_total, o.last_order_at${camp ? ', cc.first_seen_at AS joined_at' : ''} ${sql}
-    ORDER BY c.last_login_at DESC, c.created_at DESC ${exp ? '' : 'LIMIT ? OFFSET ?'}`).all(...allArgs, ...(exp ? [] : [PAGE_SIZE, (page - 1) * PAGE_SIZE]));
+    ORDER BY COALESCE(c.last_login_at, c.last_seen_at) DESC, c.created_at DESC ${exp ? '' : 'LIMIT ? OFFSET ?'}`).all(...allArgs, ...(exp ? [] : [PAGE_SIZE, (page - 1) * PAGE_SIZE]));
   res.json({ campaign: camp ? campaignPublic(camp) : null, page, pages: exp ? 1 : Math.max(1, Math.ceil(total / PAGE_SIZE)), total, rows });
 });
 
@@ -620,7 +623,7 @@ app.get('/api/admin/orders', requireAdmin, (req, res) => {
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const where = []; const args = [];
   // ค้นหาได้ทั้งเลขออเดอร์ สาขา เบอร์ติดต่อ และอีเมล/ชื่อบัญชี Google ของผู้สั่ง
-  if (q) { where.push('(order_number LIKE ? OR store_name LIKE ? OR phone LIKE ? OR customer_id IN (SELECT id FROM customers WHERE email LIKE ? OR name LIKE ?))'); args.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`); }
+  if (q) { where.push('(order_number LIKE ? OR store_name LIKE ? OR phone LIKE ? OR email LIKE ? OR customer_id IN (SELECT id FROM customers WHERE email LIKE ? OR name LIKE ?))'); args.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`); }
   if (date) { where.push("substr(created_at, 1, 10) = ?"); args.push(date); }
   if (store) { where.push('store_id = ?'); args.push(store); }
   if (status) { where.push(`status IN (${status.split(',').map(() => '?').join(',')})`); args.push(...status.split(',')); }
@@ -668,9 +671,9 @@ async function notifyApproved(orderId) {
   try { assignPromoCode(orderId); } catch (e) { console.error('[promo] ' + e.message); }
   const row = getOrder(orderId); if (!row) return;
   const o = orderView(row); const cust = customerRow(row.customer_id); const camp = row.campaign_id ? getCampaign(row.campaign_id) : null;
-  const to = (cust && cust.email) || '';
+  const to = row.email || (cust && cust.email) || '';   // อีเมลที่กรอกตอนสั่ง (ถ้าไม่มี = อีเมลบัญชี Google)
   const mail = approvalEmail(o, camp, (process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, ''));
-  const r = to ? await mailer.sendMail({ to, ...mail }) : { status: 'failed', error: 'ลูกค้าไม่มีอีเมล (ไม่ได้ล็อกอิน)' };
+  const r = to ? await mailer.sendMail({ to, ...mail }) : { status: 'failed', error: 'ออเดอร์นี้ไม่มีอีเมล' };
   db.prepare('INSERT INTO mail_log(order_id, kind, to_email, subject, status, error) VALUES (?, ?, ?, ?, ?, ?)').run(orderId, 'approved', to, mail.subject, r.status, r.error || '');
   return r;
 }

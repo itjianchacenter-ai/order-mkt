@@ -74,7 +74,7 @@
     if (!getStore()) { $('#err').textContent = 'กรุณาเลือกสาขาที่รับสินค้าที่หน้าแรก / Please choose a pick-up location on the campaign page'; return; }
     if (!window.__pickupByRound && pickupDates.length && !pickupDates.includes(getPickup())) { $('#err').textContent = 'กรุณาเลือกวันที่รับของที่หน้าแรก / Please choose a pick-up date on the campaign page'; return; }
     if (pickupTimes.length && !pickupTimes.includes(getPickupTime())) { $('#err').textContent = 'กรุณาเลือกเวลาที่รับของที่หน้าแรก / Please choose a pick-up time on the campaign page'; return; }
-    submitOrder({ storeId: getStore(), note: getNote(), phone: $('#phone').value.trim(), pickupDate: getPickup(), pickupDates, pickupTime: getPickupTime(), pickupTimes, errEl: $('#err'), btn: $('#confirm'), onFail: refreshStock });
+    submitOrder({ storeId: getStore(), note: getNote(), phone: $('#phone').value.trim(), email: $('#email').value.trim(), pickupDate: getPickup(), pickupDates, pickupTime: getPickupTime(), pickupTimes, errEl: $('#err'), btn: $('#confirm'), onFail: refreshStock });
   });
 })();
 </script>

@@ -30,7 +30,8 @@ const png = (seed) => { const f = new FormData(); f.append('slip', new Blob([tin
 const login = (who, username, password) => call(who, 'POST', '/api/admin/login', { username, password });
 // สั่งซื้อ = ส่งรายการ + สลิป (multipart) — สลิปแต่ละใบไม่ซ้ำกัน (ระบบกันสลิปซ้ำ)
 let slipSeed = 100;
-const orderForm = (body, seed) => { const f = new FormData(); f.append('order', JSON.stringify(body)); f.append('slip', new Blob([tinyPng(seed)], { type: 'image/png' }), 'slip.png'); return f; };
+const withEmail = (body) => (body && body.email === undefined ? { email: 'alice@gmail.com', ...body } : body);   // ทุกออเดอร์ต้องมีอีเมล
+const orderForm = (body, seed) => { const f = new FormData(); f.append('order', JSON.stringify(withEmail(body))); f.append('slip', new Blob([tinyPng(seed)], { type: 'image/png' }), 'slip.png'); return f; };
 const placeOrder = (who, body, seed) => { placeOrder.last = seed ?? slipSeed++; return call(who, 'POST', '/api/orders', orderForm(body, placeOrder.last)); };
 // ฐานข้อมูลตรง: better-sqlite3 (Node) หรือ /api/_test/sql ของ worker (TEST_MODE)
 const dbx = {
@@ -75,6 +76,10 @@ const dbx = {
 
     // ── customer: ordering ──
     r = await placeOrder('customer', { store_id: '', phone: '0812345678', pickup_date: '2026-09-25', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 1 }] }); check('order without store rejected', r.status === 400);
+    // อีเมลผู้สั่ง: จำเป็นและต้องถูกรูปแบบ (ใช้ส่งอีเมลยืนยัน)
+    r = await placeOrder('customer', { email: '', store_id: storeId, phone: '0812345678', pickup_date: '2026-09-25', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 1 }] }); check('order without email rejected', r.status === 400 && r.json.field === 'email', r.json);
+    r = await placeOrder('customer', { email: 'not-an-email', store_id: storeId, phone: '0812345678', pickup_date: '2026-09-25', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 1 }] }); check('order with bad email rejected', r.status === 400 && r.json.field === 'email', r.json);
+    r = await call('customer', 'POST', '/api/quote', { email: '  Somchai@Example.COM ', store_id: storeId, phone: '0812345678', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 1 }] }); check('quote echoes normalized email', r.status === 200 && r.json.email === 'somchai@example.com', r.json);
     r = await placeOrder('customer', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-25', pickup_time: '13:00-15:00 น.', lines: [] }); check('order without lines rejected', r.status === 400);
     r = await placeOrder('customer', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-25', pickup_time: '13:00-15:00 น.', lines: [{ set_id: 'nope', quantity: 1 }] }); check('unknown set rejected', r.status === 400);
     r = await placeOrder('customer', { store_id: storeId, lines: [{ set_id: A, quantity: 1 }] }); check('order without contact number rejected', r.status === 400 && r.json.field === 'phone', r.json);
@@ -87,10 +92,11 @@ const dbx = {
     setDay('2026-09-18');
     r = await placeOrder('customer', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-25', lines: [{ set_id: A, quantity: 1 }] }); check('order without pick-up time rejected', r.status === 400 && r.json.field === 'pickup_time', r.json);
     r = await placeOrder('customer', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-25', pickup_time: '09:00-10:00 น.', lines: [{ set_id: A, quantity: 1 }] }); check('order with a time outside the campaign list rejected', r.status === 400 && r.json.field === 'pickup_time', r.json);
-    r = await placeOrder('customer', { store_id: storeId, note: 'no sugar', phone: '081-234-5678', pickup_date: '2026-09-27', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 2 }, { set_id: B, quantity: 1 }] }); // วันรับของถูกกำหนดจากรอบสั่ง (18 ก.ย. → 25 ก.ย.) ค่าที่ส่งมาถูกแทนที่
+    r = await placeOrder('customer', { store_id: storeId, note: 'no sugar', phone: '081-234-5678', email: 'Somchai@Example.com', pickup_date: '2026-09-27', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 2 }, { set_id: B, quantity: 1 }] }); // วันรับของถูกกำหนดจากรอบสั่ง (18 ก.ย. → 25 ก.ย.) ค่าที่ส่งมาถูกแทนที่
     check('order created', r.status === 201 && /^\d{13}$/.test(r.json.order_number) && r.json.campaign_id === 'jiancha-x-navori', r.json);
     const order = r.json; const orderSeed = placeOrder.last;
     check('phone kept (digits only)', r.json.phone === '0812345678', r.json.phone);
+    check('email kept on the order (normalized)', r.json.email === 'somchai@example.com', r.json.email);
     r = await call('customer', 'GET', '/api/me'); check('pdpa acceptance follows the google account', r.json.pdpa_accepted_at === pdpaAt, r.json);
     // ล็อกอินบัญชีเดิมจากเบราว์เซอร์ใหม่ → เห็นออเดอร์เดิม; ออเดอร์ที่สั่งแบบไม่ล็อกอินก่อนหน้าย้ายมาด้วย (ทดสอบผ่านสถานะ login เพราะยังสั่งไม่ได้ก่อนล็อกอิน)
     r = await call('customer2', 'GET', '/api/orders'); check('new browser sees no orders', r.status === 200 && r.json.length === 0);
@@ -106,17 +112,17 @@ const dbx = {
     r = await call('customer', 'GET', '/api/orders'); check('history lists own orders', r.status === 200 && r.json.length === 2);
     r = await call('other', 'GET', '/api/orders'); check('other browser sees nothing', r.json.length === 0);
     r = await call('other', 'GET', `/api/orders/${order.id}`); check('other browser cannot read order', r.status === 404);
-    r = await call('customer', 'POST', '/api/quote', { store_id: storeId, phone: '0812345678', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 2 }, { set_id: B, quantity: 1 }] });
+    r = await call('customer', 'POST', '/api/quote', { email: 'alice@gmail.com', store_id: storeId, phone: '0812345678', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 2 }, { set_id: B, quantity: 1 }] });
     check('quote: total + QR payment, slip required, nothing saved', r.status === 200 && r.json.total === 1117 && r.json.slip_required === true && /^data:image\/(png|svg\+xml)/.test(r.json.payment.qr_data_url) && r.json.lines.length === 2 && r.json.pickup_date === '2026-09-25', r.json);
     r = await call('customer', 'GET', '/api/orders'); check('quote does not create an order', r.json.length === 2);
-    r = await call('customer', 'POST', '/api/orders', { store_id: storeId, phone: '0812345678', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 1 }] }); check('order without slip rejected (no order created)', r.status === 400 && r.json.field === 'slip', r.json);
+    r = await call('customer', 'POST', '/api/orders', { email: 'alice@gmail.com', store_id: storeId, phone: '0812345678', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 1 }] }); check('order without slip rejected (no order created)', r.status === 400 && r.json.field === 'slip', r.json);
     r = await placeOrder('customer', { store_id: storeId, phone: '0812345678', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 1 }] }, orderSeed); check('order with a slip already used rejected (no order created)', r.status === 400 && /เคยถูกใช้/.test(r.json.error), r.json);
     r = await call('customer', 'GET', '/api/orders'); check('rejected attempts leave no orders behind', r.json.length === 2);
     check('orders are created as slip_uploaded (waiting for finance)', order.status === 'slip_uploaded' && order.has_slip === true, order.status);
     if (!CF) {
       // โอนเข้าบัญชีธนาคารแทน PromptPay: ตั้ง BANK_* → /qr ส่งรายละเอียดบัญชี + ยอด แทน QR
       Object.assign(process.env, { BANK_NAME: 'กสิกรไทย', BANK_ACCOUNT_NAME: 'บริษัท เจียนฉา จำกัด', BANK_ACCOUNT_NO: '123-4-56789-0' });
-      r = await call('customer', 'POST', '/api/quote', { store_id: storeId, phone: '0812345678', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 2 }, { set_id: B, quantity: 1 }] }); check('bank transfer mode: quote returns account details instead of QR', r.status === 200 && r.json.payment.qr_data_url === undefined && r.json.payment.bank.account_no === '123-4-56789-0' && r.json.payment.bank.bank === 'กสิกรไทย' && r.json.amount === 1117, r.json);
+      r = await call('customer', 'POST', '/api/quote', { email: 'alice@gmail.com', store_id: storeId, phone: '0812345678', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 2 }, { set_id: B, quantity: 1 }] }); check('bank transfer mode: quote returns account details instead of QR', r.status === 200 && r.json.payment.qr_data_url === undefined && r.json.payment.bank.account_no === '123-4-56789-0' && r.json.payment.bank.bank === 'กสิกรไทย' && r.json.amount === 1117, r.json);
       r = await call('customer', 'GET', '/api/config'); check('config reports bank payment mode', r.json.payment_ready === true && r.json.payment_mode === 'bank', r.json);
       for (const k of ['BANK_NAME', 'BANK_ACCOUNT_NAME', 'BANK_ACCOUNT_NO']) delete process.env[k];
       r = await call('customer', 'GET', '/api/config'); check('config back to promptpay mode', r.json.payment_mode === 'promptpay', r.json);
@@ -157,7 +163,7 @@ const dbx = {
     r = await call('customer', 'POST', `/api/orders/${order.id}/code`); check('code refused before approval', r.status === 400, r.json);
     r = await call('fin', 'POST', `/api/admin/orders/${order.id}/status`, { status: 'paid' }); check('finance approves slip', r.json.status === 'paid' && r.json.paid_at);
     check('promo code assigned at approval, first in sequence', r.json.promo_code === 'NVR260001', r.json.promo_code);
-    check('approval email sent to the customer\'s Google email', r.json.approval_mail && r.json.approval_mail.status === 'sent' && r.json.approval_mail.to === 'alice@gmail.com' && r.json.approval_mail.at, r.json.approval_mail);
+    check('approval email sent to the email typed on the order', r.json.approval_mail && r.json.approval_mail.status === 'sent' && r.json.approval_mail.to === 'somchai@example.com' && r.json.approval_mail.at, r.json.approval_mail);
     r = await call('it', 'GET', `/api/admin/orders/${order.id}`); check('approval email status visible to back-office', r.json.approval_mail && r.json.approval_mail.status === 'sent');
     r = await call('customer', 'GET', `/api/orders/${order.id}`); check('customer view does not expose mail log', r.json.approval_mail === undefined);
     r = await call('customer', 'POST', `/api/orders/${order.id}/code`);
