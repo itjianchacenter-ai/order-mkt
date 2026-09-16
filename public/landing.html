@@ -10,6 +10,8 @@
 </div>
 <script src="/js/app.js"></script>
 <script>
+// ลิงก์แบบเก่าจากเว็บ preview เช่น /#/jianchaxnavori/ → เปลี่ยนเป็น /jianchaxnavori/ (เว็บจริง)
+if (!window.PREVIEW_MODE && /^#\/./.test(location.hash)) location.replace(location.hash.slice(1));
 (async () => {
   // The root page is a doorway: "Order with us" opens the active campaign's own page (/<slug>/)
   try {
