@@ -164,16 +164,49 @@ node scripts/reset-data.js --yes
 - หัวอีเมลเป็นโลโก้ JIANCHA x NAVORI (แนบไปกับอีเมลแบบ inline) ใช้ฟอนต์ DB Helvethaica X จาก `public/fonts/` (ไคลเอนต์ที่รองรับ @font-face เช่น Apple Mail/iOS จะแสดงฟอนต์นี้ Gmail จะใช้ Arial แทน) ทดสอบการตั้งค่า SMTP ได้ด้วย `node scripts/send-test-mail.js you@example.com`
 - preview บน GitHub Pages ไม่มี server จึงส่งอีเมลจริงไม่ได้ จะแสดงเป็น "อีเมลยืนยัน (preview จำลอง)" แทน
 
-## Deploy บนเซิร์ฟเวอร์
+## Deploy บนเซิร์ฟเวอร์จริง (ขึ้นระบบ)
+
+**ต้องมี** เครื่อง Ubuntu 22.04/24.04 ที่มี IP สาธารณะ (VPS 1 vCPU / 1 GB พอ เช่น DigitalOcean, Vultr, Linode หรือเซิร์ฟเวอร์ของบริษัท) และเข้าถึงด้วย SSH ได้
+
+### 1. ติดตั้งด้วยคำสั่งเดียว (รันบนเซิร์ฟเวอร์ด้วย root)
 
 ```bash
-git pull
-npm install --omit=dev
-NODE_ENV=production pm2 start server.js --name jiancha-order
+curl -fsSL https://raw.githubusercontent.com/itjianchacenter-ai/order-mkt/main/deploy/install.sh | sudo bash
 ```
 
-ตั้ง reverse proxy (nginx/Caddy) ให้ `order.jianchatea.com` ชี้มาที่พอร์ตใน `.env` (ค่าเริ่มต้น 3870) และเปิด HTTPS
-ใน Cloudflare DNS ให้ record `order` ชี้ไปที่ IP ของเซิร์ฟเวอร์นี้ (ปัจจุบัน record มีอยู่แล้วและ proxy ผ่าน Cloudflare ต้องเปลี่ยนปลายทางให้ถูก)
+สคริปต์ติดตั้ง Node.js 22, pm2, Caddy (HTTPS อัตโนมัติ), clone โค้ดไว้ที่ `/opt/order-mkt`, สร้าง `.env` (สุ่ม `JWT_SECRET` ให้), เปิดบริการ, ตั้งไฟร์วอลล์ และสำรองฐานข้อมูลทุกคืน 03:00 ไว้ที่ `/opt/order-mkt/backups`
+
+### 2. ใส่ค่าตั้งค่าใน `/opt/order-mkt/.env` แล้ว `pm2 restart jiancha-order`
+
+| ค่า | ใช้ทำอะไร | จำเป็น |
+|---|---|---|
+| `PROMPTPAY_ID` | เบอร์/เลขนิติบุคคล PromptPay ที่รับเงิน (สร้าง QR) | ✅ |
+| `GOOGLE_CLIENT_ID` | ปุ่ม Sign in with Google ของลูกค้า (OAuth Client ID ชนิด Web ใส่ origin `https://order.jianchatea.com`) | ✅ |
+| `SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / MAIL_FROM` | ส่งอีเมลยืนยันเมื่อบัญชี Approve | แนะนำ |
+| `SLIPOK_API_KEY / SLIPOK_BRANCH_ID` | ตรวจสลิปอัตโนมัติ (ว่าง = บัญชีตรวจเอง) | ไม่บังคับ |
+
+ทดสอบอีเมล: `node scripts/send-test-mail.js you@example.com`
+
+### 3. ชี้โดเมนมาที่เซิร์ฟเวอร์ (Cloudflare → jianchatea.com → DNS)
+
+แก้ record `order` จาก CNAME `itjianchacenter-ai.github.io` เป็น **A record = IP ของเซิร์ฟเวอร์** (Proxy status: DNS only ได้เลย Caddy ออกใบรับรองให้เอง; ถ้าเปิด Proxied ให้ตั้ง SSL/TLS = Full) รอ 1–5 นาที แล้วเปิด https://order.jianchatea.com
+
+### 4. ก่อนเปิดใช้งาน
+
+- เข้า https://order.jianchatea.com/admin-page ด้วย it-admin แล้ว**เปลี่ยนรหัสผ่านทั้ง 3 บัญชี**ในหน้า Account
+- หน้า Design: ตรวจรูป/ราคาของแคมเปญ (แม่แบบจาก `data/menu.json` ถูกติดตั้งมาให้แล้ว) กด Save
+- ล้างข้อมูลทดสอบก่อนขายจริง: `node scripts/reset-data.js --yes`
+- ทดลองสั่ง 1 ออเดอร์ → สแกน QR → ส่งสลิป → Approve → ได้อีเมล → รับ code
+
+### อัปเดตโค้ดครั้งถัดไป
+
+```bash
+sudo /opt/order-mkt/deploy/update.sh     # backup → git pull → npm ci → restart
+```
+
+### ทางเลือก: Docker
+
+`Dockerfile` + `docker-compose.yml` ใช้กับ Railway / Render / Fly.io หรือเครื่องที่มี Docker ได้ (`docker compose up -d`) ต้อง mount `data/` และ `uploads/` เป็น volume ถาวร
 
 ## ทดสอบ
 
