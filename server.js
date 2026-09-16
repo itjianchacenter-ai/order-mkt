@@ -812,4 +812,5 @@ if (require.main === module) {
     console.log(`  Back-office users: ${db.prepare('SELECT COUNT(*) AS n FROM users WHERE active = 1').get().n} (/backend)`);
   });
 }
+app.locals.approvalEmail = approvalEmail;   // ให้สคริปต์/เทสสร้างตัวอย่างอีเมลได้
 module.exports = app;
