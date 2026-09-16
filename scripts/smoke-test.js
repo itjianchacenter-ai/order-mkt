@@ -43,8 +43,13 @@ const dbx = {
   const server = CF ? null : app.listen(0); base = CF ? process.env.BASE_URL.replace(/\/+$/, '') : `http://127.0.0.1:${server.address().port}`;
   // stub ของ oauth2.googleapis.com/tokeninfo: id_token = ชื่อผู้ใช้จำลอง ('bad' = ไม่ผ่าน)
   const http = require('http');
+  const graphMail = [];   // อีเมลที่ worker ส่งผ่าน Microsoft Graph (stub; เฉพาะ test:cf)
   const tokeninfo = http.createServer((req, res) => {
-    const t = new URL(req.url, 'http://x').searchParams.get('id_token');
+    const u = new URL(req.url, 'http://x');
+    // stub ของ Microsoft identity + Graph sendMail
+    if (u.pathname === '/ms/token') { let b = ''; req.on('data', (d) => { b += d; }); return req.on('end', () => { const f = new URLSearchParams(b); const ok = f.get('client_id') === 'test-client' && f.get('client_secret') === 'test-secret' && f.get('grant_type') === 'client_credentials'; res.writeHead(ok ? 200 : 401, { 'content-type': 'application/json' }); res.end(ok ? JSON.stringify({ access_token: 'graph-token', expires_in: 3600 }) : '{"error":"invalid_client"}'); }); }
+    if (u.pathname.startsWith('/ms/graph/')) { let b = ''; req.on('data', (d) => { b += d; }); return req.on('end', () => { const m = u.pathname.match(/^\/ms\/graph\/users\/([^/]+)\/sendMail$/); if (!m || req.headers.authorization !== 'Bearer graph-token') { res.writeHead(401, { 'content-type': 'application/json' }); return res.end('{"error":{"code":"InvalidAuthenticationToken"}}'); } const j = JSON.parse(b); graphMail.push({ sender: decodeURIComponent(m[1]), to: j.message.toRecipients.map((x) => x.emailAddress.address), subject: j.message.subject, html: j.message.body.content }); res.writeHead(202, { 'request-id': 'req-' + graphMail.length }); res.end(); }); }
+    const t = u.searchParams.get('id_token');
     if (!t || t === 'bad') { res.writeHead(400, { 'content-type': 'application/json' }); return res.end('{"error":"invalid_token"}'); }
     const wrongAud = t.endsWith('@wrong');
     res.writeHead(200, { 'content-type': 'application/json' });
@@ -165,6 +170,7 @@ const dbx = {
     check('promo code assigned at approval, first in sequence', r.json.promo_code === 'NVR260001', r.json.promo_code);
     check('approval email sent to the email typed on the order', r.json.approval_mail && r.json.approval_mail.status === 'sent' && r.json.approval_mail.to === 'somchai@example.com' && r.json.approval_mail.at, r.json.approval_mail);
     r = await call('it', 'GET', `/api/admin/orders/${order.id}`); check('approval email status visible to back-office', r.json.approval_mail && r.json.approval_mail.status === 'sent');
+    if (CF) { const gm = graphMail[graphMail.length - 1]; check('worker sent the mail through Microsoft Graph from the MAIL_FROM mailbox', gm && gm.sender === 'no-reply@jianchatea.com' && gm.to.join() === 'somchai@example.com' && gm.subject && /NVR26/.test(gm.html), gm && { sender: gm.sender, to: gm.to, subject: gm.subject }); }
     r = await call('customer', 'GET', `/api/orders/${order.id}`); check('customer view does not expose mail log', r.json.approval_mail === undefined);
     r = await call('customer', 'POST', `/api/orders/${order.id}/code`);
     check('customer "รับ code" shows the assigned code NVR260001', r.status === 200 && r.json.promo_code === 'NVR260001', r.json);
