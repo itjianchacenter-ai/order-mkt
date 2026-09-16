@@ -2,6 +2,7 @@
    Timestamps are Thai time (UTC+7) as text 'YYYY-MM-DD HH:MM:SS' — the same format the Node server stored. */
 import { sql, uuid, hashPassword } from './util.js';
 import { MENU } from './data.js';
+import * as M from '../lib/menu.js';
 
 const NOW = "strftime('%Y-%m-%d %H:%M:%S', 'now', '+7 hours')";
 const DDL = [
@@ -85,5 +86,12 @@ async function migrate(env) {
   if (MENU.promo_code.prefix && !(await db.get("SELECT 1 AS x FROM meta WHERE key = 'promo_range_v2'"))) {
     await db.run("UPDATE campaigns SET promo_prefix = ?, promo_from = ?, promo_to = ? WHERE id = 'jiancha-x-navori' AND (promo_prefix IS NULL OR promo_prefix = '') AND promo_from = 2026090001 AND promo_to = 2026092000 AND NOT EXISTS (SELECT 1 FROM orders WHERE campaign_id = 'jiancha-x-navori' AND promo_code IS NOT NULL)", MENU.promo_code.prefix, MENU.promo_code.from || 1, MENU.promo_code.to || 2000);
     await db.run("INSERT OR IGNORE INTO meta(key, value) VALUES ('promo_range_v2', ?)", MENU.promo_code.prefix);
+  }
+  // ชื่อขนมในเซ็ตเปลี่ยน (Golden Mung Snow Mooncake / Taro Mochi Mooncake) → แก้ใน design ที่บันทึกไว้ครั้งเดียว
+  if (!(await db.get("SELECT 1 AS x FROM meta WHERE key = 'item_names_v2'"))) {
+    for (const row of await db.all("SELECT id, design_json FROM campaigns WHERE design_json IS NOT NULL AND design_json <> ''")) {
+      const next = M.renameDesignItems(row.design_json); if (next) await db.run('UPDATE campaigns SET design_json = ? WHERE id = ?', next, row.id);
+    }
+    await db.run("INSERT OR IGNORE INTO meta(key, value) VALUES ('item_names_v2', '1')");
   }
 }

@@ -205,6 +205,14 @@ function seedDefaults({ campaign } = {}) {
     db.prepare("UPDATE campaigns SET promo_prefix = ?, promo_from = ?, promo_to = ? WHERE id = 'jiancha-x-navori' AND promo_prefix = '' AND promo_from = 2026090001 AND promo_to = 2026092000 AND NOT EXISTS (SELECT 1 FROM orders WHERE campaign_id = 'jiancha-x-navori' AND promo_code IS NOT NULL)").run(campaign.promo_prefix, campaign.promo_from || 1, campaign.promo_to || 2000);
     db.prepare("INSERT INTO meta(key, value) VALUES ('promo_range_v2', ?)").run(campaign.promo_prefix);
   }
+  // ชื่อขนมในเซ็ตเปลี่ยน (Golden Mung Snow Mooncake / Taro Mochi Mooncake) → แก้ใน design ที่บันทึกไว้ครั้งเดียว
+  if (!db.prepare("SELECT 1 FROM meta WHERE key = 'item_names_v2'").get()) {
+    const { renameDesignItems } = require('./lib/menu');
+    for (const row of db.prepare("SELECT id, design_json FROM campaigns WHERE design_json IS NOT NULL AND design_json <> ''").all()) {
+      const next = renameDesignItems(row.design_json); if (next) db.prepare('UPDATE campaigns SET design_json = ? WHERE id = ?').run(next, row.id);
+    }
+    db.prepare("INSERT INTO meta(key, value) VALUES ('item_names_v2', '1')").run();
+  }
   // orders created before campaigns existed belong to the active campaign
   const active = db.prepare('SELECT id FROM campaigns WHERE active = 1 ORDER BY created_at LIMIT 1').get();
   if (active) db.prepare('UPDATE orders SET campaign_id = ? WHERE campaign_id IS NULL').run(active.id);
