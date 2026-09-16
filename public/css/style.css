@@ -182,7 +182,9 @@ a.btn{text-decoration:none}
 .pill.date .th{font-size:12px;font-weight:400}
 .pill.date.on .th{color:#ddd}
 .pill.time{padding:9px 20px;font-family:inherit;cursor:pointer;font-size:15px}
-.note-pill+.note-pill{margin-left:8px}
+#stock-pill{display:inline-flex;flex-wrap:wrap;align-items:center;gap:10px 8px}   /* stock pill + order-window pill: keep a gap when they wrap on mobile */
+#stock-err{margin:14px 0 0}
+#stock-err:not(:empty){margin-bottom:20px}    /* red notice sits 20px clear of the first set card */
 .sumbox .pickup-date{font-size:15px;margin-top:4px}
 .sumbox span.pickup-date{display:block;font-weight:400}
 .chips .pill b{font-weight:700}
@@ -292,6 +294,9 @@ a.btn{text-decoration:none}
 .receipt{background:#fff;border:1px solid var(--line);border-radius:var(--r-card);padding:28px 32px;max-width:720px}
 .receipt .r-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;border-bottom:2px solid var(--line);padding-bottom:12px;margin-bottom:16px}
 .receipt .r-head b{font-size:22px;font-weight:800}
+.receipt .r-logos img{height:28px}
+.receipt .r-logos .lg-navori{height:24px}
+@media print{.receipt .r-logos img{height:24px}.receipt .r-logos .lg-navori{height:20px}}
 .receipt table{width:100%;border-collapse:collapse}
 .receipt .r-meta th{text-align:left;font-weight:700;padding:5px 12px 5px 0;width:40%;vertical-align:top}
 .receipt .r-meta td{padding:5px 0}
@@ -433,3 +438,26 @@ body.landing-page .wrap{padding:0;max-width:none}
 .landing{min-height:100vh;min-height:100dvh;display:flex;align-items:flex-end;justify-content:center;padding:0 16px 7vh}
 .landing-btn{font-size:24px;font-weight:800;padding:8px 32px;letter-spacing:-.2px;background:#000;color:#fff;border-color:#000;box-shadow:0 6px 18px rgba(0,0,0,.25)}
 @media (max-width:700px){body.landing-page{background-image:url(/img/landing-mobile.jpg)}.landing{padding-bottom:9vh}.landing-btn{font-size:20px}}
+/* รอบสั่ง → รอบรับ (ใต้ปุ่มวันที่รับของ) */
+.pair-note{margin-top:12px;font-size:13px}
+.pair-note b{display:block;margin-bottom:6px;font-weight:700}
+.pair-note .pairs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px}
+.pair-note .pairs li{display:flex;gap:8px;align-items:center;color:var(--muted)}
+.pair-note .pairs li.on{color:#000;font-weight:700}
+.pair-note .arr{font-weight:700}
+/* วัน/เวลารับของที่เลือกในกล่อง Order Summary */
+.sumbox .pickup-sel{font-size:18px;font-weight:700;padding:10px 0 6px;line-height:1.2}
+.sumbox .pickup-sel > .th{display:block;font-size:13px;font-weight:400;margin-top:2px}
+.sumbox .none{font-weight:400;font-size:13px;opacity:.85}
+.sumbox #pickup-time-name{padding:6px 0 10px;font-size:18px}
+.sumbox #pickup-time-name b{font-weight:700}
+.sumbox #pickup-time-name .none{font-size:15px}
+/* pop-up สั่งซื้อสำเร็จ (หน้าชำระเงิน) */
+.done-card .done-ic{width:56px;height:56px;border-radius:50%;background:#000;color:#fff;display:flex;align-items:center;justify-content:center}
+.done-card .done-ic svg{width:30px;height:30px}
+/* หลังบ้าน: สถานะอีเมลยืนยันการอนุมัติ */
+.mail-note{margin-top:12px;font-size:12px;color:var(--muted)}
+.mail-note.bad{color:#b00020}
+.pickup-fixed{display:inline-flex;flex-direction:column;align-items:center;border:1px solid var(--line);border-radius:var(--r-pill);background:#000;color:#fff;padding:7px 22px;line-height:1.15}
+.pickup-fixed b{font-size:15px}
+.pickup-fixed .th{font-size:12px}

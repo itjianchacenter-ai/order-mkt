@@ -150,6 +150,15 @@ function fmtPickupDate(iso) {
   const y = Number(m[1]), mo = Number(m[2]) - 1, d = Number(m[3]);
   return { en: `${d} ${EN_MONTHS[mo] || m[2]} ${y}`, th: `${d} ${TH_MONTHS[mo] || m[2]} ${y + 543}` };
 }
+/* รอบสั่ง → รอบรับ: วันรับของที่ล็อกไว้สำหรับรอบสั่งวันนี้ (null = เลือกได้ตามรายการ) */
+const lockedPickup = (stock) => { const ow = stock && stock.order_window; window.__pickupByRound = Boolean(ow && ow.pickup_pairs && ow.pickup_pairs.length); return (ow && ow.pickup_date) || null; };
+/* ข้อความตารางคู่ "สั่ง 18 กันยายน 2569 → รับ 25 กันยายน 2569" สำหรับแสดงใต้ปุ่มวันที่ */
+function pickupPairsNote(stock) {
+  const ow = stock && stock.order_window; if (!ow || !ow.pickup_pairs || !ow.pickup_pairs.length) return '';
+  const rows = ow.pickup_pairs.map((p) => `<li class="${ow.pickup_date === p.pickup ? 'on' : ''}"><span>สั่ง ${esc(p.order_range.th)}</span><span class="arr">→</span><span>รับ ${esc(p.pickup_th)}</span></li>`).join('');
+  const head = ow.pickup_date ? `<b>รอบสั่งวันนี้ (${esc(fmtPickupDate(ow.today).th)}) รับของวันที่ ${esc(fmtPickupDate(ow.pickup_date).th)}</b>` : '<b>รอบสั่งกับรอบรับของ</b>';
+  return `<div class="pair-note th">${head}<ul class="pairs">${rows}</ul></div>`;
+}
 /* ปุ่มเลือกวันที่รับของ (บรรทัดบนอังกฤษ ล่างไทย พ.ศ.) */
 function pickupChips(dates, selected) {
   return (dates || []).map((d) => { const f = fmtPickupDate(d); return `<button type="button" class="pill date ${d === selected ? 'on' : ''}" data-date="${esc(d)}"><b>${esc(f.en)}</b><span class="th">${esc(f.th)}</span></button>`; }).join('');
@@ -159,7 +168,7 @@ const setNote = (t) => { try { localStorage.setItem(NOTE_KEY, t); } catch (e) { 
 const PHONE_KEY = 'jc_phone';
 const getPhone = () => { try { return localStorage.getItem(PHONE_KEY) || ''; } catch (e) { return ''; } };
 const setPhone = (t) => { try { localStorage.setItem(PHONE_KEY, t); } catch (e) { /* ignore */ } };
-const contactBox = () => `<div class="notebox telbox"><label for="phone"><b>Contact number</b> <span class="th">(เบอร์ติดต่อผู้รับขนม):</span> <span class="req" title="จำเป็น">*</span></label><input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="08x-xxx-xxxx" maxlength="20" required></div>`;
+const contactBox = () => `<div class="notebox telbox"><label for="phone"><b>Contact number</b> <span class="th">( เบอร์ติดต่อผู้รับสาย )</span> <span class="req" title="จำเป็น">*</span></label><input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="08x-xxx-xxxx" maxlength="20" required></div>`;
 const bindContactBox = () => { const f = $('#phone'); if (!f) return; f.value = getPhone(); f.addEventListener('input', (e) => { setPhone(e.target.value); e.target.classList.toggle('invalid', e.target.value.trim() !== '' && !validPhone(e.target.value)); }); };
 const normalizePhone = (t) => String(t || '').replace(/[^\d+]/g, '');
 const validPhone = (t) => /^(\+66|0)\d{8,9}$/.test(normalizePhone(t));
@@ -389,9 +398,9 @@ async function submitOrder({ storeId, note, phone = '', pickupDate = '', pickupD
   const lines = loadCart();
   if (!lines.length) { errEl.textContent = 'ยังไม่มีรายการในตะกร้า / Your cart is empty'; return; }
   if (!storeId) { errEl.textContent = 'กรุณาเลือกสาขาที่รับสินค้า / Please choose a pick-up location'; return; }
-  if (pickupDates.length && !pickupDates.includes(pickupDate)) { errEl.textContent = 'กรุณาเลือกวันที่รับของ / Please choose a pick-up date'; return; }
+  if (!window.__pickupByRound && pickupDates.length && !pickupDates.includes(pickupDate)) { errEl.textContent = 'กรุณาเลือกวันที่รับของ / Please choose a pick-up date'; return; }
   if (pickupTimes.length && !pickupTimes.includes(pickupTime)) { errEl.textContent = 'กรุณาเลือกเวลาที่รับของ / Please choose a pick-up time'; return; }
-  if (!validPhone(phone)) { errEl.textContent = 'กรุณาใส่เบอร์ติดต่อผู้รับขนม (เบอร์มือถือ 10 หลัก) / Please enter the contact number'; const f = $('#phone'); if (f) { f.focus(); f.classList.add('invalid'); } return; }
+  if (!validPhone(phone)) { errEl.textContent = 'กรุณาใส่เบอร์ติดต่อผู้รับสาย (เบอร์มือถือ 10 หลัก) / Please enter the contact number'; const f = $('#phone'); if (f) { f.focus(); f.classList.add('invalid'); } return; }
   await loadMe();
   if (needLogin()) { openLoginModal(() => submitOrder({ storeId, note, phone, pickupDate, pickupDates, pickupTime, pickupTimes, errEl, btn, onFail })); return; }  // ล็อกอินก่อน แล้วยืนยันต่อให้อัตโนมัติ
   btn.disabled = true;

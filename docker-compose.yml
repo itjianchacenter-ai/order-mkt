@@ -1,0 +1,11 @@
+services:
+  order:
+    build: .
+    restart: unless-stopped
+    ports: ["3870:3870"]
+    env_file: .env
+    environment:
+      NODE_ENV: production
+    volumes:
+      - ./data:/app/data
+      - ./uploads:/app/uploads

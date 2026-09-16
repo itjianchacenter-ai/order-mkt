@@ -27,6 +27,7 @@
   <section class="section" id="sec-dates" hidden>
     <div class="label" id="lbl-date"></div><span class="lbl-sub th">วันที่รับของ</span>
     <div class="chips" id="dates"></div>
+    <div id="pairs"></div>
   </section>
 
   <section class="section" id="sec-times" hidden>
@@ -49,11 +50,14 @@
           <div class="tot"><span class="th">ยอดรวมราคาสินค้า</span><b id="total">0.00 ฿</b></div>
           <hr>
           <h3 style="margin-top:14px">Pick-up Location</h3><span class="sub th">สถานที่รับของ</span>
-          <hr>
           <div class="store" id="store-name">-</div>
-          <div class="pickup-date" id="pickup-name" hidden></div>
-          <div class="pickup-date" id="pickup-time-name" hidden></div>
           <hr>
+          <div id="pickup-block" hidden>
+            <h3 style="margin-top:14px">Pick-up Date &amp; Time</h3><span class="sub th">วันและเวลาที่รับของ</span>
+            <div class="store pickup-sel" id="pickup-name"></div>
+            <div class="pickup-date" id="pickup-time-name" hidden></div>
+            <hr>
+          </div>
         </div>
         <button type="button" class="confirm" id="confirm"><b>Confirm</b><small class="th">ยืนยันคำสั่งซื้อ</small></button>
         <div class="err" id="err"></div>
@@ -78,7 +82,7 @@
   // วันที่รับของของแคมเปญ (ว่าง = ไม่ต้องเลือก) ค่าที่เคยเลือกแต่ไม่อยู่ในรายการแล้วจะถูกล้าง
   const pickupDates = menu.pickup_dates || [];
   if (getPickup() && !pickupDates.includes(getPickup())) setPickup('');
-  $('#sec-dates').hidden = !pickupDates.length;
+  $('#sec-dates').hidden = !pickupDates.length && !(menu.stock && menu.stock.order_window && menu.stock.order_window.pickup_pairs && menu.stock.order_window.pickup_pairs.length);
   const pickupTimes = menu.pickup_times || [];
   if (getPickupTime() && !pickupTimes.includes(getPickupTime())) setPickupTime('');
   $('#sec-times').hidden = !pickupTimes.length;
@@ -151,7 +155,14 @@
     if (windowMsg()) $('#stock-err').textContent = windowMsg();
     sets.innerHTML = (menu.sets || []).map(setCard).join('') || '<div class="empty">ยังไม่มีเซ็ตเมนู</div>';
     $('#stores').innerHTML = storeChips(stores, storeId);
-    $('#dates').innerHTML = pickupChips(pickupDates, getPickup());
+    // แคมเปญที่ผูกรอบสั่งกับรอบรับ: ไม่มีปุ่มให้เลือก แสดงวันรับของรอบวันนี้ + ตารางคู่แทน
+    const ow = stock && stock.order_window; const hasMap = Boolean(ow && ow.pickup_pairs && ow.pickup_pairs.length);
+    const locked = lockedPickup(stock); if (locked && getPickup() !== locked) setPickup(locked);
+    if (hasMap) {
+      if (!locked && getPickup()) setPickup('');
+      $('#dates').innerHTML = locked ? `<div class="pickup-fixed"><b>${esc(fmtPickupDate(locked).en)}</b><span class="th">${esc(fmtPickupDate(locked).th)}</span></div>` : '';
+    } else $('#dates').innerHTML = pickupChips(pickupDates, getPickup());
+    $('#pairs').innerHTML = pickupPairsNote(stock);
     $('#times').innerHTML = timeChips(pickupTimes, getPickupTime());
     const lines = cart.map((l) => `<li><span>${esc(lineName(l, map))}</span><span class="n">x ${l.quantity}</span><span class="p">${money(linePrice(l, map) * l.quantity)} ฿</span></li>`);
     // แสดงเฉพาะรายการที่มีจริง (เหมือนหน้า Cart) ไม่เติมแถวว่าง
@@ -159,10 +170,12 @@
     const total = cart.reduce((s, l) => s + linePrice(l, map) * l.quantity, 0);
     $('#total').textContent = money(total) + ' ฿';
     $('#store-name').innerHTML = store ? storeLabel(store) : '-';
-    const pd = $('#pickup-name'); pd.hidden = !pickupDates.length;
-    pd.textContent = getPickup() ? `Pick-up Date - ${fmtPickupDate(getPickup()).en}` : 'Pick-up Date - ยังไม่ได้เลือกวันที่รับของ';
+    // วัน/เวลารับของที่เลือก แสดงในกล่อง Order Summary ทันทีที่กดเลือก
+    $('#pickup-block').hidden = !pickupDates.length && !pickupTimes.length && !hasMap;
+    const pd = $('#pickup-name'); pd.hidden = !pickupDates.length && !hasMap;
+    pd.innerHTML = getPickup() ? `Pick-up Date - ${esc(fmtPickupDate(getPickup()).en)}<span class="th">${esc(fmtPickupDate(getPickup()).th)}</span>` : (hasMap ? '<span class="th none">Pick-up Date - กำหนดตามรอบวันที่สั่ง (ดูตารางรอบสั่ง/รอบรับ)</span>' : '<span class="th none">Pick-up Date - ยังไม่ได้เลือกวันที่รับของ</span>');
     const pt = $('#pickup-time-name'); pt.hidden = !pickupTimes.length;
-    pt.textContent = getPickupTime() ? `Pick-up Time - ${getPickupTime()}` : 'Pick-up Time - ยังไม่ได้เลือกเวลาที่รับของ';
+    pt.innerHTML = getPickupTime() ? `<b>Pick-up Time</b> - ${esc(getPickupTime())}` : '<span class="th none"><b>Pick-up Time</b> - ยังไม่ได้เลือกเวลาที่รับของ</span>';
     updateCartBadge();
   }
   render();

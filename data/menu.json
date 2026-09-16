@@ -21,6 +21,13 @@
     "2026-09-27",
     "2026-09-28"
   ],
+  "pickup_map": {
+    "2026-09-18": "2026-09-25",
+    "2026-09-19": "2026-09-26",
+    "2026-09-20": "2026-09-27",
+    "2026-09-21": "2026-09-28",
+    "2026-09-22": "2026-09-28"
+  },
   "pickup_times": [
     "10:00-11:00 น.",
     "13:00-15:00 น.",
@@ -32,7 +39,7 @@
       "label": "SET A",
       "name_en": "Mooncake Set with Pomegranate Iced Tea",
       "name_th": "",
-      "price": 289,
+      "price": 369,
       "image": "/img/menu/navori-set-a.jpg",
       "images": [
         "/img/menu/pomegranate-iced-tea.png",
@@ -63,7 +70,7 @@
       "label": "SET B",
       "name_en": "Mooncake Set with Pomegranate Tea Smoothie",
       "name_th": "",
-      "price": 299,
+      "price": 379,
       "image": "/img/menu/navori-set-b.jpg",
       "images": [
         "/img/menu/pomegranate-smoothie.png",

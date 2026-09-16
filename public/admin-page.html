@@ -434,7 +434,12 @@
     if (P.cancel && ['pending', 'slip_uploaded', 'slip_rejected', 'paid'].includes(o.status)) acts.push(btn('cancelled', 'ยกเลิก', true));
     if (P.code && codeBox(o)) acts.push(codeBox(o));
     const slip = o.slip_url ? `<div style="margin-top:14px"><b style="font-size:13px">สลิป</b> <span style="font-size:12px;color:var(--muted)">${o.slip_verified ? 'ตรวจอัตโนมัติผ่าน' : 'ตรวจด้วยเจ้าหน้าที่'}${o.slip_ref ? ' · ref ' + esc(o.slip_ref) : ''}${o.slip_amount != null ? ' · ' + money(o.slip_amount) + ' ฿' : ''}${o.slip_reason ? ' · ' + esc(o.slip_reason) : ''}</span><br><a href="${esc(o.slip_url)}" target="_blank" rel="noopener"><img class="slip-thumb" src="${esc(o.slip_url)}" alt="slip"></a></div>` : '';
-    return slip + '<div class="actions">' + acts.join('') + '</div>';
+    const mailNote = (o.status === 'paid' || o.status === 'picked_up') ? (() => {
+      const m = o.approval_mail;
+      const label = !m ? 'ยังไม่ได้ส่งอีเมลยืนยัน' : m.status === 'sent' ? `ส่งอีเมลยืนยันแล้ว ${fmtDateTime(m.at)} → ${esc(m.to)}` : m.status === 'logged' ? `อีเมลยืนยัน (ยังไม่ได้ตั้งค่า SMTP จึงไม่ได้ส่งจริง) → ${esc(m.to)}` : m.status === 'preview' ? `อีเมลยืนยัน (preview จำลอง) → ${esc(m.to)}` : `ส่งอีเมลยืนยันไม่สำเร็จ${m.error ? ': ' + esc(m.error) : ''}${m.to ? ' → ' + esc(m.to) : ''}`;
+      return `<div class="mail-note ${m && m.status === 'failed' ? 'bad' : ''}">${label}</div>`;
+    })() : '';
+    return slip + mailNote + '<div class="actions">' + acts.join('') + '</div>';
   }
   function headExtras(o) {
     if (!isSlips) return {};
