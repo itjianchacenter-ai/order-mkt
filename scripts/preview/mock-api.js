@@ -116,7 +116,7 @@ function pvCampaignView(c) { const dz = pvDesign(c); return { ...c, url: `/${c.s
 function pvCampaignName(d, id) { const c = d.campaigns.find((x) => x.id === id); return c ? c.name : ''; }
 function pvView(d, o, admin) {
   const v = { id: o.id, order_number: o.order_number, campaign_id: o.campaign_id, campaign_name: pvCampaignName(d, o.campaign_id), store_id: o.store_id, store_name: o.store_name, total: o.total, status: o.status, note: o.note, phone: o.phone || '', pickup_date: o.pickup_date || '', pickup_time: o.pickup_time || '', created_at: o.created_at, paid_at: o.paid_at, picked_up_at: o.picked_up_at, has_slip: Boolean(o.slip_url), slip_reason: o.slip_reason, lines: o.lines, promo_code: o.promo_code || null, code_available: ['paid', 'picked_up'].includes(o.status), payable: ['pending', 'slip_rejected'].includes(o.status) };
-  if (admin) { const c = pvCustomerOf(d, o.customer_id); Object.assign(v, { customer_email: c ? c.email : '', customer_name: c ? c.name : '', pdpa_accepted_at: o.pdpa_accepted_at || '' }); }
+  if (admin) { const c = pvCustomerOf(d, o.customer_id); Object.assign(v, { customer_email: c ? c.email : '', customer_name: c ? c.name : '', pdpa_accepted_at: o.pdpa_accepted_at || '', approval_mail: o.approval_mail || null }); }
   if (admin) Object.assign(v, { customer_id: o.customer_id, slip_url: o.slip_url, slip_ref: o.slip_ref, slip_amount: o.slip_amount, slip_verified: o.slip_verified, cancelled_at: o.cancelled_at });
   return v;
 }
@@ -372,6 +372,7 @@ async function api(path, opts = {}) {
     const o = find(m[1]) || pvFail('ไม่พบคำสั่งซื้อ'); const to = String(body.status || ''); const t = PV_TRANSITIONS[to] || pvFail('สถานะไม่ถูกต้อง');
     need(t.perm); if (!t.from.includes(o.status)) pvFail(`เปลี่ยนสถานะจาก ${o.status} เป็น ${to} ไม่ได้`);
     o.status = to; if (t.stamp) o[t.stamp] = pvNow();
+    if (to === 'paid') { const c = pvCustomerOf(d, o.customer_id); o.approval_mail = { to: c ? c.email : '', status: c && c.email ? 'preview' : 'failed', error: c && c.email ? '' : 'ลูกค้าไม่มีอีเมล', at: pvNow() }; }
     if (to === 'slip_rejected') o.slip_reason = String(body.reason || 'สลิปไม่ถูกต้อง กรุณาอัปโหลดใหม่').slice(0, 300); if (to === 'paid') o.slip_reason = 'ตรวจสอบผ่าน';
     pvSave(d); return pvView(d, o, true);
   }

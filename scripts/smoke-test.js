@@ -3,6 +3,7 @@ process.env.DB_PATH = require('path').join(require('os').tmpdir(), `jc-order-tes
 process.env.PROMPTPAY_ID = '0812345678';
 process.env.JWT_SECRET = 'test'; process.env.NODE_ENV = 'test'; process.env.SLIPOK_API_KEY = '';
 process.env.ORDER_DAY_OVERRIDE = '2026-09-18'; // อยู่ในช่วงเปิดรับออเดอร์ของแม่แบบ (18–22 ก.ย. 2026)
+process.env.MAIL_TRANSPORT = 'json'; // อีเมลยืนยันผ่าน nodemailer แบบไม่ออกเครือข่าย
 process.env.GOOGLE_CLIENT_ID = 'test-client-id'; // เปิดบังคับล็อกอิน; token ตรวจกับ stub ด้านล่างแทน Google
 const fs = require('fs'); const path = require('path');
 const app = require('../server');
@@ -132,6 +133,9 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     r = await call('customer', 'POST', `/api/orders/${order2.id}/slip`, png(3)); check('re-upload after rejection', r.json.status === 'slip_uploaded');
     r = await call('customer', 'POST', `/api/orders/${order.id}/code`); check('code refused before approval', r.status === 400, r.json);
     r = await call('fin', 'POST', `/api/admin/orders/${order.id}/status`, { status: 'paid' }); check('finance approves slip', r.json.status === 'paid' && r.json.paid_at);
+    check('approval email sent to the customer\'s Google email', r.json.approval_mail && r.json.approval_mail.status === 'sent' && r.json.approval_mail.to === 'alice@gmail.com' && r.json.approval_mail.at, r.json.approval_mail);
+    r = await call('it', 'GET', `/api/admin/orders/${order.id}`); check('approval email status visible to back-office', r.json.approval_mail && r.json.approval_mail.status === 'sent');
+    r = await call('customer', 'GET', `/api/orders/${order.id}`); check('customer view does not expose mail log', r.json.approval_mail === undefined);
     r = await call('customer', 'POST', `/api/orders/${order.id}/code`);
     check('promo code issued in range', r.status === 200 && /^\d{10}$/.test(r.json.promo_code) && Number(r.json.promo_code) >= 2026090001 && Number(r.json.promo_code) <= 2026092000, r.json);
     const code1 = r.json.promo_code;

@@ -446,3 +446,9 @@ a.btn{text-decoration:none}
 .sumbox #pickup-time-name{padding:6px 0 10px;font-size:18px}
 .sumbox #pickup-time-name b{font-weight:700}
 .sumbox #pickup-time-name .none{font-size:15px}
+/* pop-up สั่งซื้อสำเร็จ (หน้าชำระเงิน) */
+.done-card .done-ic{width:56px;height:56px;border-radius:50%;background:#000;color:#fff;display:flex;align-items:center;justify-content:center}
+.done-card .done-ic svg{width:30px;height:30px}
+/* หลังบ้าน: สถานะอีเมลยืนยันการอนุมัติ */
+.mail-note{margin-top:12px;font-size:12px;color:var(--muted)}
+.mail-note.bad{color:#b00020}

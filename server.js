@@ -9,6 +9,7 @@ const multer = require('multer');
 const { db, nextOrderNumber, DB_PATH, ROLES, hashPassword, checkPassword, seedDefaults } = require('./db');
 const { generateQR, isConfigured: qrConfigured } = require('./qr');
 const { verifySlip, isEnabled: slipOkEnabled } = require('./slip-verify');
+const mailer = require('./mailer');
 
 const PORT = parseInt(process.env.PORT || '3870', 10);
 const IS_PROD = process.env.NODE_ENV === 'production';
@@ -428,7 +429,11 @@ function orderView(o, { admin = false } = {}) {
     }),
   };
   // หลังบ้านเห็นบัญชี Google (อีเมล/ชื่อ) ของผู้สั่ง เผื่อต้องติดต่อ (บัญชีที่เตรียมไว้ล่วงหน้ายังไม่ล็อกอินก็แสดงอีเมล)
-  if (admin) { const c = customerRow(o.customer_id); Object.assign(v, { customer_email: (c && c.email) || '', customer_name: (c && c.name) || '' }); }
+  if (admin) {
+    const c = customerRow(o.customer_id); Object.assign(v, { customer_email: (c && c.email) || '', customer_name: (c && c.name) || '' });
+    const m = db.prepare("SELECT to_email, status, error, created_at FROM mail_log WHERE order_id = ? AND kind = 'approved' ORDER BY id DESC LIMIT 1").get(o.id);
+    v.approval_mail = m ? { to: m.to_email, status: m.status, error: m.error || '', at: m.created_at } : null;
+  }
   if (admin) Object.assign(v, { pdpa_accepted_at: o.pdpa_accepted_at || '' });
   if (admin) Object.assign(v, { customer_id: o.customer_id, slip_url: o.slip_path ? `/uploads/${path.basename(o.slip_path)}` : '', slip_ref: o.slip_ref, slip_amount: o.slip_amount, slip_verified: o.slip_verified, cancelled_at: o.cancelled_at });
   return v;
@@ -503,6 +508,7 @@ app.post('/api/orders/:id/slip', upload.single('slip'), async (req, res) => {
   db.prepare(`UPDATE orders SET slip_path = ?, slip_hash = ?, slip_ref = ?, slip_amount = ?, slip_reason = ?, slip_verified = ?, status = ?,
               paid_at = CASE WHEN ? = 'paid' THEN datetime('now','localtime') ELSE paid_at END WHERE id = ?`)
     .run(req.file.path, r.slip_hash || '', r.ref || '', r.amount ?? null, r.reason || '', r.verified ? 1 : 0, status, status, o.id);
+  if (status === 'paid') await notifyApproved(o.id);   // ตรวจอัตโนมัติผ่าน → อีเมลยืนยันทันที
   res.json({ ok: r.verified || r.manual, status, reason: r.reason, order: orderView(getOrder(o.id)) });
 });
 
@@ -722,7 +728,7 @@ const TRANSITIONS = {
   picked_up: { from: ['paid'], perm: 'pickup', stamp: 'picked_up_at' },
   cancelled: { from: ['pending', 'slip_uploaded', 'slip_rejected', 'paid'], perm: 'cancel', stamp: 'cancelled_at' },
 };
-app.post('/api/admin/orders/:id/status', requireAdmin, (req, res) => {
+app.post('/api/admin/orders/:id/status', requireAdmin, async (req, res) => {
   const u = adminFromReq(req);
   const o = getOrder(req.params.id);
   if (!o) return res.status(404).json({ error: 'ไม่พบคำสั่งซื้อ' });
@@ -733,8 +739,38 @@ app.post('/api/admin/orders/:id/status', requireAdmin, (req, res) => {
   if (!t.from.includes(o.status)) return res.status(400).json({ error: `เปลี่ยนสถานะจาก ${o.status} เป็น ${to} ไม่ได้` });
   const reason = to === 'slip_rejected' ? String((req.body || {}).reason || 'สลิปไม่ถูกต้อง กรุณาอัปโหลดใหม่').slice(0, 300) : (to === 'paid' ? 'ตรวจสอบผ่าน' : o.slip_reason);
   db.prepare(`UPDATE orders SET status = ?, slip_reason = ?${t.stamp ? `, ${t.stamp} = datetime('now','localtime')` : ''} WHERE id = ?`).run(to, reason, o.id);
+  if (to === 'paid') await notifyApproved(o.id);   // บัญชีอนุมัติ → อีเมลยืนยันพร้อมรายการคำสั่งซื้อถึงลูกค้า
   res.json(orderView(getOrder(o.id), { admin: true }));
 });
+
+// ─── อีเมลยืนยันการอนุมัติ (ส่งถึงอีเมล Google ที่ลูกค้าใช้สั่ง) ───
+function approvalEmail(o, c, baseUrl) {
+  const th = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  const money = (n) => (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const rows = o.lines.map((l) => `<tr><td style="padding:6px 8px;border-bottom:1px solid #ddd">${th(l.name)}${l.items && l.items.length ? `<br><small style="color:#666">${th(l.items.map((i) => i.name_en).join(', '))}</small>` : ''}</td><td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:center">x ${l.quantity}</td><td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:right">${money(l.line_total)} ฿</td></tr>`).join('');
+  const link = baseUrl ? `${baseUrl}/${c ? c.slug + '/' : ''}orders` : '';
+  const pick = [o.pickup_date ? `${fmtDayTH(o.pickup_date)} (${fmtDayEN(o.pickup_date)})` : '', o.pickup_time || ''].filter(Boolean).join(' · ');
+  const html = `<div style="font-family:Arial,'Noto Sans Thai',sans-serif;max-width:600px;margin:0 auto;color:#000">
+    <h2 style="margin:0 0 4px">${th(c ? c.name : 'JIANCHA')}</h2>
+    <p style="margin:0 0 16px;color:#444">ยืนยันคำสั่งซื้อ / Order confirmed</p>
+    <p>คำสั่งซื้อหมายเลข <b>${th(o.order_number)}</b> ของคุณได้รับการตรวจสอบยอดโอนและ<b>อนุมัติเรียบร้อยแล้ว</b><br>Your payment has been verified and your order is confirmed.</p>
+    <table style="width:100%;border-collapse:collapse;margin:12px 0"><thead><tr><th style="text-align:left;padding:6px 8px;border-bottom:2px solid #000">รายการ / Item</th><th style="padding:6px 8px;border-bottom:2px solid #000">จำนวน</th><th style="text-align:right;padding:6px 8px;border-bottom:2px solid #000">ราคา</th></tr></thead>
+    <tbody>${rows}</tbody><tfoot><tr><td colspan="2" style="padding:8px;text-align:right"><b>ยอดรวม / Total</b></td><td style="padding:8px;text-align:right"><b>${money(o.total)} ฿</b></td></tr></tfoot></table>
+    <p><b>สถานที่รับของ / Pick-up:</b> ${th(o.store_name)}${pick ? `<br><b>วัน-เวลารับของ / Pick-up date &amp; time:</b> ${th(pick)}` : ''}${o.phone ? `<br><b>เบอร์ติดต่อ:</b> ${th(o.phone)}` : ''}${o.note ? `<br><b>หมายเหตุ:</b> ${th(o.note)}` : ''}</p>
+    <p>กรุณาแสดงอีเมลนี้หรือหน้า Order History ที่หน้าร้านในวันรับของ${link ? ` <a href="${th(link)}">${th(link)}</a>` : ''}<br>Please show this email or your Order History page at the store on pick-up day.</p>
+    <p style="color:#444">ขอบคุณที่มาสั่งซื้อกับเรา / Thank you for ordering with us.<br>${th(c ? c.name : 'JIANCHA')}</p></div>`;
+  const text = `ยืนยันคำสั่งซื้อ ${o.order_number} อนุมัติเรียบร้อยแล้ว\n` + o.lines.map((l) => `- ${l.name} x${l.quantity} = ${money(l.line_total)} ฿`).join('\n') + `\nยอดรวม ${money(o.total)} ฿\nรับของที่ ${o.store_name}${pick ? ' ' + pick : ''}${link ? '\n' + link : ''}`;
+  return { subject: `ยืนยันคำสั่งซื้อ ${o.order_number} อนุมัติแล้ว / Order confirmed – ${c ? c.name : 'JIANCHA'}`, html, text };
+}
+async function notifyApproved(orderId) {
+  const row = getOrder(orderId); if (!row) return;
+  const o = orderView(row); const cust = customerRow(row.customer_id); const camp = row.campaign_id ? getCampaign(row.campaign_id) : null;
+  const to = (cust && cust.email) || '';
+  const mail = approvalEmail(o, camp, (process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, ''));
+  const r = to ? await mailer.sendMail({ to, ...mail }) : { status: 'failed', error: 'ลูกค้าไม่มีอีเมล (ไม่ได้ล็อกอิน)' };
+  db.prepare('INSERT INTO mail_log(order_id, kind, to_email, subject, status, error) VALUES (?, ?, ?, ?, ?, ?)').run(orderId, 'approved', to, mail.subject, r.status, r.error || '');
+  return r;
+}
 app.get('/api/admin/summary', requireAdmin, (req, res) => {
   const date = String(req.query.date || '').trim();
   const campaign = String(req.query.campaign || '').trim();

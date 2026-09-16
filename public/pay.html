@@ -21,9 +21,27 @@
   head.innerHTML = orderCard(o, { open: true });
   bindOrderToggles(head);
 
-  function done(msgTh, msgEn) {
+  const SUCCESS_MSG = 'ระบบจะทำการตรวจสอบยอดโอนของท่านและแจ้งการอนุมัติ ภายใน 24 ชม. ผ่าน email ที่คุณลงทะเบียนเข้ามา ขอบคุณที่มาสั่งซื้อกับเรา';
+  function done(msgTh, msgEn, { popup = false } = {}) {
     pay.innerHTML = `<div class="paybox" style="grid-column:1/-1;text-align:center">${ICONS.check}<h3 style="margin-top:8px">${msgEn}</h3><span class="sub th">${msgTh}</span>
+      ${popup ? `<p class="th" style="margin:0 0 14px;font-size:14px">${SUCCESS_MSG}</p>` : ''}
       <a class="btn" href="${H()}/orders">${ICONS.doc} Order History</a></div>`;
+    if (popup) showSuccessPopup();
+  }
+  // pop-up สั่งซื้อสำเร็จ หลังส่งสลิปแล้ว
+  function showSuccessPopup() {
+    let m = $('#done-modal');
+    if (!m) {
+      m = document.createElement('div'); m.id = 'done-modal'; m.className = 'modal';
+      m.innerHTML = `<div class="modal-card done-card" role="dialog" aria-modal="true"><button type="button" class="lb-close" aria-label="ปิด">×</button>
+        <span class="done-ic">${ICONS.check}</span>
+        <b style="font-size:22px">สั่งซื้อสำเร็จ</b><span style="font-size:14px;color:var(--muted)">Order placed successfully</span>
+        <p class="th" style="margin:6px 0 0;font-size:15px;line-height:1.6">${SUCCESS_MSG}</p>
+        <a class="btn" style="margin-top:8px" href="${H()}/orders">${ICONS.doc} Order History</a></div>`;
+      document.body.appendChild(m);
+      m.addEventListener('click', (e) => { if (e.target === m || e.target.closest('.lb-close')) m.classList.remove('open'); });
+    }
+    m.classList.add('open');
   }
   if (o.status === 'paid' || o.status === 'picked_up') return done('ชำระเงินเรียบร้อยแล้ว ขอบคุณค่ะ', 'Payment received. Thank you!');
   if (o.status === 'cancelled') return done('คำสั่งซื้อนี้ถูกยกเลิกแล้ว', 'This order was cancelled.');
@@ -56,8 +74,8 @@
     const fd = new FormData(); fd.append('slip', f);
     try {
       const r = await api('/api/orders/' + encodeURIComponent(id) + '/slip', { method: 'POST', body: fd });
-      if (r.status === 'paid') done('ชำระเงินเรียบร้อยแล้ว ขอบคุณค่ะ', 'Payment verified. Thank you!');
-      else if (r.status === 'slip_uploaded') done('ได้รับสลิปแล้ว เจ้าหน้าที่กำลังตรวจสอบ', 'Slip received. We are verifying your payment.');
+      if (r.status === 'paid') done('ชำระเงินเรียบร้อยแล้ว ขอบคุณค่ะ', 'Payment verified. Thank you!', { popup: true });
+      else if (r.status === 'slip_uploaded') done('ได้รับสลิปแล้ว เจ้าหน้าที่กำลังตรวจสอบ', 'Slip received. We are verifying your payment.', { popup: true });
       else { $('#up-err').textContent = r.reason || 'สลิปไม่ผ่านการตรวจสอบ'; $('#upload').disabled = false; }
     } catch (e) { $('#up-err').textContent = e.message; $('#upload').disabled = false; }
   });

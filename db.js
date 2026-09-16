@@ -137,6 +137,19 @@ for (const [col, ddl] of [['set_id', "TEXT DEFAULT ''"], ['set_label', "TEXT DEF
 }
 db.exec("UPDATE order_lines SET pieces = (drink_id <> '') + (dessert_id <> ''), drink_pieces = (drink_id <> ''), dessert_pieces = (dessert_id <> '') WHERE pieces IS NULL");
 
+// อีเมลที่ระบบส่งถึงลูกค้า (เช่น ยืนยันการอนุมัติคำสั่งซื้อ) เก็บผลไว้ให้หลังบ้านดู
+db.exec(`CREATE TABLE IF NOT EXISTS mail_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id TEXT,
+  kind TEXT NOT NULL,                     -- approved
+  to_email TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  status TEXT NOT NULL,                   -- sent | logged | failed
+  error TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_mail_log_order ON mail_log(order_id, id DESC);`);
+
 // campaigns.slug: the campaign's own customer URL (order.jianchatea.com/<slug>/), letters+digits from the name, e.g. jianchaxnavori
 if (!db.prepare("SELECT 1 FROM pragma_table_info('campaigns') WHERE name = 'slug'").get()) {
   db.exec('ALTER TABLE campaigns ADD COLUMN slug TEXT');
