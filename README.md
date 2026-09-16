@@ -17,7 +17,7 @@
 | (หน้าแคมเปญ) **Pick-up Date** | ปุ่มเลือกวันที่รับของ (อังกฤษ + ไทย พ.ศ.) จาก `pickup_dates` ของแคมเปญ (แม่แบบ `data/menu.json`: 25–28 กันยายน 2026) บังคับเลือกก่อน Confirm — server ปฏิเสธออเดอร์ที่ไม่มีวันที่หรือวันที่ไม่อยู่ในรายการ (`orders.pickup_date`) แสดงใน Order Summary, การ์ดออเดอร์ (ลูกค้าและหลังบ้าน) และใบรายการ |
 | (หน้าแคมเปญ) **Pick-up Time** | ปุ่มเลือกช่วงเวลารับของจาก `pickup_times` ของแคมเปญ (แม่แบบ: 10:00-11:00 น. / 13:00-15:00 น. / 17:00-20:00 น.) บังคับเลือกก่อน Confirm — server ปฏิเสธออเดอร์ที่ไม่มีเวลาหรือเวลานอกรายการ (`orders.pickup_time`) แสดงใน Order Summary, การ์ดออเดอร์ และใบรายการ |
 | `/cart` | ตะกร้า: Match Sets (รูปรายการในเซ็ต), Cart Summary, ช่อง Contact number เบอร์ติดต่อผู้รับขนม (บังคับ: server ไม่รับออเดอร์ที่ไม่มีเบอร์; หน้าแคมเปญก็มีช่องนี้), Confirm — สาขารับของเลือกที่หน้าแคมเปญ |
-| `/pay?order=…` | ชำระเงิน: QR PromptPay ตามยอด + อัปโหลดสลิป |
+| `/pay?order=…` | ชำระเงิน: เลขบัญชีธนาคาร + ยอดที่ต้องโอน (ตั้ง `BANK_*`) หรือ QR PromptPay ตามยอด (ตั้ง `PROMPTPAY_ID`) + อัปโหลดสลิป (ย่อรูปอัตโนมัติ) |
 | `/orders` | ประวัติการสั่งซื้อ (กดรายการเพื่อดูรายละเอียด; ปุ่ม Print พิมพ์ใบรายการจะขึ้นเมื่อสถานะ Approved แล้วเท่านั้น) |
 | `/receipt?order=…` | ใบรายการสั่งซื้อแบบพิมพ์ได้ (ลูกค้าเจ้าของออเดอร์และ admin เปิดได้) |
 | `/stores` | สาขาที่รับสินค้า + ปุ่ม Google Map (ไม่มีปุ่มในหัวเว็บแล้ว เปิดได้จาก URL ตรง) |
@@ -194,7 +194,8 @@ Workers & Pages → Create → **Pages** → Connect to Git → เลือก 
 | `NODE_VERSION` | `22` | ✅ |
 | `JWT_SECRET` | ข้อความสุ่มยาว ๆ (ใช้เซ็น cookie ล็อกอิน) — ชนิด Secret | ✅ |
 | `GOOGLE_CLIENT_ID` | OAuth Client ID ชนิด Web (origin `https://order.jianchatea.com`) — ถ้าว่าง ลูกค้าจะสั่งได้โดยไม่ล็อกอินและหลังบ้านจะไม่มีรายชื่อลูกค้า | ✅ |
-| `PROMPTPAY_ID` | เบอร์/เลขนิติบุคคล PromptPay ที่รับเงิน (สร้าง QR) หรือใส่ `PROMPTPAY_QR_PAYLOAD` จาก QR ร้าน | ✅ |
+| `BANK_NAME` + `BANK_ACCOUNT_NAME` + `BANK_ACCOUNT_NO` (+ `BANK_BRANCH`) | รับเงินแบบโอนเข้าบัญชีธนาคาร: หน้า pay แสดงธนาคาร/ชื่อบัญชี/เลขบัญชี + ยอดที่ต้องโอน (ปุ่ม Copy) แล้วลูกค้าแนบสลิป | ✅ อย่างใดอย่างหนึ่ง |
+| `PROMPTPAY_ID` (หรือ `PROMPTPAY_QR_PAYLOAD` จาก QR ร้าน) | รับเงินแบบ PromptPay: หน้า pay แสดง QR ตามยอด (ถ้าตั้ง BANK_* ด้วย จะใช้บัญชีธนาคาร) | ✅ อย่างใดอย่างหนึ่ง |
 | `PUBLIC_BASE_URL` | `https://order.jianchatea.com` (ลิงก์ในอีเมล/หลังบ้าน) | ✅ |
 | `RESEND_API_KEY` + `MAIL_FROM` | ส่งอีเมลยืนยันเมื่อ Approve ผ่าน https://resend.com (ยืนยันโดเมน jianchatea.com ใน Resend ก่อน) ว่าง = ไม่ส่งจริง บันทึกสถานะ "logged" | แนะนำ |
 | `SLIPOK_API_KEY` + `SLIPOK_BRANCH_ID` | ตรวจสลิปอัตโนมัติ (ว่าง = บัญชีตรวจเอง) | ไม่บังคับ |
@@ -246,7 +247,8 @@ curl -fsSL https://raw.githubusercontent.com/itjianchacenter-ai/order-mkt/main/d
 
 | ค่า | ใช้ทำอะไร | จำเป็น |
 |---|---|---|
-| `PROMPTPAY_ID` | เบอร์/เลขนิติบุคคล PromptPay ที่รับเงิน (สร้าง QR) | ✅ |
+| `BANK_NAME` / `BANK_ACCOUNT_NAME` / `BANK_ACCOUNT_NO` | รับเงินแบบโอนเข้าบัญชีธนาคาร (แสดงเลขบัญชี + ยอด แทน QR) | ✅ อย่างใดอย่างหนึ่ง |
+| `PROMPTPAY_ID` | เบอร์/เลขนิติบุคคล PromptPay ที่รับเงิน (สร้าง QR) | ✅ อย่างใดอย่างหนึ่ง |
 | `GOOGLE_CLIENT_ID` | ปุ่ม Sign in with Google ของลูกค้า (OAuth Client ID ชนิด Web ใส่ origin `https://order.jianchatea.com`) | ✅ |
 | `SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / MAIL_FROM` | ส่งอีเมลยืนยันเมื่อบัญชี Approve | แนะนำ |
 | `SLIPOK_API_KEY / SLIPOK_BRANCH_ID` | ตรวจสลิปอัตโนมัติ (ว่าง = บัญชีตรวจเอง) | ไม่บังคับ |

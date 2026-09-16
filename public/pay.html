@@ -50,19 +50,36 @@
 
   pay.innerHTML = `
     <div class="paybox">
-      <h3>1. Scan to pay</h3><span class="sub th">สแกน QR เพื่อชำระเงินผ่านแอปธนาคาร ยอด <b>${money(o.total)} ฿</b></span>
-      <div id="qr-wrap"><div class="qr ph"></div></div>
+      <div id="pay-how"><h3>1. Pay</h3><span class="sub th">ยอดที่ต้องชำระ <b>${money(o.total)} ฿</b></span>
+      <div id="qr-wrap"><div class="qr ph"></div></div></div>
       <div class="err" id="qr-err"></div>
     </div>
     <div class="paybox">
-      <h3>2. Upload slip</h3><span class="sub th">อัปโหลดสลิปโอนเงินเพื่อยืนยันคำสั่งซื้อ</span>
+      <h3>2. Upload slip</h3><span class="sub th">อัปโหลดสลิปโอนเงินเพื่อยืนยันคำสั่งซื้อ (ระบบย่อรูปให้อัตโนมัติ)</span>
       ${o.has_slip && o.slip_reason ? '<div class="err">' + esc(o.slip_reason) + '</div>' : ''}
       <label class="drop" id="drop"><input type="file" id="slip" accept="image/*" class="hidden"><span id="drop-text">แตะเพื่อเลือกรูปสลิป (jpg / png)<br><small>Tap to choose your slip image</small></span><img id="preview" class="hidden" alt=""></label>
       <button type="button" class="confirm" id="upload" disabled><b>Submit slip</b><small class="th">ส่งสลิป</small></button>
       <div class="err" id="up-err"></div>
     </div>`;
-  try { const q = await api('/api/orders/' + encodeURIComponent(id) + '/qr'); $('#qr-wrap').innerHTML = '<img class="qr" src="' + q.qr_data_url + '" alt="PromptPay QR">'; }
-  catch (e) { $('#qr-err').textContent = e.message; }
+  try {
+    const q = await api('/api/orders/' + encodeURIComponent(id) + '/qr');
+    if (q.bank) {
+      // โอนเข้าบัญชีธนาคารของร้าน: แสดงบัญชี + ยอดที่ต้องโอน (กดคัดลอกได้)
+      const b = q.bank;
+      $('#pay-how').innerHTML = `<h3>1. Transfer to</h3><span class="sub th">โอนเงินเข้าบัญชีด้านล่างให้ตรงยอด แล้วแนบสลิปในข้อ 2</span>
+        <div class="bank-card">
+          <div class="bank-row"><span class="k">ธนาคาร / Bank</span><b>${esc(b.bank)}</b></div>
+          ${b.account_name ? `<div class="bank-row"><span class="k">ชื่อบัญชี / Account name</span><b>${esc(b.account_name)}</b></div>` : ''}
+          <div class="bank-row"><span class="k">เลขบัญชี / Account no.</span><b class="acct" id="acct-no">${esc(b.account_no)}</b><button type="button" class="pill copy" data-copy="${esc(b.account_no)}">Copy</button></div>
+          ${b.branch ? `<div class="bank-row"><span class="k">สาขา / Branch</span><b>${esc(b.branch)}</b></div>` : ''}
+          <div class="bank-row total"><span class="k">ยอดโอน / Amount</span><b class="amt">${money(q.amount)} ฿</b><button type="button" class="pill copy" data-copy="${Number(q.amount).toFixed(2)}">Copy</button></div>
+        </div>
+        <small class="th bank-note">กรุณาโอนให้ตรงยอด ${money(q.amount)} บาท เพื่อให้เจ้าหน้าที่ตรวจสอบและอนุมัติได้เร็ว / Please transfer the exact amount.</small>`;
+      $$('.copy', $('#pay-how')).forEach((btn) => btn.addEventListener('click', async () => { try { await navigator.clipboard.writeText(btn.dataset.copy); btn.textContent = 'Copied'; setTimeout(() => { btn.textContent = 'Copy'; }, 1500); } catch (e) { /* clipboard blocked */ } }));
+    } else {
+      $('#pay-how').innerHTML = `<h3>1. Scan to pay</h3><span class="sub th">สแกน QR เพื่อชำระเงินผ่านแอปธนาคาร ยอด <b>${money(q.amount)} ฿</b></span><img class="qr" src="${q.qr_data_url}" alt="PromptPay QR">`;
+    }
+  } catch (e) { $('#qr-err').textContent = e.message; }
 
   const file = $('#slip');
   file.addEventListener('change', () => {

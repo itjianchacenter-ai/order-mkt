@@ -7,7 +7,9 @@ const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const { db, nextOrderNumber, DB_PATH, ROLES, hashPassword, checkPassword, seedDefaults } = require('./db');
-const { generateQR, isConfigured: qrConfigured } = require('./qr');
+const { generateQR } = require('./qr');
+const { bankAccount, paymentMode } = require('./lib/payment');
+const qrConfigured = () => Boolean(paymentMode(process.env));   // มีวิธีรับเงิน (บัญชีธนาคาร หรือ PromptPay)
 const { verifySlip, isEnabled: slipOkEnabled } = require('./slip-verify');
 const mailer = require('./mailer');
 const M = require('./lib/menu');
@@ -236,7 +238,7 @@ app.use(express.static(PUBLIC_DIR, { extensions: ['html'], index: false }));
 app.get('/api/menu', (req, res) => { const c = requestCampaign(req); res.json({ ...menuFor(c), campaign: campaignPublic(c), stock: stockView(c) }); });
 app.get('/api/stock', (req, res) => res.json(stockView(requestCampaign(req))));
 app.get('/api/stores', (req, res) => res.json(loadStores()));
-app.get('/api/config', (req, res) => res.json({ payment_ready: qrConfigured(), slip_auto_verify: slipOkEnabled(), login_required: loginRequired(), google_client_id: GOOGLE_CLIENT_ID }));
+app.get('/api/config', (req, res) => res.json({ payment_ready: qrConfigured(), payment_mode: paymentMode(process.env), slip_auto_verify: slipOkEnabled(), login_required: loginRequired(), google_client_id: GOOGLE_CLIENT_ID }));
 
 /** Body: { store_id, note, campaign?: slug, lines: [{set_id, quantity}] } (drink_id/dessert_id lines are still accepted for older clients) */
 app.post('/api/orders', (req, res) => {
@@ -328,8 +330,11 @@ app.get('/api/orders/:id', (req, res) => { const o = ownOrderOr404(req, res); if
 app.get('/api/orders/:id/qr', async (req, res) => {
   const o = ownOrderOr404(req, res); if (!o) return;
   if (!PAYABLE.includes(o.status)) return res.status(400).json({ error: 'คำสั่งซื้อนี้ไม่ได้อยู่ในสถานะรอชำระเงิน' });
-  if (!qrConfigured()) return res.status(503).json({ error: 'ยังไม่ได้ตั้งค่า PromptPay ของร้าน (PROMPTPAY_ID)' });
+  if (!qrConfigured()) return res.status(503).json({ error: 'ยังไม่ได้ตั้งค่าบัญชีรับเงินของร้าน (BANK_ACCOUNT_NO หรือ PROMPTPAY_ID)' });
   if (!(o.total > 0)) return res.status(400).json({ error: 'ยอดคำสั่งซื้อเป็น 0 ไม่ต้องชำระเงิน' });
+  // โอนเข้าบัญชีธนาคาร: ส่งรายละเอียดบัญชีให้ลูกค้าโอนเอง; PromptPay: ส่ง QR ตามยอด
+  const bank = bankAccount(process.env);
+  if (bank) return res.json({ bank, amount: o.total });
   try { res.json({ qr_data_url: await generateQR(o.total), amount: o.total }); } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -407,7 +412,7 @@ app.post('/api/admin/login', (req, res) => {
 app.post('/api/admin/logout', (req, res) => { res.clearCookie(ADMIN_COOKIE, { path: '/' }); res.json({ ok: true }); });
 app.get('/api/admin/me', (req, res) => {
   const u = adminFromReq(req);
-  res.json({ admin: Boolean(u), user: u ? userView(u) : null, permissions: u ? permissionsOf(u) : {}, slip_auto_verify: slipOkEnabled(), payment_ready: qrConfigured(), public_base_url: (process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, '') });
+  res.json({ admin: Boolean(u), user: u ? userView(u) : null, permissions: u ? permissionsOf(u) : {}, slip_auto_verify: slipOkEnabled(), payment_ready: qrConfigured(), payment_mode: paymentMode(process.env), public_base_url: (process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, '') });
 });
 app.post('/api/admin/me/password', requireAdmin, (req, res) => {
   const u = adminFromReq(req); const { current = '', password = '' } = req.body || {};
@@ -652,7 +657,7 @@ if (require.main === module) {
     console.log(`JIANCHA order site on http://localhost:${PORT}`);
     console.log(`  DB: ${DB_PATH}`);
     console.log(`  Campaign: ${activeCampaign().name}`);
-    console.log(`  PromptPay: ${qrConfigured() ? 'configured' : 'NOT configured (set PROMPTPAY_ID)'}`);
+    console.log(`  Payment: ${paymentMode(process.env) || 'NOT configured (set BANK_ACCOUNT_NO or PROMPTPAY_ID)'}`);
     console.log(`  SlipOK: ${slipOkEnabled() ? 'auto-verify' : 'manual review by finance'}`);
     console.log(`  Back-office users: ${db.prepare('SELECT COUNT(*) AS n FROM users WHERE active = 1').get().n} (/backend)`);
   });
