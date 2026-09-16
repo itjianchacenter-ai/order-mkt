@@ -14,7 +14,7 @@ const o = { order_number: '2026091800042', total: 1117, store_name: 'JIANCHA - S
 const mail = app.locals.approvalEmail(o, { name: 'JIANCHA x NAVORI', slug: 'jianchaxnavori' }, (process.env.PUBLIC_BASE_URL || 'https://order.jianchatea.com').replace(/\/+$/, ''));
 (async () => {
   if (!mailer.isConfigured()) { console.error('SMTP ยังไม่ได้ตั้งค่า (SMTP_HOST / SMTP_USER / SMTP_PASS ใน .env)'); process.exit(2); }
-  const r = await mailer.sendMail({ to, subject: '[ทดสอบ] ' + mail.subject, html: mail.html, text: mail.text });
+  const r = await mailer.sendMail({ to, subject: '[ทดสอบ] ' + mail.subject, html: mail.html, text: mail.text, attachments: mail.attachments });
   console.log(r.status === 'sent' ? `ส่งแล้ว → ${to} (${r.id})` : `ส่งไม่สำเร็จ: ${r.error}`);
   process.exit(r.status === 'sent' ? 0 : 1);
 })();

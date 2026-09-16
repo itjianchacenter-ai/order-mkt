@@ -22,11 +22,11 @@ function transport() {
 }
 
 /** ส่งอีเมล → { status: 'sent' | 'logged' | 'failed', id, error } (ไม่ throw) */
-async function sendMail({ to, subject, html, text }) {
+async function sendMail({ to, subject, html, text, attachments = [] }) {
   if (!to) return { status: 'failed', error: 'no recipient' };
   if (!isConfigured()) { console.log(`[mail] (not configured) to=${to} subject=${subject}`); return { status: 'logged' }; }
   try {
-    const info = await transport().sendMail({ from: config().from, to, subject, html, text });
+    const info = await transport().sendMail({ from: config().from, to, subject, html, text, attachments });
     return { status: 'sent', id: info.messageId || '', message: info.message ? String(info.message) : '' };
   } catch (e) { console.error('[mail] send failed:', e.message); return { status: 'failed', error: String(e.message || e).slice(0, 300) }; }
 }

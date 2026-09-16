@@ -161,6 +161,7 @@ node scripts/reset-data.js --yes
 - หลังลูกค้าส่งสลิป หน้าชำระเงินจะขึ้น pop-up "สั่งซื้อสำเร็จ" พร้อมข้อความว่าระบบจะตรวจสอบยอดโอนและแจ้งผลภายใน 24 ชม. ทางอีเมลที่ลงทะเบียน
 - เมื่อบัญชี (finance / it-admin) กด **Approve** หรือสลิปผ่านการตรวจอัตโนมัติ (SlipOK) ระบบส่งอีเมลยืนยันพร้อมรายการคำสั่งซื้อ ยอดรวม สาขา วัน-เวลารับของ ไปยัง**อีเมล Google ที่ลูกค้าใช้สั่ง** ผลการส่งแสดงใต้ออเดอร์ในหลังบ้าน และเก็บในตาราง `mail_log`
 - ตั้งค่า SMTP ใน `.env`: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` (เช่น Gmail: smtp.gmail.com พอร์ต 587 + App Password) ถ้ายังไม่ตั้งค่า ระบบจะไม่ส่งจริงแต่บันทึกสถานะ "logged" ให้เห็น
+- หัวอีเมลเป็นโลโก้ JIANCHA x NAVORI (แนบไปกับอีเมลแบบ inline) ใช้ฟอนต์ DB Helvethaica X จาก `public/fonts/` (ไคลเอนต์ที่รองรับ @font-face เช่น Apple Mail/iOS จะแสดงฟอนต์นี้ Gmail จะใช้ Arial แทน) ทดสอบการตั้งค่า SMTP ได้ด้วย `node scripts/send-test-mail.js you@example.com`
 - preview บน GitHub Pages ไม่มี server จึงส่งอีเมลจริงไม่ได้ จะแสดงเป็น "อีเมลยืนยัน (preview จำลอง)" แทน
 
 ## Deploy บนเซิร์ฟเวอร์
