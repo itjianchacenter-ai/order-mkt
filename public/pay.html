@@ -16,26 +16,25 @@
   renderHeader('orders');
   const id = new URLSearchParams(location.search).get('order');
   const head = $('#order-head'), pay = $('#pay');
-  let o;
-  try { o = await api('/api/orders/' + encodeURIComponent(id)); } catch (e) { head.innerHTML = `<div class="empty">ไม่พบคำสั่งซื้อ / Order not found. <a href="${H()}/orders">Order History</a></div>`; return; }
-  head.innerHTML = orderCard(o, { open: true });
-  bindOrderToggles(head);
 
   const SUCCESS_MSG = 'ระบบจะทำการตรวจสอบยอดโอนของท่านและแจ้งการอนุมัติ ภายใน 24 ชม. ผ่าน email ที่คุณลงทะเบียนเข้ามา ขอบคุณที่มาสั่งซื้อกับเรา';
-  function done(msgTh, msgEn, { popup = false } = {}) {
+  function done(msgTh, msgEn, { popup = false, order = null } = {}) {
+    if (order) { head.innerHTML = orderCard(order, { open: true }); bindOrderToggles(head); }
     pay.innerHTML = `<div class="paybox" style="grid-column:1/-1;text-align:center">${ICONS.check}<h3 style="margin-top:8px">${msgEn}</h3><span class="sub th">${msgTh}</span>
+      ${order ? `<p style="margin:4px 0 10px;font-size:18px"><b>Order Number: ${esc(order.order_number)}</b></p>` : ''}
       ${popup ? `<p class="th" style="margin:0 0 14px;font-size:14px">${SUCCESS_MSG}</p>` : ''}
       <a class="btn" href="${H()}/orders">${ICONS.doc} Order History</a></div>`;
-    if (popup) showSuccessPopup();
+    if (popup) showSuccessPopup(order);
   }
   // pop-up สั่งซื้อสำเร็จ หลังส่งสลิปแล้ว
-  function showSuccessPopup() {
+  function showSuccessPopup(order) {
     let m = $('#done-modal');
     if (!m) {
       m = document.createElement('div'); m.id = 'done-modal'; m.className = 'modal';
       m.innerHTML = `<div class="modal-card done-card" role="dialog" aria-modal="true"><button type="button" class="lb-close" aria-label="ปิด">×</button>
         <span class="done-ic">${ICONS.check}</span>
         <b style="font-size:22px">สั่งซื้อสำเร็จ</b><span style="font-size:14px;color:var(--muted)">Order placed successfully</span>
+        ${order ? `<b style="font-size:17px;margin-top:6px">Order Number: ${esc(order.order_number)}</b>` : ''}
         <p class="th" style="margin:6px 0 0;font-size:15px;line-height:1.6">${SUCCESS_MSG}</p>
         <a class="btn" style="margin-top:8px" href="${H()}/orders">${ICONS.doc} Order History</a></div>`;
       document.body.appendChild(m);
@@ -43,60 +42,84 @@
     }
     m.classList.add('open');
   }
-  if (o.status === 'paid' || o.status === 'picked_up') return done('ชำระเงินเรียบร้อยแล้ว ขอบคุณค่ะ', 'Payment received. Thank you!');
-  if (o.status === 'cancelled') return done('คำสั่งซื้อนี้ถูกยกเลิกแล้ว', 'This order was cancelled.');
-  if (o.status === 'slip_uploaded') return done('ได้รับสลิปแล้ว เจ้าหน้าที่กำลังตรวจสอบ', 'Slip received. We are verifying your payment.');
-  // pending or slip_rejected: show the QR again and let the customer (re)upload
-
-  pay.innerHTML = `
-    <div class="paybox">
-      <div id="pay-how"><h3>1. Pay</h3><span class="sub th">ยอดที่ต้องชำระ <b>${money(o.total)} ฿</b></span>
-      <div id="qr-wrap"><div class="qr ph"></div></div></div>
-      <div class="err" id="qr-err"></div>
-    </div>
-    <div class="paybox">
-      <h3>2. Upload slip</h3><span class="sub th">อัปโหลดสลิปโอนเงินเพื่อยืนยันคำสั่งซื้อ (ระบบย่อรูปให้อัตโนมัติ)</span>
-      ${o.has_slip && o.slip_reason ? '<div class="err">' + esc(o.slip_reason) + '</div>' : ''}
+  // วิธีชำระเงิน: โอนเข้าบัญชีธนาคาร (แสดงบัญชี + ยอด กดคัดลอกได้) หรือ QR PromptPay ตามยอด
+  function paymentHtml(pm, amount) {
+    if (pm && pm.bank) {
+      const b = pm.bank;
+      return `<h3>1. Transfer to</h3><span class="sub th">โอนเงินเข้าบัญชีด้านล่างให้ตรงยอด แล้วแนบสลิปในข้อ 2</span>
+        <div class="bank-card">
+          <div class="bank-row"><span class="k">ธนาคาร / Bank</span><b>${esc(b.bank)}</b></div>
+          ${b.account_name ? `<div class="bank-row"><span class="k">ชื่อบัญชี / Account name</span><b>${esc(b.account_name)}</b></div>` : ''}
+          <div class="bank-row"><span class="k">เลขบัญชี / Account no.</span><b class="acct">${esc(b.account_no)}</b><button type="button" class="pill copy" data-copy="${esc(b.account_no)}">Copy</button></div>
+          ${b.branch ? `<div class="bank-row"><span class="k">สาขา / Branch</span><b>${esc(b.branch)}</b></div>` : ''}
+          <div class="bank-row total"><span class="k">ยอดโอน / Amount</span><b class="amt">${money(amount)} ฿</b><button type="button" class="pill copy" data-copy="${Number(amount).toFixed(2)}">Copy</button></div>
+        </div>
+        <small class="th bank-note">กรุณาโอนให้ตรงยอด ${money(amount)} บาท เพื่อให้เจ้าหน้าที่ตรวจสอบและอนุมัติได้เร็ว / Please transfer the exact amount.</small>`;
+    }
+    if (pm && pm.qr_data_url) return `<h3>1. Scan to pay</h3><span class="sub th">สแกน QR เพื่อชำระเงินผ่านแอปธนาคาร ยอด <b>${money(amount)} ฿</b></span><img class="qr" src="${pm.qr_data_url}" alt="PromptPay QR">`;
+    return `<h3>1. Pay</h3><span class="sub th">ยอดที่ต้องชำระ <b>${money(amount)} ฿</b></span>`;
+  }
+  const bindCopy = (root) => $$('.copy', root).forEach((btn) => btn.addEventListener('click', async () => { try { await navigator.clipboard.writeText(btn.dataset.copy); btn.textContent = 'Copied'; setTimeout(() => { btn.textContent = 'Copy'; }, 1500); } catch (e) { /* clipboard blocked */ } }));
+  const uploadBox = (note, reason = '') => `<div class="paybox">
+      <h3>2. Upload slip</h3><span class="sub th">${note}</span>
+      ${reason ? '<div class="err">' + esc(reason) + '</div>' : ''}
       <label class="drop" id="drop"><input type="file" id="slip" accept="image/*" class="hidden"><span id="drop-text">แตะเพื่อเลือกรูปสลิป (jpg / png)<br><small>Tap to choose your slip image</small></span><img id="preview" class="hidden" alt=""></label>
       <button type="button" class="confirm" id="upload" disabled><b>Submit slip</b><small class="th">ส่งสลิป</small></button>
       <div class="err" id="up-err"></div>
     </div>`;
-  try {
-    const q = await api('/api/orders/' + encodeURIComponent(id) + '/qr');
-    if (q.bank) {
-      // โอนเข้าบัญชีธนาคารของร้าน: แสดงบัญชี + ยอดที่ต้องโอน (กดคัดลอกได้)
-      const b = q.bank;
-      $('#pay-how').innerHTML = `<h3>1. Transfer to</h3><span class="sub th">โอนเงินเข้าบัญชีด้านล่างให้ตรงยอด แล้วแนบสลิปในข้อ 2</span>
-        <div class="bank-card">
-          <div class="bank-row"><span class="k">ธนาคาร / Bank</span><b>${esc(b.bank)}</b></div>
-          ${b.account_name ? `<div class="bank-row"><span class="k">ชื่อบัญชี / Account name</span><b>${esc(b.account_name)}</b></div>` : ''}
-          <div class="bank-row"><span class="k">เลขบัญชี / Account no.</span><b class="acct" id="acct-no">${esc(b.account_no)}</b><button type="button" class="pill copy" data-copy="${esc(b.account_no)}">Copy</button></div>
-          ${b.branch ? `<div class="bank-row"><span class="k">สาขา / Branch</span><b>${esc(b.branch)}</b></div>` : ''}
-          <div class="bank-row total"><span class="k">ยอดโอน / Amount</span><b class="amt">${money(q.amount)} ฿</b><button type="button" class="pill copy" data-copy="${Number(q.amount).toFixed(2)}">Copy</button></div>
-        </div>
-        <small class="th bank-note">กรุณาโอนให้ตรงยอด ${money(q.amount)} บาท เพื่อให้เจ้าหน้าที่ตรวจสอบและอนุมัติได้เร็ว / Please transfer the exact amount.</small>`;
-      $$('.copy', $('#pay-how')).forEach((btn) => btn.addEventListener('click', async () => { try { await navigator.clipboard.writeText(btn.dataset.copy); btn.textContent = 'Copied'; setTimeout(() => { btn.textContent = 'Copy'; }, 1500); } catch (e) { /* clipboard blocked */ } }));
-    } else {
-      $('#pay-how').innerHTML = `<h3>1. Scan to pay</h3><span class="sub th">สแกน QR เพื่อชำระเงินผ่านแอปธนาคาร ยอด <b>${money(q.amount)} ฿</b></span><img class="qr" src="${q.qr_data_url}" alt="PromptPay QR">`;
-    }
-  } catch (e) { $('#qr-err').textContent = e.message; }
+  // เลือกรูป → ย่อรูป (สูงสุด 1600px) → onSend(file) ส่งขึ้น server
+  function bindUpload(onSend) {
+    const file = $('#slip');
+    file.addEventListener('change', () => {
+      const f = file.files[0]; $('#upload').disabled = !f; if (!f) return;
+      const img = $('#preview'); img.src = URL.createObjectURL(f); img.classList.remove('hidden'); $('#drop-text').classList.add('hidden');
+    });
+    $('#upload').addEventListener('click', async () => {
+      const f = file.files[0]; if (!f) return; $('#upload').disabled = true; $('#up-err').textContent = '';
+      try { await onSend(await shrinkImage(f, 1600, 1600, { minBytes: 400 * 1024, jpeg: true })); }
+      catch (e) { $('#up-err').textContent = e.message; $('#upload').disabled = false; if (/HTTP 401|เข้าสู่ระบบ|sign in/i.test(e.message)) { await loadMe(true); refreshAccountSlot(); openLoginModal(() => location.reload()); } }
+    });
+  }
 
-  const file = $('#slip');
-  file.addEventListener('change', () => {
-    const f = file.files[0]; $('#upload').disabled = !f; if (!f) return;
-    const img = $('#preview'); img.src = URL.createObjectURL(f); img.classList.remove('hidden'); $('#drop-text').classList.add('hidden');
-  });
-  $('#upload').addEventListener('click', async () => {
-    const f = file.files[0]; if (!f) return; $('#upload').disabled = true; $('#up-err').textContent = '';
-    // ย่อรูปสลิปก่อนส่ง (สูงสุด 1600px) ให้ไฟล์เล็กและอัปโหลดเร็ว
-    const small = await shrinkImage(f, 1600, 1600, { minBytes: 400 * 1024, jpeg: true });
-    const fd = new FormData(); fd.append('slip', small, small.name || 'slip.jpg');
-    try {
+  if (id) {
+    /* ออเดอร์ที่มีในระบบแล้ว (เช่น สลิปไม่ผ่าน ต้องส่งใหม่) */
+    let o;
+    try { o = await api('/api/orders/' + encodeURIComponent(id)); } catch (e) { head.innerHTML = `<div class="empty">ไม่พบคำสั่งซื้อ / Order not found. <a href="${H()}/orders">Order History</a></div>`; return; }
+    head.innerHTML = orderCard(o, { open: true }); bindOrderToggles(head);
+    if (o.status === 'paid' || o.status === 'picked_up') return done('ชำระเงินเรียบร้อยแล้ว ขอบคุณค่ะ', 'Payment received. Thank you!');
+    if (o.status === 'cancelled') return done('คำสั่งซื้อนี้ถูกยกเลิกแล้ว', 'This order was cancelled.');
+    if (o.status === 'slip_uploaded') return done('ได้รับสลิปแล้ว เจ้าหน้าที่กำลังตรวจสอบ', 'Slip received. We are verifying your payment.');
+    pay.innerHTML = `<div class="paybox"><div id="pay-how"><h3>1. Pay</h3><span class="sub th">ยอดที่ต้องชำระ <b>${money(o.total)} ฿</b></span><div class="qr ph"></div></div><div class="err" id="qr-err"></div></div>` + uploadBox('อัปโหลดสลิปโอนเงินใหม่เพื่อยืนยันคำสั่งซื้อ (ระบบย่อรูปให้อัตโนมัติ)', o.has_slip ? o.slip_reason : '');
+    try { const q = await api('/api/orders/' + encodeURIComponent(id) + '/qr'); $('#pay-how').innerHTML = paymentHtml(q, q.amount); bindCopy($('#pay-how')); } catch (e) { $('#qr-err').textContent = e.message; }
+    bindUpload(async (small) => {
+      const fd = new FormData(); fd.append('slip', small, small.name || 'slip.jpg');
       const r = await api('/api/orders/' + encodeURIComponent(id) + '/slip', { method: 'POST', body: fd });
-      if (r.status === 'paid') done('ชำระเงินเรียบร้อยแล้ว ขอบคุณค่ะ', 'Payment verified. Thank you!', { popup: true });
-      else if (r.status === 'slip_uploaded') done('ได้รับสลิปแล้ว เจ้าหน้าที่กำลังตรวจสอบ', 'Slip received. We are verifying your payment.', { popup: true });
+      if (r.status === 'paid') done('ชำระเงินเรียบร้อยแล้ว ขอบคุณค่ะ', 'Payment verified. Thank you!', { popup: true, order: r.order });
+      else if (r.status === 'slip_uploaded') done('ได้รับสลิปแล้ว เจ้าหน้าที่กำลังตรวจสอบ', 'Slip received. We are verifying your payment.', { popup: true, order: r.order });
       else { $('#up-err').textContent = r.reason || 'สลิปไม่ผ่านการตรวจสอบ'; $('#upload').disabled = false; }
-    } catch (e) { $('#up-err').textContent = e.message; $('#upload').disabled = false; }
+    });
+    return;
+  }
+
+  /* คำสั่งซื้อฉบับร่างจากหน้าแคมเปญ/ตะกร้า: ยังไม่มีในระบบ — จะถูกบันทึกเมื่อส่งสลิป */
+  const draft = loadDraft();
+  if (!draft) { head.innerHTML = `<div class="empty">ไม่มีรายการที่รอชำระเงิน / Nothing to pay. <a href="${H()}/">กลับไปเลือกสินค้า</a> · <a href="${H()}/orders">Order History</a></div>`; return; }
+  let q;
+  try { q = await api('/api/quote', { method: 'POST', body: draft }); }
+  catch (e) {
+    if (/HTTP 401|เข้าสู่ระบบ|sign in/i.test(e.message)) { await loadMe(true); refreshAccountSlot(); head.innerHTML = `<div class="empty">กรุณาเข้าสู่ระบบด้วย Google ก่อนชำระเงิน / Please sign in first.</div>`; openLoginModal(() => location.reload()); return; }
+    head.innerHTML = `<div class="empty">${esc(e.message)}<br><a href="${H()}/cart">กลับไปที่ตะกร้า / Back to cart</a></div>`; return;
+  }
+  const pseudo = { id: '', order_number: '—', store_name: q.store_name, pickup_date: q.pickup_date, pickup_time: q.pickup_time, lines: q.lines, total: q.total, status: 'draft', phone: q.phone, note: q.note, created_at: '' };
+  head.innerHTML = orderCard(pseudo, { open: true }); bindOrderToggles(head);
+  pay.innerHTML = `<div class="paybox"><div id="pay-how">${paymentHtml(q.payment, q.amount)}</div></div>` + uploadBox('อัปโหลดสลิปโอนเงินเพื่อยืนยันคำสั่งซื้อ — <b>ออเดอร์จะถูกบันทึกและได้เลขออเดอร์เมื่อส่งสลิปแล้ว</b> (ระบบย่อรูปให้อัตโนมัติ)');
+  bindCopy($('#pay-how'));
+  bindUpload(async (small) => {
+    const fd = new FormData(); fd.append('order', JSON.stringify(draft)); fd.append('slip', small, small.name || 'slip.jpg');
+    const order = await api('/api/orders', { method: 'POST', body: fd });
+    cartClear(); setNote(''); clearDraft();
+    if (order.status === 'paid') done('ชำระเงินเรียบร้อยแล้ว ขอบคุณค่ะ', 'Payment verified. Thank you!', { popup: true, order });
+    else done('ได้รับสลิปแล้ว เจ้าหน้าที่กำลังตรวจสอบ', 'Slip received. We are verifying your payment.', { popup: true, order });
   });
 })();
 </script>

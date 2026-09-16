@@ -241,48 +241,6 @@ app.get('/api/stock', (req, res) => res.json(stockView(requestCampaign(req))));
 app.get('/api/stores', (req, res) => res.json(loadStores()));
 app.get('/api/config', (req, res) => res.json({ payment_ready: qrConfigured(), payment_mode: paymentMode(process.env), slip_auto_verify: slipOkEnabled(), login_required: loginRequired(), google_client_id: GOOGLE_CLIENT_ID }));
 
-/** Body: { store_id, note, campaign?: slug, lines: [{set_id, quantity}] } (drink_id/dessert_id lines are still accepted for older clients) */
-app.post('/api/orders', (req, res) => {
-  if (loginRequired() && !customerLoggedIn(req.customerId)) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบด้วย Google ก่อนยืนยันคำสั่งซื้อ / Please sign in with Google first', login_required: true });
-  const { store_id, note = '', lines } = req.body || {};
-  const phone = String((req.body && req.body.phone) || '').replace(/[^\d+]/g, '').slice(0, 20);   // เบอร์ติดต่อผู้รับขนม
-  if (!/^(\+66|0)\d{8,9}$/.test(phone)) return res.status(400).json({ error: 'กรุณาใส่เบอร์ติดต่อผู้รับขนม (เบอร์มือถือ 10 หลัก) / Contact number is required', field: 'phone' });
-  const store = loadStores().find((s) => s.id === String(store_id));
-  if (!store) return res.status(400).json({ error: 'กรุณาเลือกสาขาที่รับสินค้า' });
-  if (!Array.isArray(lines) || lines.length === 0) return res.status(400).json({ error: 'ยังไม่มีรายการในตะกร้า' });
-  const campaign = requestCampaign(req);
-  if (campaign.orders_open === 0) return res.status(400).json({ error: 'แคมเปญนี้ปิดรับคำสั่งซื้อแล้ว / This campaign is closed' });
-  const menu = menuFor(campaign);
-  // วันที่รับของ: บังคับเลือกเมื่อแคมเปญกำหนดวันไว้ และต้องเป็นวันในรายการ
-  // วันรับของกำหนดจากรอบสั่ง (ตาราง pickup_map: สั่ง 18 ก.ย. → รับ 25 ก.ย. …) ลูกค้าไม่ต้องเลือก; แคมเปญที่ไม่มีตารางยังให้เลือกจากรายการได้
-  const mustPickup = (menu.pickup_map || {})[bangkokToday(menu)];
-  const pickup_date = mustPickup || String((req.body && req.body.pickup_date) || '').trim();
-  if (!mustPickup && menu.pickup_dates.length && !menu.pickup_dates.includes(pickup_date)) return res.status(400).json({ error: 'กรุณาเลือกวันที่รับของ / Please choose a pick-up date', field: 'pickup_date' });
-  const pickup_time = String((req.body && req.body.pickup_time) || '').trim();
-  if (menu.pickup_times.length && !menu.pickup_times.includes(pickup_time)) return res.status(400).json({ error: 'กรุณาเลือกเวลาที่รับของ / Please choose a pick-up time', field: 'pickup_time' });
-  const built = M.buildOrderRows(lines, menu);
-  if (built.error) return res.status(400).json({ error: built.error });
-  const { rows, want, total } = built;
-  const id = crypto.randomUUID();
-  const create = db.transaction(() => {
-    const short = stockShortfall(want, campaign); // checked inside the write transaction so two customers cannot both take the last pieces
-    if (short) { const e = new Error(short); e.status = 409; throw e; }
-    const ow = orderWindow(campaign); // ช่วงวันเปิดรับ + โควตาต่อวัน ตรวจใน transaction เดียวกัน กันสั่งเกินโควตาพร้อมกัน
-    if (!ow.open) { const e = new Error(ow.message); e.status = 409; e.order_window = ow; throw e; }
-    touchCustomer(req.customerId); linkCustomerCampaign(req.customerId, campaign.id);
-    const pdpaAt = (customerRow(req.customerId) || {}).pdpa_accepted_at || '';
-    const order_number = nextOrderNumber();
-    // A zero-total order (free campaign item) has nothing to pay: it is paid on creation.
-    db.prepare(`INSERT INTO orders(id, order_number, customer_id, campaign_id, store_id, store_name, total, note, phone, pickup_date, pickup_time, pdpa_accepted_at, order_day, status, paid_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, order_number, req.customerId, campaign.id, store.id, `${store.brand} - ${store.name}`, total, String(note).slice(0, 500), phone, (mustPickup || menu.pickup_dates.length) ? pickup_date : '', menu.pickup_times.length ? pickup_time : '', pdpaAt, ow.today,
-                total > 0 ? 'pending' : 'paid', total > 0 ? null : new Date().toISOString().slice(0, 19).replace('T', ' '));
-    const ins = db.prepare(`INSERT INTO order_lines(order_id, set_id, set_label, set_name, items_json, pieces, drink_pieces, dessert_pieces, drink_id, drink_name, dessert_id, dessert_name, quantity, unit_price, line_total)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-    for (const r of rows) ins.run(id, r.set_id, r.set_label, r.set_name, r.items_json, r.pieces, r.drink_pieces, r.dessert_pieces, r.drink_id, r.drink_name, r.dessert_id, r.dessert_name, r.quantity, r.unit_price, r.line_total);
-  });
-  try { create(); } catch (e) { if (e.status === 409) return res.status(409).json({ error: e.message, stock: stockView(campaign) }); throw e; }
-  res.status(201).json(orderView(getOrder(id)));
-});
 
 function getOrder(id) {
   const o = db.prepare('SELECT o.*, c.name AS campaign_name FROM orders o LEFT JOIN campaigns c ON c.id = o.campaign_id WHERE o.id = ?').get(id);
@@ -371,6 +329,87 @@ const upload = multer({
   limits: { fileSize: 8 * 1024 * 1024 },
   fileFilter: (req, file, cb) => cb(null, /^image\/(jpeg|png|webp|heic|heif)$/.test(file.mimetype)),
 });
+/** ตรวจคำสั่งซื้อ (ยังไม่บันทึก) → { ok: true, ...ข้อมูลพร้อมบันทึก } หรือ { status, error, field }
+ *  Body: { store_id, note, phone, pickup_date, pickup_time, campaign?: slug, lines: [{set_id, quantity}] } */
+function validateOrder(req, b) {
+  const bad = (status, error, extra = {}) => ({ ok: false, status, error, ...extra });
+  if (loginRequired() && !customerLoggedIn(req.customerId)) return bad(401, 'กรุณาเข้าสู่ระบบด้วย Google ก่อนยืนยันคำสั่งซื้อ / Please sign in with Google first', { login_required: true });
+  const { store_id, note = '', lines } = b || {};
+  const phone = String((b && b.phone) || '').replace(/[^\d+]/g, '').slice(0, 20);   // เบอร์ติดต่อผู้รับขนม
+  if (!/^(\+66|0)\d{8,9}$/.test(phone)) return bad(400, 'กรุณาใส่เบอร์ติดต่อผู้รับขนม (เบอร์มือถือ 10 หลัก) / Contact number is required', { field: 'phone' });
+  const store = loadStores().find((s) => s.id === String(store_id));
+  if (!store) return bad(400, 'กรุณาเลือกสาขาที่รับสินค้า');
+  if (!Array.isArray(lines) || lines.length === 0) return bad(400, 'ยังไม่มีรายการในตะกร้า');
+  const campaign = (b && b.campaign && campaignBySlug(b.campaign)) || requestCampaign(req);
+  if (campaign.orders_open === 0) return bad(400, 'แคมเปญนี้ปิดรับคำสั่งซื้อแล้ว / This campaign is closed');
+  const menu = menuFor(campaign);
+  // วันรับของกำหนดจากรอบสั่ง (ตาราง pickup_map) ลูกค้าไม่ต้องเลือก; แคมเปญที่ไม่มีตารางยังให้เลือกจากรายการได้
+  const mustPickup = (menu.pickup_map || {})[bangkokToday(menu)];
+  const pickup_date = mustPickup || String((b && b.pickup_date) || '').trim();
+  if (!mustPickup && menu.pickup_dates.length && !menu.pickup_dates.includes(pickup_date)) return bad(400, 'กรุณาเลือกวันที่รับของ / Please choose a pick-up date', { field: 'pickup_date' });
+  const pickup_time = String((b && b.pickup_time) || '').trim();
+  if (menu.pickup_times.length && !menu.pickup_times.includes(pickup_time)) return bad(400, 'กรุณาเลือกเวลาที่รับของ / Please choose a pick-up time', { field: 'pickup_time' });
+  const built = M.buildOrderRows(lines, menu);
+  if (built.error) return bad(400, built.error);
+  const sv = stockView(campaign);
+  if (!sv.order_window.open) return bad(409, sv.order_window.message, { stock: sv });
+  const short = M.stockShortfall(built.want, sv.remaining); if (short) return bad(409, short, { stock: sv });
+  return { ok: true, campaign, menu, store, store_name: `${store.brand} - ${store.name}`, phone, note: String(note).slice(0, 500), pickup_date: (mustPickup || menu.pickup_dates.length) ? pickup_date : '', pickup_time: menu.pickup_times.length ? pickup_time : '', rows: built.rows, want: built.want, total: built.total };
+}
+const sendBad = (res, v) => { const { ok, status, ...rest } = v; return res.status(status).json(rest); };
+/** สรุปคำสั่งซื้อ + วิธีชำระเงิน (ยังไม่มีออเดอร์ในระบบจนกว่าจะส่งสลิป) */
+app.post('/api/quote', async (req, res) => {
+  const v = validateOrder(req, req.body || {}); if (!v.ok) return sendBad(res, v);
+  const lines = v.rows.map((r) => { let items = []; try { items = r.items_json ? JSON.parse(r.items_json) : []; } catch (e) { items = []; }
+    return { set_id: r.set_id, set_label: r.set_label, set_name: r.set_name, items, name: r.set_id ? `${r.set_label || 'SET ' + r.set_id} · ${r.set_name}` : [r.drink_name, r.dessert_name].filter(Boolean).join(' + '), pieces: r.pieces, quantity: r.quantity, unit_price: r.unit_price, line_total: r.line_total }; });
+  let payment = null;
+  if (v.total > 0) {
+    if (!qrConfigured()) return res.status(503).json({ error: 'ยังไม่ได้ตั้งค่าบัญชีรับเงินของร้าน (BANK_ACCOUNT_NO หรือ PROMPTPAY_ID)' });
+    const bank = bankAccount(process.env); payment = bank ? { bank } : { qr_data_url: await generateQR(v.total) };
+  }
+  res.json({ campaign: campaignPublic(v.campaign), campaign_name: v.campaign.name, store_id: v.store.id, store_name: v.store_name, phone: v.phone, note: v.note, pickup_date: v.pickup_date, pickup_time: v.pickup_time, order_day: bangkokToday(v.menu), lines, total: v.total, amount: v.total, payment, slip_required: v.total > 0 });
+});
+/** สั่งซื้อ = ส่งสลิปพร้อมรายการ (multipart: order = JSON, slip = รูป) — ออเดอร์เกิดในระบบเมื่อมีสลิปเท่านั้น (JSON ล้วนใช้ได้เฉพาะยอด 0 บาท) */
+app.post('/api/orders', upload.single('slip'), async (req, res) => {
+  const drop = () => { if (req.file) fs.unlink(req.file.path, () => {}); };
+  let b = req.body || {};
+  if (req.is('multipart/form-data')) { try { b = JSON.parse(b.order || '{}'); } catch (e) { drop(); return res.status(400).json({ error: 'ข้อมูลคำสั่งซื้อไม่ถูกต้อง' }); } }
+  const v = validateOrder(req, b); if (!v.ok) { drop(); return sendBad(res, v); }
+  const { campaign, menu, store, rows, want, total } = v;
+  let r = null;
+  if (total > 0) {
+    if (!req.file) return res.status(400).json({ error: 'กรุณาแนบสลิปโอนเงิน (jpg/png) / Please attach your transfer slip', field: 'slip' });
+    const isDuplicate = ({ hash, ref }) => {
+      if (hash && db.prepare('SELECT 1 FROM orders WHERE slip_hash = ? AND status <> ?').get(hash, 'cancelled')) return true;
+      if (ref && db.prepare('SELECT 1 FROM orders WHERE slip_ref = ? AND status <> ?').get(ref, 'cancelled')) return true;
+      return false;
+    };
+    r = await verifySlip(req.file.path, total, { isDuplicate });
+    // สลิปซ้ำ/ตรวจไม่ผ่าน = ไม่สร้างออเดอร์ (ไม่กินโควตา ไม่ขึ้นหลังบ้าน)
+    if (!r.verified && !r.manual) { drop(); return res.status(400).json({ error: r.reason || 'สลิปไม่ผ่านการตรวจสอบ / Slip rejected', field: 'slip' }); }
+  }
+  const id = crypto.randomUUID();
+  const status = total > 0 ? (r.verified ? 'paid' : 'slip_uploaded') : 'paid';
+  const create = db.transaction(() => {
+    const short = stockShortfall(want, campaign); // checked inside the write transaction so two customers cannot both take the last pieces
+    if (short) { const e = new Error(short); e.status = 409; throw e; }
+    const ow = orderWindow(campaign); // ช่วงวันเปิดรับ + โควตาต่อวัน ตรวจใน transaction เดียวกัน กันสั่งเกินโควตาพร้อมกัน
+    if (!ow.open) { const e = new Error(ow.message); e.status = 409; e.order_window = ow; throw e; }
+    touchCustomer(req.customerId); linkCustomerCampaign(req.customerId, campaign.id);
+    const pdpaAt = (customerRow(req.customerId) || {}).pdpa_accepted_at || '';
+    const order_number = nextOrderNumber();
+    db.prepare(`INSERT INTO orders(id, order_number, customer_id, campaign_id, store_id, store_name, total, note, phone, pickup_date, pickup_time, pdpa_accepted_at, order_day, status, paid_at, slip_path, slip_hash, slip_ref, slip_amount, slip_reason, slip_verified)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, order_number, req.customerId, campaign.id, store.id, v.store_name, total, v.note, v.phone, v.pickup_date, v.pickup_time, pdpaAt, ow.today,
+                status, status === 'paid' ? W.bangkokNow() : null, r ? req.file.path : '', r ? (r.slip_hash || '') : '', r ? (r.ref || '') : '', r ? (r.amount ?? null) : null, r ? (r.reason || '') : '', r && r.verified ? 1 : 0);
+    const ins = db.prepare(`INSERT INTO order_lines(order_id, set_id, set_label, set_name, items_json, pieces, drink_pieces, dessert_pieces, drink_id, drink_name, dessert_id, dessert_name, quantity, unit_price, line_total)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    for (const x of rows) ins.run(id, x.set_id, x.set_label, x.set_name, x.items_json, x.pieces, x.drink_pieces, x.dessert_pieces, x.drink_id, x.drink_name, x.dessert_id, x.dessert_name, x.quantity, x.unit_price, x.line_total);
+  });
+  try { create(); } catch (e) { drop(); if (e.status === 409) return res.status(409).json({ error: e.message, stock: stockView(campaign) }); throw e; }
+  if (status === 'paid' && total > 0) await notifyApproved(id);   // ตรวจอัตโนมัติผ่าน → อีเมลยืนยันทันที
+  res.status(201).json(orderView(getOrder(id)));
+});
+
 app.post('/api/orders/:id/slip', upload.single('slip'), async (req, res) => {
   const o = ownOrderOr404(req, res); if (!o) return;
   if (!req.file) return res.status(400).json({ error: 'กรุณาแนบรูปสลิป (jpg/png)' });
@@ -381,9 +420,11 @@ app.post('/api/orders/:id/slip', upload.single('slip'), async (req, res) => {
     return false;
   };
   const r = await verifySlip(req.file.path, o.total, { orderCreatedAt: o.created_at, isDuplicate });
+  // สลิปซ้ำ/ตรวจไม่ผ่าน = ไม่แตะออเดอร์เดิม (สลิปเดิมและสถานะคงอยู่) แค่บอกเหตุผล
+  if (!r.verified && !r.manual) { fs.unlink(req.file.path, () => {}); return res.json({ ok: false, status: o.status, reason: r.reason, order: orderView(o) }); }
   if (o.slip_path && o.slip_path !== req.file.path) fs.unlink(o.slip_path, () => {});
   // verified by SlipOK -> paid; no verifier -> finance reviews; failed check -> back to payable with the reason
-  const status = r.verified ? 'paid' : (r.manual ? 'slip_uploaded' : (o.status === 'slip_rejected' ? 'slip_rejected' : 'pending'));
+  const status = r.verified ? 'paid' : 'slip_uploaded';
   db.prepare(`UPDATE orders SET slip_path = ?, slip_hash = ?, slip_ref = ?, slip_amount = ?, slip_reason = ?, slip_verified = ?, status = ?,
               paid_at = CASE WHEN ? = 'paid' THEN datetime('now','localtime') ELSE paid_at END WHERE id = ?`)
     .run(req.file.path, r.slip_hash || '', r.ref || '', r.amount ?? null, r.reason || '', r.verified ? 1 : 0, status, status, o.id);
