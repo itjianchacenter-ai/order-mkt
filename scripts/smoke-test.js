@@ -45,6 +45,7 @@ const login = (who, username, password) => call(who, 'POST', '/api/admin/login',
     const menu = r.json; const A = menu.sets[0].id, B = menu.sets[1].id; // SET A 369 · SET B 379, each set = 1 unit of stock
     check('menu carries pick-up times', Array.isArray(menu.pickup_times) && menu.pickup_times.join('|') === '10:00-11:00 น.|13:00-15:00 น.|17:00-20:00 น.', menu.pickup_times);
     check('menu carries pick-up dates', Array.isArray(menu.pickup_dates) && menu.pickup_dates.join() === '2026-09-25,2026-09-26,2026-09-27,2026-09-28' && menu.sets[0].price === 369 && menu.sets[1].price === 379 && menu.sets[0].items[0].name_th === 'เผือกโมจิ', menu.pickup_dates);
+    { const rr = await fetch(base + '/api/menu'); check('api responses are not cacheable by CDN/Cloudflare', rr.headers.get('cache-control') === 'no-store'); }
     r = await call('customer', 'GET', '/api/stores'); check('stores load (5 branches: Central World Groove merged, Emsphere)', r.status === 200 && r.json.length === 5 && r.json.some((x) => x.name === 'Emsphere') && r.json.some((x) => x.name === 'Central World Groove') && !r.json.some((x) => x.name === 'Groove'));
     const storeId = r.json[1].id; // central-world (Central World Groove)
 

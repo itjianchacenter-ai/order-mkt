@@ -195,8 +195,10 @@ function stockShortfall(want, c) {
 }
 
 const app = express();
-app.set('trust proxy', 1);
+app.set('trust proxy', 1);   // อยู่หลัง reverse proxy / Cloudflare: อ่าน IP และ https จาก X-Forwarded-*
 app.disable('x-powered-by');
+// API และรูปสลิปห้าม cache ที่ CDN/Cloudflare (ข้อมูลออเดอร์/สต๊อก/โควตาต้องสดเสมอ)
+app.use(['/api', '/uploads'], (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 
