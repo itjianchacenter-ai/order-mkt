@@ -44,7 +44,7 @@ function pvSeed() {
       total, status, note, created_at: pvNow(-minutesAgo), paid_at: ['paid', 'picked_up'].includes(status) ? pvNow(-minutesAgo + 6) : null,
       picked_up_at: status === 'picked_up' ? pvNow(-minutesAgo + 90) : null, cancelled_at: status === 'cancelled' ? pvNow(-minutesAgo + 30) : null,
       slip_url: slip ? pvSlipSvg(total) : '', slip_hash: slip ? 'seed' + i : '', slip_ref: slip && ['paid', 'picked_up'].includes(status) ? 'DEMO' + day + i : '', slip_amount: slip ? total : null,
-      slip_reason: reason || (status === 'slip_uploaded' ? 'รอเจ้าหน้าที่ตรวจสอบสลิป' : ''), slip_verified: 0, lines: ls, promo_code: status === 'picked_up' ? '2026091234' : null,
+      slip_reason: reason || (status === 'slip_uploaded' ? 'รอเจ้าหน้าที่ตรวจสอบสลิป' : ''), slip_verified: 0, lines: ls, promo_code: status === 'picked_up' ? 'NVR261234' : null,
     };
   };
   const orders = [
@@ -63,7 +63,7 @@ function pvSeed() {
     { id: 'u-fin', username: 'finance', password: 'jiancha', role: 'finance', display_name: 'Finance', department: 'Finance', active: true, created_at: pvNow(-9000) },
   ];
   const st = PREVIEW_MENU.stock || {}, pc = PREVIEW_MENU.promo_code || {};
-  const campaigns = [{ id: PV_CAMPAIGN_ID, slug: 'jianchaxnavori', name: 'JIANCHA x NAVORI', active: true, orders_open: true, stock: { total: st.total ?? 1000, drink: st.drink ?? null, dessert: st.dessert ?? null }, promo_code: { from: pc.from || 2026090001, to: pc.to || 2026092000 }, created_at: pvNow(-9000) }];
+  const campaigns = [{ id: PV_CAMPAIGN_ID, slug: 'jianchaxnavori', name: 'JIANCHA x NAVORI', active: true, orders_open: true, stock: { total: st.total ?? 1000, drink: st.drink ?? null, dessert: st.dessert ?? null }, promo_code: { prefix: pc.prefix || '', from: pc.from || 2026090001, to: pc.to || 2026092000 }, created_at: pvNow(-9000) }];
   return { orders, users, campaigns, customers: [pvOwnerRecord()], customer: null, session: null, owner_migrated: true, counter: { day, seq: orders.length } };
 }
 function pvSetLine(s, q) {
@@ -289,9 +289,10 @@ async function api(path, opts = {}) {
     if (admin && o.customer_id !== me && !can('code')) pvFail('สิทธิ์ไม่เพียงพอ');
     if (!o.promo_code) {
       if (!['paid', 'picked_up'].includes(o.status)) pvFail('รับ code ได้เมื่อชำระเงินเรียบร้อยแล้ว / Available after payment');
-      const c = d.campaigns.find((x) => x.id === o.campaign_id) || active; const from = c.promo_code.from, to = c.promo_code.to;
-      const used = new Set(d.orders.map((x) => x.promo_code).filter(Boolean));
-      let code; do { code = String(from + Math.floor(Math.random() * (to - from + 1))); } while (used.has(code));
+      const c = d.campaigns.find((x) => x.id === o.campaign_id) || active; const from = c.promo_code.from, to = c.promo_code.to; const prefix = c.promo_code.prefix || '';
+      let max = from - 1; for (const x of d.orders) { if (x.campaign_id !== c.id || !x.promo_code) continue; const s = String(x.promo_code); if (prefix && !s.startsWith(prefix)) continue; const n = parseInt(prefix ? s.slice(prefix.length) : s, 10); if (n > max) max = n; }
+      const n = Math.max(from, max + 1); if (n > to) pvFail('รหัสโปรโมชันถูกใช้ครบแล้ว กรุณาติดต่อเจ้าหน้าที่');
+      const code = prefix ? prefix + String(n).padStart(String(to).length, '0') : String(n);
       o.promo_code = code; pvSave(d);
     }
     return { promo_code: o.promo_code, order: pvView(d, o) };
@@ -354,7 +355,7 @@ async function api(path, opts = {}) {
     const from = parseInt(body.promo_from, 10), to = parseInt(body.promo_to, 10); if (!(from >= 0 && to >= from)) pvFail('ช่วงรหัสโปรโมชันไม่ถูกต้อง');
     let id = pvSlug(name), n = 2; while (d.campaigns.some((c) => c.id === id)) id = `${pvSlug(name)}-${n++}`;
     const slug = pvSlugOf(body.slug || name); if (slug.length < 2) pvFail('ลิงก์แคมเปญ (URL) ต้องเป็น a-z, 0-9 อย่างน้อย 2 ตัว'); if (d.campaigns.some((c) => c.slug === slug)) pvFail(`ลิงก์ /${slug}/ ถูกใช้แล้ว กรุณาตั้งใหม่`);
-    const c = { id, slug, name, active: false, orders_open: body.orders_open !== false, stock: { total: pvLim(body.stock_total), drink: pvLim(body.stock_drink), dessert: pvLim(body.stock_dessert) }, promo_code: { from, to }, created_at: pvNow() };
+    const c = { id, slug, name, active: false, orders_open: body.orders_open !== false, stock: { total: pvLim(body.stock_total), drink: pvLim(body.stock_drink), dessert: pvLim(body.stock_dessert) }, promo_code: { prefix: String(body.promo_prefix || '').toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 12), from, to }, created_at: pvNow() };
     d.campaigns.push(c); if (body.active) { d.campaigns.forEach((x) => { x.active = false; }); c.active = true; }
     pvSave(d); return pvCampaignStats(d, c);
   }
@@ -365,7 +366,7 @@ async function api(path, opts = {}) {
     if (!(from >= 0 && to >= from)) pvFail('ช่วงรหัสโปรโมชันไม่ถูกต้อง');
     if ('slug' in body) { const slug = pvSlugOf(body.slug || name); if (slug.length < 2) pvFail('ลิงก์แคมเปญ (URL) ต้องเป็น a-z, 0-9 อย่างน้อย 2 ตัว'); if (d.campaigns.some((x) => x.slug === slug && x.id !== c.id)) pvFail(`ลิงก์ /${slug}/ ถูกใช้แล้ว กรุณาตั้งใหม่`); c.slug = slug; }
     if ('orders_open' in body) c.orders_open = Boolean(body.orders_open);
-    c.name = name; c.promo_code = { from, to }; if ('stock_total' in body) c.stock.total = pvLim(body.stock_total);
+    c.name = name; c.promo_code = { prefix: String(body.promo_prefix ?? c.promo_code.prefix ?? '').toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 12), from, to }; if ('stock_total' in body) c.stock.total = pvLim(body.stock_total);
     if (body.active === true) { d.campaigns.forEach((x) => { x.active = false; }); c.active = true; }
     pvSave(d); return pvCampaignStats(d, c);
   }
