@@ -339,20 +339,7 @@
     });
     draw();
   }
-  // downscale a picture in the browser before uploading (keeps uploads small; JPEG unless the source is PNG)
-  async function shrinkImage(file, maxW, maxH) {
-    if (file.type === 'image/svg+xml' || file.type === 'image/gif') return file;
-    try {
-      const bmp = await createImageBitmap(file);
-      const scale = Math.min(1, maxW / bmp.width, maxH / bmp.height);
-      if (scale === 1 && file.size < 600 * 1024) return file;
-      const c = document.createElement('canvas'); c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
-      c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
-      const type = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
-      const blob = await new Promise((res) => c.toBlob(res, type, 0.86));
-      return new File([blob], (file.name || 'image').replace(/\.[^.]+$/, '') + (type === 'image/png' ? '.png' : '.jpg'), { type });
-    } catch (e) { return file; }
-  }
+  // shrinkImage() มาจาก js/app.js
 
   /* ───────── shared context for Order · Slip Issue · Store Pick-up Order ───────── */
   const [stores, campaigns] = await Promise.all([api('/api/stores'), api('/api/admin/campaigns')]);

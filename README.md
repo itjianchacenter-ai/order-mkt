@@ -166,7 +166,7 @@ node scripts/reset-data.js --yes
 
 ## ขึ้นระบบจริงบน Cloudflare Pages (แนะนำ)
 
-ระบบทั้งหมด (API, ฐานข้อมูล, รูปสลิป, อีเมล, หลังบ้าน) รันบน Cloudflare โดยไม่ต้องมีเซิร์ฟเวอร์: หน้าเว็บจาก `public/` + `_worker.js` (bundle จาก `worker/` ด้วย `scripts/build-worker.js`) ใช้ **D1** (SQLite ของ Cloudflare) เป็นฐานข้อมูลกลาง และ **R2** เก็บรูปสลิป/รูป Design ตารางและ API เหมือน `server.js` ทุกอย่าง (ตารางถูกสร้างและ seed บัญชีหลังบ้าน + แคมเปญแรกให้เองตอนเปิดใช้ครั้งแรก) ลูกค้าทุกคนที่ล็อกอิน Google จากทุกเครื่อง/เบราว์เซอร์จะอยู่ในเมนู **Customer** ของหลังบ้าน
+ระบบทั้งหมด (API, ฐานข้อมูล, รูปสลิป, อีเมล, หลังบ้าน) รันบน Cloudflare โดยไม่ต้องมีเซิร์ฟเวอร์: หน้าเว็บจาก `public/` + `_worker.js` (bundle จาก `worker/` ด้วย `scripts/build-worker.js`) ใช้ **D1** (SQLite ของ Cloudflare ฟรี 5 GB) เป็นฐานข้อมูลกลาง รูปสลิป/รูป Design เก็บใน D1 ด้วย (ผูก **R2** เพิ่มได้ถ้าต้องการ แต่ R2 ต้องผูกบัตร) ตารางและ API เหมือน `server.js` ทุกอย่าง (ตารางถูกสร้างและ seed บัญชีหลังบ้าน + แคมเปญแรกให้เองตอนเปิดใช้ครั้งแรก) ลูกค้าทุกคนที่ล็อกอิน Google จากทุกเครื่อง/เบราว์เซอร์จะอยู่ในเมนู **Customer** ของหลังบ้าน
 
 ### 1. สร้างฐานข้อมูลและที่เก็บไฟล์ (ทำครั้งเดียว)
 
@@ -175,7 +175,7 @@ node scripts/reset-data.js --yes
 | เมนู | ทำอะไร |
 |---|---|
 | Storage & Databases → **D1 SQL Database** → Create | ตั้งชื่อ `jc-order` (ไม่ต้องสร้างตารางเอง) |
-| Storage & Databases → **R2 Object Storage** → Create bucket | ตั้งชื่อ `jc-files` (ต้องเปิดใช้ R2 ครั้งแรก ผูกบัตรได้ แต่ปริมาณของเว็บนี้อยู่ใน free tier) |
+| (ไม่บังคับ) Storage & Databases → **R2 Object Storage** → Create bucket | ตั้งชื่อ `jc-files` ใช้เก็บรูปสลิปแทน D1 — ต้องผูกบัตรตอนเปิดใช้ R2 (ปริมาณเว็บนี้อยู่ใน free tier) ถ้าไม่ผูก รูปจะเก็บใน D1 (จำกัด 1.5 MB/รูป หน้า pay ย่อรูปให้อัตโนมัติ) |
 
 ### 2. สร้าง Pages project จาก repo
 
@@ -205,9 +205,9 @@ Workers & Pages → Create → **Pages** → Connect to Git → เลือก 
 | ชนิด | Variable name | เลือก |
 |---|---|---|
 | D1 database | `DB` | `jc-order` |
-| R2 bucket | `FILES` | `jc-files` |
+| R2 bucket (ไม่บังคับ) | `FILES` | `jc-files` |
 
-ถ้ายังไม่ได้ผูก เว็บจะแสดงข้อความบอกให้ผูก `DB` และ `FILES` แทนหน้าเว็บ หลังเพิ่ม bindings/ตัวแปรให้กด **Retry deployment** (หรือ push ใหม่) 1 ครั้ง
+ถ้ายังไม่ได้ผูก `DB` เว็บจะแสดงข้อความบอกให้ผูกแทนหน้าเว็บ (`/api/admin/me` บอก `file_storage` = `d1` หรือ `r2`) หลังเพิ่ม bindings/ตัวแปรให้กด **Retry deployment** (หรือ push ใหม่) 1 ครั้ง
 
 > ถ้า build ล้มตอน `npm install` (แพ็กเกจ `better-sqlite3` ของเวอร์ชันเซิร์ฟเวอร์ต้อง compile) ให้เพิ่มตัวแปร `SKIP_INSTALL_DEPS` = `true` และเปลี่ยน Build command เป็น `npm ci --ignore-scripts && bash scripts/build-site.sh`
 
@@ -225,7 +225,8 @@ Pages project → Custom domains → Set up a custom domain → `order.jianchate
 ### ทดสอบเครื่องตัวเอง
 
 ```bash
-npm run test:cf   # build เว็บจริง + รัน wrangler pages dev (D1/R2 จำลองในเครื่อง) + smoke test ชุดเดียวกับ npm test
+npm run test:cf      # build เว็บจริง + รัน wrangler pages dev (D1/R2 จำลองในเครื่อง) + smoke test ชุดเดียวกับ npm test
+npm run test:cf:d1   # แบบไม่ผูก R2 (รูปเก็บใน D1)
 npm run dev:cf    # เปิดเว็บจริงที่ http://localhost:8788 ด้วย D1/R2 จำลอง (ไม่มี Google login: GOOGLE_CLIENT_ID ว่าง)
 ```
 

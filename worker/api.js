@@ -4,6 +4,7 @@ import { MENU, STORES } from './data.js';
 import { generateQR, qrConfigured } from './qr.js';
 import { sendMail } from './mail.js';
 import { verifySlip, slipOkEnabled } from './slip.js';
+import { putFile, getFile, deleteFile, fileMax, usingR2 } from './files.js';
 import * as M from '../lib/menu.js';
 import * as W from '../lib/window.js';
 import { approvalEmail } from '../lib/email.js';
@@ -148,7 +149,7 @@ async function readUpload(c, field, accept) {
   let fd; try { fd = await c.req.formData(); } catch (e) { return null; }
   const f = fd.get(field);
   if (!f || typeof f === 'string' || !accept.test(f.type || '')) return null;
-  if (f.size > 8 * 1024 * 1024) fail(400, 'ไฟล์ใหญ่เกิน 8 MB');
+  if (f.size > fileMax(c.env)) fail(400, usingR2(c.env) ? 'ไฟล์ใหญ่เกิน 8 MB' : 'ไฟล์ใหญ่เกิน 1.5 MB กรุณาเลือกรูปที่เล็กลง / Image too large (max 1.5 MB)');
   return { bytes: await f.arrayBuffer(), type: f.type, ext: IMG_EXT[f.type] || '.jpg', name: f.name || '' };
 }
 
@@ -301,8 +302,8 @@ on('POST', '/api/orders/:id/slip', async (c) => {
   };
   const r = await verifySlip(c.env, f.bytes, f.type, o.total, { orderCreatedAt: o.created_at, isDuplicate });
   const key = `slips/${Date.now()}-${randomHex(6)}${f.ext}`;
-  await c.env.FILES.put(key, f.bytes, { httpMetadata: { contentType: f.type } });
-  if (o.slip_path && o.slip_path !== key) c.ctx.waitUntil(c.env.FILES.delete(o.slip_path).catch(() => {}));
+  await putFile(c.env, key, f.bytes, f.type, now());
+  if (o.slip_path && o.slip_path !== key) c.ctx.waitUntil(deleteFile(c.env, o.slip_path));
   // verified by SlipOK -> paid; no verifier -> finance reviews; failed check -> back to payable with the reason
   const status = r.verified ? 'paid' : (r.manual ? 'slip_uploaded' : (o.status === 'slip_rejected' ? 'slip_rejected' : 'pending'));
   await c.db.run(`UPDATE orders SET slip_path = ?, slip_hash = ?, slip_ref = ?, slip_amount = ?, slip_reason = ?, slip_verified = ?, status = ?, paid_at = CASE WHEN ? = 'paid' THEN ? ELSE paid_at END WHERE id = ?`,
@@ -322,7 +323,7 @@ on('POST', '/api/admin/login', async (c) => {
 on('POST', '/api/admin/logout', async (c) => { c.cookies.push(cookie(ADMIN_COOKIE, '', { maxAge: 0, secure: c.secure })); return json({ ok: true }); });
 on('GET', '/api/admin/me', async (c) => {
   const u = await adminUser(c);
-  return json({ admin: Boolean(u), user: u ? userView(u) : null, permissions: u ? permissionsOf(u) : {}, slip_auto_verify: slipOkEnabled(c.env), payment_ready: qrConfigured(c.env), public_base_url: (c.env.PUBLIC_BASE_URL || '').replace(/\/+$/, '') });
+  return json({ admin: Boolean(u), user: u ? userView(u) : null, permissions: u ? permissionsOf(u) : {}, slip_auto_verify: slipOkEnabled(c.env), payment_ready: qrConfigured(c.env), public_base_url: (c.env.PUBLIC_BASE_URL || '').replace(/\/+$/, ''), file_storage: usingR2(c.env) ? 'r2' : 'd1' });
 });
 on('POST', '/api/admin/me/password', async (c) => {
   const u = await requirePerm(c, 'orders_view'); const { current = '', password = '' } = await body(c);
@@ -427,7 +428,7 @@ on('POST', '/api/admin/design/upload', async (c) => {
   const f = await readUpload(c, 'image', /^image\/(jpeg|png|webp|gif|svg\+xml)$/);
   if (!f) fail(400, 'กรุณาเลือกไฟล์รูป (jpg/png/webp)');
   const name = `${Date.now()}-${randomHex(6)}${f.ext}`;
-  await c.env.FILES.put(`design/${name}`, f.bytes, { httpMetadata: { contentType: f.type } });
+  await putFile(c.env, `design/${name}`, f.bytes, f.type, now());
   return json({ url: `/uploads/design/${name}` }, 201);
 });
 
@@ -518,13 +519,13 @@ export async function serveSlip(c, name) {
   const key = `slips/${name}`;
   const o = await c.db.get('SELECT customer_id FROM orders WHERE slip_path = ?', key);
   if (!o || (o.customer_id !== c.customerId && !(await adminUser(c)))) return new Response('', { status: 404 });
-  const obj = await c.env.FILES.get(key); if (!obj) return new Response('', { status: 404 });
-  return new Response(obj.body, { headers: { 'content-type': obj.httpMetadata?.contentType || 'image/jpeg', 'cache-control': 'no-store' } });
+  const obj = await getFile(c.env, key); if (!obj) return new Response('', { status: 404 });
+  return new Response(obj.body, { headers: { 'content-type': obj.type || 'image/jpeg', 'cache-control': 'no-store' } });
 }
 // design images (promote / set pictures) are public
 export async function serveDesign(c, name) {
-  const obj = await c.env.FILES.get(`design/${name}`); if (!obj) return new Response('', { status: 404 });
-  const h = { 'content-type': obj.httpMetadata?.contentType || 'image/jpeg', 'cache-control': 'public, max-age=604800' };
+  const obj = await getFile(c.env, `design/${name}`); if (!obj) return new Response('', { status: 404 });
+  const h = { 'content-type': obj.type || 'image/jpeg', 'cache-control': 'public, max-age=604800' };
   if (/\.svg$/i.test(name)) Object.assign(h, { 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'", 'x-content-type-options': 'nosniff' });
   return new Response(obj.body, { headers: h });
 }

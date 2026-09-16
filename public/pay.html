@@ -71,7 +71,9 @@
   });
   $('#upload').addEventListener('click', async () => {
     const f = file.files[0]; if (!f) return; $('#upload').disabled = true; $('#up-err').textContent = '';
-    const fd = new FormData(); fd.append('slip', f);
+    // ย่อรูปสลิปก่อนส่ง (สูงสุด 1600px) ให้ไฟล์เล็กและอัปโหลดเร็ว
+    const small = await shrinkImage(f, 1600, 1600, { minBytes: 400 * 1024, jpeg: true });
+    const fd = new FormData(); fd.append('slip', small, small.name || 'slip.jpg');
     try {
       const r = await api('/api/orders/' + encodeURIComponent(id) + '/slip', { method: 'POST', body: fd });
       if (r.status === 'paid') done('ชำระเงินเรียบร้อยแล้ว ขอบคุณค่ะ', 'Payment verified. Thank you!', { popup: true });

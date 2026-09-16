@@ -22,7 +22,7 @@ export default {
     const url = new URL(request.url); const p = url.pathname;
     // static files never touch the database
     if (/^\/(css|js|img|fonts)\//.test(p) || (!p.startsWith('/uploads/') && /\.(css|js|png|jpg|jpeg|webp|svg|ico|ttf|woff2?|txt|xml)$/i.test(p))) return env.ASSETS.fetch(request);
-    if (!env.DB || !env.FILES) return new Response('Cloudflare Pages: bind a D1 database as "DB" and an R2 bucket as "FILES" (Settings → Bindings)', { status: 500, headers: { 'content-type': 'text/plain; charset=utf-8' } });
+    if (!env.DB) return new Response('Cloudflare Pages: bind a D1 database as "DB" (Settings → Bindings). Optional: an R2 bucket as "FILES" for slip images; without it images are stored in D1.', { status: 500, headers: { 'content-type': 'text/plain; charset=utf-8' } });
     await ensureSchema(env);
     const c = await makeContext(request, env, ctx);
     let res;

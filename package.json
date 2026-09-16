@@ -9,7 +9,8 @@
     "test": "node scripts/smoke-test.js",
     "test:cf": "node scripts/test-cf.js",
     "build:site": "bash scripts/build-site.sh",
-    "dev:cf": "SITE_MODE=real bash scripts/build-site.sh && npx wrangler pages dev _site --d1 DB=jc-order --r2 FILES=jc-files --compatibility-date=2026-09-01 --binding JWT_SECRET=dev --binding PROMPTPAY_ID=0812345678"
+    "dev:cf": "SITE_MODE=real bash scripts/build-site.sh && npx wrangler pages dev _site --d1 DB=jc-order --r2 FILES=jc-files --compatibility-date=2026-09-01 --binding JWT_SECRET=dev --binding PROMPTPAY_ID=0812345678",
+    "test:cf:d1": "NO_R2=1 node scripts/test-cf.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

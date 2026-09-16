@@ -54,6 +54,8 @@ const DDL = [
     status TEXT NOT NULL, error TEXT DEFAULT '', created_at TEXT DEFAULT (${NOW}))`,
   'CREATE INDEX IF NOT EXISTS idx_mail_log_order ON mail_log(order_id, id DESC)',
   'CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)',
+  // รูปสลิป/รูป Design เมื่อไม่ได้ผูก R2 (worker/files.js)
+  `CREATE TABLE IF NOT EXISTS files (key TEXT PRIMARY KEY, type TEXT DEFAULT '', size INTEGER DEFAULT 0, data BLOB, created_at TEXT DEFAULT (${NOW}))`,
 ];
 
 let ready = null;
