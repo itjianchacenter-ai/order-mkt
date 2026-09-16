@@ -199,11 +199,20 @@ Workers & Pages → Create → **Pages** → Connect to Git → เลือก 
 | `BANK_NAME` + `BANK_ACCOUNT_NAME` + `BANK_ACCOUNT_NO` (+ `BANK_BRANCH`) | รับเงินแบบโอนเข้าบัญชีธนาคาร: หน้า pay แสดงธนาคาร/ชื่อบัญชี/เลขบัญชี + ยอดที่ต้องโอน (ปุ่ม Copy) แล้วลูกค้าแนบสลิป | ✅ อย่างใดอย่างหนึ่ง |
 | `PROMPTPAY_ID` (หรือ `PROMPTPAY_QR_PAYLOAD` จาก QR ร้าน) | รับเงินแบบ PromptPay: หน้า pay แสดง QR ตามยอด (ถ้าตั้ง BANK_* ด้วย จะใช้บัญชีธนาคาร) | ✅ อย่างใดอย่างหนึ่ง |
 | `PUBLIC_BASE_URL` | `https://order.jianchatea.com` (ลิงก์ในอีเมล/หลังบ้าน) | ✅ |
-| `RESEND_API_KEY` + `MAIL_FROM` | ส่งอีเมลยืนยันเมื่อ Approve ผ่าน https://resend.com (ยืนยันโดเมน jianchatea.com ใน Resend ก่อน) ว่าง = ไม่ส่งจริง บันทึกสถานะ "logged" | แนะนำ |
+| `MS_TENANT_ID` + `MS_CLIENT_ID` + `MS_CLIENT_SECRET` + `MAIL_FROM` | ส่งอีเมลยืนยันเมื่อ Approve ผ่าน **Microsoft 365 (Graph API)** จากกล่องจดหมายของบริษัท เช่น `MAIL_FROM = JIANCHA Order <no-reply@jianchatea.com>` — ลงทะเบียนแอปใน Entra ID (Azure) ให้สิทธิ์ Application `Mail.Send` + Admin consent (ดูขั้นตอนด้านล่าง) | แนะนำ (มี M365 อยู่แล้ว) |
+| `RESEND_API_KEY` + `MAIL_FROM` | ทางเลือกแทน Microsoft: ส่งผ่าน https://resend.com (ยืนยันโดเมน jianchatea.com ใน Resend ก่อน) ถ้าตั้งทั้งสองแบบ ระบบใช้ Microsoft ก่อน; ไม่ตั้งเลย = ไม่ส่งจริง บันทึกสถานะ "logged" | ทางเลือก |
 | `SLIPOK_API_KEY` + `SLIPOK_BRANCH_ID` | ตรวจสลิปอัตโนมัติ (ว่าง = บัญชีตรวจเอง) | ไม่บังคับ |
 | `ORDER_EARLY_HOURS` | เปิดรับออเดอร์ล่วงหน้า N ชั่วโมงก่อนวันแรกของช่วงเปิดรับ (เช่น `12` = เปิด 17 ก.ย. 12:00) ออเดอร์ช่วงนี้นับเป็นรอบของวันแรก (โควตา/วันรับของของวันแรก) ใช้ทดสอบก่อนเปิดจริงแล้วยกเลิกออเดอร์ทดสอบในหลังบ้าน | — |
 | `RESET_ORDERS_AT` | `YYYY-MM-DD HH:MM` (เวลาไทย) ล้างออเดอร์ทดสอบที่สร้างก่อนเวลานี้ให้อัตโนมัติครั้งเดียว เมื่อมีคนเปิดเว็บหลังเวลานั้น เช่น `2026-09-17 23:00` (บัญชีหลังบ้าน/แคมเปญ/บัญชีลูกค้าคงอยู่) หรือกดปุ่ม "ล้างออเดอร์ทั้งหมด" ในหน้า Account ของ IT-Admin | — |
 | `ORDER_DAY_OVERRIDE` | `YYYY-MM-DD` จำลองวันที่ (ใช้ทดสอบเท่านั้น ห้ามตั้งบน Production) | — |
+
+### ส่งอีเมลผ่าน Microsoft 365 (Graph API)
+1. https://entra.microsoft.com → **App registrations** → New registration ชื่อ `order-mkt-mail` (Single tenant) → จด **Application (client) ID** และ **Directory (tenant) ID**
+2. **Certificates & secrets** → New client secret (อายุ 24 เดือน) → คัดลอก **Value** ทันที (เห็นครั้งเดียว)
+3. **API permissions** → Add a permission → Microsoft Graph → **Application permissions** → `Mail.Send` → **Grant admin consent** (ต้องเป็น Global admin ของ M365)
+4. สร้างกล่องจดหมายผู้ส่ง (Shared mailbox ฟรี ไม่ต้องมี license) เช่น `no-reply@jianchatea.com` ใน Microsoft 365 admin center
+5. (แนะนำ) จำกัดให้แอปส่งได้เฉพาะกล่องนี้ด้วย Exchange Online PowerShell: `New-ApplicationAccessPolicy -AppId <client id> -PolicyScopeGroupId no-reply@jianchatea.com -AccessRight RestrictAccess`
+6. ใส่ตัวแปรใน Cloudflare Pages (Type = Secret สำหรับ `MS_CLIENT_SECRET`): `MS_TENANT_ID`, `MS_CLIENT_ID`, `MS_CLIENT_SECRET`, `MAIL_FROM = JIANCHA Order <no-reply@jianchatea.com>` แล้ว Retry deployment ของ main ล่าสุด → ทดลอง Approve หนึ่งออเดอร์ การ์ดออเดอร์หลังบ้านจะขึ้นสถานะอีเมล "sent" (ถ้า "failed" จะมีข้อความจาก Microsoft บอกสาเหตุ)
 
 **Bindings** (Settings → Bindings → Add ทั้ง Production และ Preview) — ชื่อตัวแปรต้องตรงตามนี้:
 
