@@ -151,7 +151,7 @@ function fmtPickupDate(iso) {
   return { en: `${d} ${EN_MONTHS[mo] || m[2]} ${y}`, th: `${d} ${TH_MONTHS[mo] || m[2]} ${y + 543}` };
 }
 /* รอบสั่ง → รอบรับ: วันรับของที่ล็อกไว้สำหรับรอบสั่งวันนี้ (null = เลือกได้ตามรายการ) */
-const lockedPickup = (stock) => (stock && stock.order_window && stock.order_window.pickup_date) || null;
+const lockedPickup = (stock) => { const ow = stock && stock.order_window; window.__pickupByRound = Boolean(ow && ow.pickup_pairs && ow.pickup_pairs.length); return (ow && ow.pickup_date) || null; };
 /* ข้อความตารางคู่ "สั่ง 18 กันยายน 2569 → รับ 25 กันยายน 2569" สำหรับแสดงใต้ปุ่มวันที่ */
 function pickupPairsNote(stock) {
   const ow = stock && stock.order_window; if (!ow || !ow.pickup_pairs || !ow.pickup_pairs.length) return '';
@@ -398,7 +398,7 @@ async function submitOrder({ storeId, note, phone = '', pickupDate = '', pickupD
   const lines = loadCart();
   if (!lines.length) { errEl.textContent = 'ยังไม่มีรายการในตะกร้า / Your cart is empty'; return; }
   if (!storeId) { errEl.textContent = 'กรุณาเลือกสาขาที่รับสินค้า / Please choose a pick-up location'; return; }
-  if (pickupDates.length && !pickupDates.includes(pickupDate)) { errEl.textContent = 'กรุณาเลือกวันที่รับของ / Please choose a pick-up date'; return; }
+  if (!window.__pickupByRound && pickupDates.length && !pickupDates.includes(pickupDate)) { errEl.textContent = 'กรุณาเลือกวันที่รับของ / Please choose a pick-up date'; return; }
   if (pickupTimes.length && !pickupTimes.includes(pickupTime)) { errEl.textContent = 'กรุณาเลือกเวลาที่รับของ / Please choose a pick-up time'; return; }
   if (!validPhone(phone)) { errEl.textContent = 'กรุณาใส่เบอร์ติดต่อผู้รับสาย (เบอร์มือถือ 10 หลัก) / Please enter the contact number'; const f = $('#phone'); if (f) { f.focus(); f.classList.add('invalid'); } return; }
   await loadMe();

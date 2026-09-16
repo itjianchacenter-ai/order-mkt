@@ -351,11 +351,10 @@ app.post('/api/orders', (req, res) => {
   if (campaign.orders_open === 0) return res.status(400).json({ error: 'แคมเปญนี้ปิดรับคำสั่งซื้อแล้ว / This campaign is closed' });
   const menu = menuFor(campaign);
   // วันที่รับของ: บังคับเลือกเมื่อแคมเปญกำหนดวันไว้ และต้องเป็นวันในรายการ
-  const pickup_date = String((req.body && req.body.pickup_date) || '').trim();
-  if (menu.pickup_dates.length && !menu.pickup_dates.includes(pickup_date)) return res.status(400).json({ error: 'กรุณาเลือกวันที่รับของ / Please choose a pick-up date', field: 'pickup_date' });
-  // รอบสั่งวันนี้ผูกกับรอบรับตามตาราง (สั่ง 18 ก.ย. รับ 25 ก.ย. …)
+  // วันรับของกำหนดจากรอบสั่ง (ตาราง pickup_map: สั่ง 18 ก.ย. → รับ 25 ก.ย. …) ลูกค้าไม่ต้องเลือก; แคมเปญที่ไม่มีตารางยังให้เลือกจากรายการได้
   const mustPickup = (menu.pickup_map || {})[bangkokToday()];
-  if (mustPickup && pickup_date !== mustPickup) return res.status(400).json({ error: `รอบสั่งวันนี้ (${fmtDayTH(bangkokToday())}) รับของได้เฉพาะวันที่ ${fmtDayTH(mustPickup)} / Orders placed today are picked up on ${fmtDayEN(mustPickup)} only`, field: 'pickup_date', pickup_date: mustPickup });
+  const pickup_date = mustPickup || String((req.body && req.body.pickup_date) || '').trim();
+  if (!mustPickup && menu.pickup_dates.length && !menu.pickup_dates.includes(pickup_date)) return res.status(400).json({ error: 'กรุณาเลือกวันที่รับของ / Please choose a pick-up date', field: 'pickup_date' });
   const pickup_time = String((req.body && req.body.pickup_time) || '').trim();
   if (menu.pickup_times.length && !menu.pickup_times.includes(pickup_time)) return res.status(400).json({ error: 'กรุณาเลือกเวลาที่รับของ / Please choose a pick-up time', field: 'pickup_time' });
   const drinks = Object.fromEntries(menu.drinks.map((d) => [d.id, d]));
@@ -398,7 +397,7 @@ app.post('/api/orders', (req, res) => {
     const order_number = nextOrderNumber();
     // A zero-total order (free campaign item) has nothing to pay: it is paid on creation.
     db.prepare(`INSERT INTO orders(id, order_number, customer_id, campaign_id, store_id, store_name, total, note, phone, pickup_date, pickup_time, pdpa_accepted_at, order_day, status, paid_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, order_number, req.customerId, campaign.id, store.id, `${store.brand} - ${store.name}`, total, String(note).slice(0, 500), phone, menu.pickup_dates.length ? pickup_date : '', menu.pickup_times.length ? pickup_time : '', pdpaAt, ow.today,
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, order_number, req.customerId, campaign.id, store.id, `${store.brand} - ${store.name}`, total, String(note).slice(0, 500), phone, (mustPickup || menu.pickup_dates.length) ? pickup_date : '', menu.pickup_times.length ? pickup_time : '', pdpaAt, ow.today,
                 total > 0 ? 'pending' : 'paid', total > 0 ? null : new Date().toISOString().slice(0, 19).replace('T', ' '));
     const ins = db.prepare(`INSERT INTO order_lines(order_id, set_id, set_label, set_name, items_json, pieces, drink_pieces, dessert_pieces, drink_id, drink_name, dessert_id, dessert_name, quantity, unit_price, line_total)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
