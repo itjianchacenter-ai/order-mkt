@@ -445,7 +445,12 @@ if (!window.PREVIEW_MODE && /^#\/backend/.test(location.hash)) { const q = locat
       const label = !m ? 'ยังไม่ได้แจ้งทีมการตลาด' : m.status === 'sent' ? `แจ้งทีมการตลาดแล้ว ${fmtDateTime(m.at)} → ${esc(m.to)}` : m.status === 'logged' ? `อีเมลแจ้งทีม (ยังไม่ได้ตั้งค่าอีเมล) → ${esc(m.to)}` : `แจ้งทีมการตลาดไม่สำเร็จ: ${esc(m.error || '')} → ${esc(m.to)}`;
       return `<div class="mail-note ${m && m.status === 'failed' ? 'bad' : ''}">${label}</div>`;
     })() : '';
-    return slip + mailNote + issueNote + '<div class="actions">' + acts.join('') + '</div>';
+    const rejectNote = o.status === 'slip_rejected' ? (() => {
+      const m = o.reject_mail;
+      const label = !m ? 'ยังไม่ได้แจ้งลูกค้า' : m.status === 'sent' ? `แจ้งลูกค้าให้อัปโหลดใหม่แล้ว ${fmtDateTime(m.at)} → ${esc(m.to)}` : m.status === 'logged' ? `อีเมลแจ้งลูกค้า (ยังไม่ได้ตั้งค่าอีเมล) → ${esc(m.to)}` : `แจ้งลูกค้าไม่สำเร็จ: ${esc(m.error || '')} → ${esc(m.to)}`;
+      return `<div class="mail-note ${m && m.status === 'failed' ? 'bad' : ''}">${label}</div>`;
+    })() : '';
+    return slip + mailNote + issueNote + rejectNote + '<div class="actions">' + acts.join('') + '</div>';
   }
   function headExtras(o) {
     if (!isSlips) return {};

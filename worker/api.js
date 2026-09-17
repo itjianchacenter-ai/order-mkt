@@ -10,7 +10,7 @@ import { putFile, getFile, deleteFile, fileMax, usingR2 } from './files.js';
 import { wipeOrders } from './reset.js';
 import * as M from '../lib/menu.js';
 import * as W from '../lib/window.js';
-import { approvalEmail, issueEmail, normalizeEmail, validEmail } from '../lib/email.js';
+import { approvalEmail, issueEmail, rejectEmail, normalizeEmail, validEmail } from '../lib/email.js';
 
 const CUSTOMER_COOKIE = 'jc_cid', ADMIN_COOKIE = 'jc_admin';
 const YEAR = 365 * 24 * 3600;
@@ -148,8 +148,10 @@ async function orderView(c, o, { admin = false } = {}) {
     const cu = await customerRow(c.db, o.customer_id);
     const m = await c.db.get("SELECT to_email, status, error, created_at FROM mail_log WHERE order_id = ? AND kind = 'approved' ORDER BY id DESC LIMIT 1", o.id);
     const im = await c.db.get("SELECT to_email, status, error, created_at FROM mail_log WHERE order_id = ? AND kind = 'issue' ORDER BY id DESC LIMIT 1", o.id);
+    const rm = await c.db.get("SELECT to_email, status, error, created_at FROM mail_log WHERE order_id = ? AND kind = 'rejected' ORDER BY id DESC LIMIT 1", o.id);
     Object.assign(v, { customer_email: (cu && cu.email) || '', customer_name: (cu && cu.name) || '', customer_google: Boolean(cu && cu.google_sub), approval_mail: m ? { to: m.to_email, status: m.status, error: m.error || '', at: m.created_at } : null,
       issue_mail: im ? { to: im.to_email, status: im.status, error: im.error || '', at: im.created_at } : null,
+      reject_mail: rm ? { to: rm.to_email, status: rm.status, error: rm.error || '', at: rm.created_at } : null,
       pdpa_accepted_at: o.pdpa_accepted_at || '', customer_id: o.customer_id, slip_url: o.slip_path ? `/uploads/${o.slip_path.split('/').pop()}` : '', slip_ref: o.slip_ref, slip_amount: o.slip_amount, slip_verified: o.slip_verified, cancelled_at: o.cancelled_at });
   }
   return v;
@@ -179,6 +181,18 @@ async function notifyIssue(c, orderId, { by = '', reason = '' } = {}) {
   const mail = issueEmail(o, camp, baseUrlOf(c), { by, reason });
   const r = await sendMail(c.env, { to, ...mail });
   await c.db.run('INSERT INTO mail_log(order_id, kind, to_email, subject, status, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', orderId, 'issue', to, mail.subject, r.status, r.error || '', now());
+  return r;
+}
+
+/* Reject → อีเมลถึงลูกค้า (อีเมลที่กรอกตอนสั่ง): เหตุผล + ลิงก์อัปโหลดใหม่ + QR LINE OA (LINE_OA_QR = URL/path รูป, LINE_OA_URL = ลิงก์เพิ่มเพื่อน) */
+const lineQrUrl = (c) => { const v = String(c.env.LINE_OA_QR == null ? '' : c.env.LINE_OA_QR).trim();   // ค่าเริ่มต้นว่างจนกว่าจะมีรูป QR ในระบบ return v ? (v.startsWith('http') ? v : baseUrlOf(c) + v) : ''; };
+async function notifyRejected(c, orderId, { reason = '' } = {}) {
+  const row = await getOrder(c.db, orderId); if (!row) return null;
+  const cust = await customerRow(c.db, row.customer_id); const to = row.email || (cust && cust.email) || '';
+  const o = await orderView(c, row); const camp = row.campaign_id ? await getCampaign(c.db, row.campaign_id) : null;
+  const mail = rejectEmail(o, camp, baseUrlOf(c), { reason, lineQr: lineQrUrl(c), lineUrl: String(c.env.LINE_OA_URL || '').trim() });
+  const r = to ? await sendMail(c.env, { to, ...mail }) : { status: 'failed', error: 'ออเดอร์นี้ไม่มีอีเมล' };
+  await c.db.run('INSERT INTO mail_log(order_id, kind, to_email, subject, status, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', orderId, 'rejected', to, mail.subject, r.status, r.error || '', now());
   return r;
 }
 
@@ -658,7 +672,7 @@ on('POST', '/api/admin/orders/:id/status', async (c) => {
   await c.db.run(`UPDATE orders SET status = ?, slip_reason = ?${t.stamp ? `, ${t.stamp} = ?` : ''} WHERE id = ?`, ...(t.stamp ? [to, reason, now(), o.id] : [to, reason, o.id]));
   invalidateStock();
   if (to === 'paid') await notifyApproved(c, o.id);   // บัญชีอนุมัติ → อีเมลยืนยันถึงลูกค้า
-  if (to === 'slip_rejected') await notifyIssue(c, o.id, { by: u.username || u.name || '', reason });   // Reject → แจ้งทีมการตลาดให้ตรวจสอบ
+  if (to === 'slip_rejected') { await notifyIssue(c, o.id, { by: u.username || u.name || '', reason }); await notifyRejected(c, o.id, { reason }); }   // Reject → แจ้งทีมการตลาด + แจ้งลูกค้าให้อัปโหลดใหม่
   return json(await orderView(c, await getOrder(c.db, o.id), { admin: true }));
 });
 on('GET', '/api/admin/summary', async (c) => {
