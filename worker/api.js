@@ -294,14 +294,36 @@ async function reserveHold(c, v) {
   }
   if (menu.orders_per_day) { conds.push(`(SELECT COALESCE(SUM(l.quantity * COALESCE(l.pieces, 1)), 0) FROM order_lines l JOIN orders o ON o.id = l.order_id WHERE o.campaign_id = ? AND o.order_day = ? AND o.status <> 'cancelled') + (SELECT COALESCE(SUM(h.sets), 0) FROM holds h WHERE h.campaign_id = ? AND h.order_day = ? AND h.expires_at > ?) + ? <= ?`); cargs.push(campaign.id, today, campaign.id, today, ts, want.total, menu.orders_per_day); }
   const where = conds.length ? ' WHERE ' + conds.join(' AND ') : '';
+  const prev = await db.get('SELECT * FROM holds WHERE customer_id = ? AND campaign_id = ? AND expires_at > ? ORDER BY expires_at DESC LIMIT 1', c.customerId, campaign.id, ts);
   await db.batch([
     db.stmt('DELETE FROM holds WHERE expires_at <= ?', ts),                                       // เก็บกวาดคิวหมดอายุ
     db.stmt('DELETE FROM holds WHERE customer_id = ? AND campaign_id = ?', c.customerId, campaign.id),   // คิวเดิมของลูกค้าคนนี้ (จองใหม่แทน)
     db.stmt(`INSERT INTO holds(id, customer_id, campaign_id, order_day, sets, drink, dessert, created_at, expires_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?${where}`, id, c.customerId, campaign.id, today, want.total, want.drink, want.dessert, ts, exp, ...cargs),
   ]);
   invalidateStock();
-  return await db.get('SELECT id, expires_at FROM holds WHERE id = ?', id);
+  const row = await db.get('SELECT id, expires_at FROM holds WHERE id = ?', id);
+  // จองใหม่ไม่ได้ (เช่น เพิ่มจำนวนเกินที่เหลือ) → คืนคิวเดิมให้ ไม่ให้ลูกค้าเสียคิวที่มีอยู่
+  if (!row && prev) { await db.run('INSERT OR IGNORE INTO holds(id, customer_id, campaign_id, order_day, sets, drink, dessert, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', prev.id, prev.customer_id, prev.campaign_id, prev.order_day, prev.sets, prev.drink, prev.dessert, prev.created_at, prev.expires_at); invalidateStock(); }
+  return row;
 }
+/** ใส่ตะกร้า = จองคิวทันที: body { lines, campaign? } → คิวของลูกค้าคนนี้ถูกแทนด้วยจำนวนล่าสุด (ตะกร้าว่าง = คืนคิว) */
+on('POST', '/api/hold', async (c) => {
+  const b = await body(c); const campaign = await requestCampaign(c, b);
+  const menu = menuFor(campaign); const today = todayOf(c, menu);
+  const lines = Array.isArray(b.lines) ? b.lines : [];
+  if (!lines.length || campaign.orders_open === 0) { await c.db.run('DELETE FROM holds WHERE customer_id = ? AND campaign_id = ?', c.customerId, campaign.id); invalidateStock(); return json({ held: 0, stock: await stockView(c, campaign) }); }
+  const built = M.buildOrderRows(lines, menu); if (built.error) fail(400, built.error);
+  invalidateStock(); const sv0 = await stockView(c, campaign);
+  if (!sv0.order_window.open && sv0.order_window.status !== 'full') fail(409, { error: sv0.order_window.message, stock: sv0 });
+  const hold = await reserveHold(c, { campaign, menu, today, want: built.want });
+  if (!hold) { const sv = await stockView(c, campaign); fail(409, { error: M.stockShortfall(built.want, sv.remaining) || M.dayShortfall(built.want, sv.order_window) || sv.order_window.message || 'คิวเต็มแล้ว', stock: sv }); }
+  return json({ held: built.want.total, hold_expires_at: hold.expires_at, hold_minutes: holdMinutes(c.env), stock: await stockView(c, campaign) });
+});
+on('DELETE', '/api/hold', async (c) => {
+  const b = await body(c); const campaign = await requestCampaign(c, b);
+  await c.db.run('DELETE FROM holds WHERE customer_id = ? AND campaign_id = ?', c.customerId, campaign.id); invalidateStock();
+  return json({ held: 0, stock: await stockView(c, campaign) });
+});
 on('POST', '/api/quote', async (c) => {
   const v = await validateOrder(c, await body(c));
   // กด Confirm = จองคิวทันที (หักโควตา/สต๊อกระหว่างรอชำระเงิน) หมดอายุอัตโนมัติถ้าไม่ส่งสลิปทัน

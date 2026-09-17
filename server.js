@@ -381,14 +381,34 @@ function reserveHold(req, v) {
   const exp = W.bangkokNow(new Date(Date.now() + holdMinutes() * 60000)); const id = crypto.randomUUID();
   return db.transaction(() => {
     db.prepare('DELETE FROM holds WHERE expires_at <= ?').run(ts);
+    const prev = db.prepare('SELECT * FROM holds WHERE customer_id = ? AND campaign_id = ? AND expires_at > ? ORDER BY expires_at DESC LIMIT 1').get(req.customerId, campaign.id, ts);
     db.prepare('DELETE FROM holds WHERE customer_id = ? AND campaign_id = ?').run(req.customerId, campaign.id);
     const sv = stockView(campaign);
     const short = M.stockShortfall(want, sv.remaining) || M.dayShortfall(want, sv.order_window) || (!sv.order_window.open ? sv.order_window.message : '');
-    if (short) return { error: short, stock: sv };
+    if (short) {   // จองใหม่ไม่ได้ → คืนคิวเดิม
+      if (prev) db.prepare('INSERT OR IGNORE INTO holds(id, customer_id, campaign_id, order_day, sets, drink, dessert, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(prev.id, prev.customer_id, prev.campaign_id, prev.order_day, prev.sets, prev.drink, prev.dessert, prev.created_at, prev.expires_at);
+      return { error: short, stock: sv };
+    }
     db.prepare('INSERT INTO holds(id, customer_id, campaign_id, order_day, sets, drink, dessert, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(id, req.customerId, campaign.id, today, want.total, want.drink, want.dessert, exp);
     return { hold: { id, expires_at: exp } };
   })();
 }
+/** ใส่ตะกร้า = จองคิวทันที (ตะกร้าว่าง = คืนคิว) */
+app.post('/api/hold', (req, res) => {
+  const campaign = requestCampaign(req); const menu = menuFor(campaign); const b = req.body || {};
+  const lines = Array.isArray(b.lines) ? b.lines : [];
+  if (!lines.length || campaign.orders_open === 0) { db.prepare('DELETE FROM holds WHERE customer_id = ? AND campaign_id = ?').run(req.customerId, campaign.id); return res.json({ held: 0, stock: stockView(campaign) }); }
+  const built = M.buildOrderRows(lines, menu); if (built.error) return res.status(400).json({ error: built.error });
+  const sv0 = stockView(campaign);
+  if (!sv0.order_window.open && sv0.order_window.status !== 'full') return res.status(409).json({ error: sv0.order_window.message, stock: sv0 });
+  const hr = reserveHold(req, { campaign, menu, want: built.want }); if (hr.error) return res.status(409).json({ error: hr.error, stock: hr.stock });
+  res.json({ held: built.want.total, hold_expires_at: hr.hold.expires_at, hold_minutes: holdMinutes(), stock: stockView(campaign) });
+});
+app.delete('/api/hold', (req, res) => {
+  const campaign = requestCampaign(req);
+  db.prepare('DELETE FROM holds WHERE customer_id = ? AND campaign_id = ?').run(req.customerId, campaign.id);
+  res.json({ held: 0, stock: stockView(campaign) });
+});
 app.post('/api/quote', async (req, res) => {
   const v = validateOrder(req, req.body || {}); if (!v.ok) return sendBad(res, v);
   const hr = reserveHold(req, v); if (hr.error) return res.status(409).json({ error: hr.error, stock: hr.stock });   // กด Confirm = จองคิวทันที

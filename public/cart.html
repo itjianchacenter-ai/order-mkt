@@ -49,6 +49,9 @@
   const pickupTimes = menu.pickup_times || []; if (getPickupTime() && !pickupTimes.includes(getPickupTime())) setPickupTime('');
   let stock = menu.stock; const getStock = () => stock;
   async function refreshStock() { try { stock = await api(withCampaign('/api/stock')); } catch (e) { /* keep last */ } render(); }
+  document.addEventListener('jc:hold', (e) => { if (e.detail && e.detail.stock) { stock = e.detail.stock; render(); } });
+  document.addEventListener('jc:hold-error', (e) => { $('#err').textContent = e.detail.message; refreshStock(); });
+  if (loadCart().length) syncHold();
   const closed = menu.campaign && menu.campaign.orders_open === false;
   if (closed) $('#stock-err').textContent = 'แคมเปญนี้ปิดรับคำสั่งซื้อแล้ว / This campaign is closed';
   const windowMsg = () => (orderWindowClosed(stock) ? stock.order_window.message : '');

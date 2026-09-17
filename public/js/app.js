@@ -136,7 +136,21 @@ async function shrinkImage(file, maxW, maxH, { quality = 0.86, minBytes = 600 * 
 
 /* cart: [{set_id, quantity}] — one line per Match Set */
 function loadCart() { try { return (JSON.parse(localStorage.getItem(CART_KEY)) || []).filter((l) => l && l.set_id && l.quantity > 0); } catch (e) { return []; } }
-function saveCart(c) { try { localStorage.setItem(CART_KEY, JSON.stringify(c)); } catch (e) { /* ignore */ } updateCartBadge(); }
+function saveCart(c) { try { localStorage.setItem(CART_KEY, JSON.stringify(c)); } catch (e) { /* ignore */ } updateCartBadge(); scheduleHold(); }
+/* ใส่ตะกร้า = จองคิวทันที: ทุกครั้งที่ตะกร้าเปลี่ยน ส่งจำนวนล่าสุดไป /api/hold (หน่วง 350ms) ตะกร้าว่าง = คืนคิว
+   จองไม่ได้ (คิวเต็ม/เกินที่เหลือ) → คืนตะกร้าเป็นชุดล่าสุดที่จองสำเร็จ และแจ้งผ่าน event jc:hold-error */
+let _holdTimer = null, _heldCart = [];
+function scheduleHold() { if (window.PREVIEW_MODE) return; clearTimeout(_holdTimer); _holdTimer = setTimeout(syncHold, 350); }
+async function syncHold() {
+  const lines = loadCart(); const campaign = campaignSlug() || undefined;
+  try {
+    const r = lines.length ? await api('/api/hold', { method: 'POST', body: { lines, campaign } }) : await api('/api/hold', { method: 'DELETE', body: { campaign } });
+    _heldCart = lines; document.dispatchEvent(new CustomEvent('jc:hold', { detail: r }));
+  } catch (e) {
+    try { localStorage.setItem(CART_KEY, JSON.stringify(_heldCart)); } catch (x) { /* ignore */ }
+    updateCartBadge(); document.dispatchEvent(new CustomEvent('jc:hold-error', { detail: { message: e.message } }));
+  }
+}
 function cartCount() { return loadCart().reduce((s, l) => s + (l.quantity || 0), 0); }
 function lineKey(l) { return String(l.set_id || ''); }
 function cartLine(set_id) { return loadCart().find((l) => l.set_id === set_id) || null; }

@@ -133,6 +133,14 @@ const dbx = {
     r = await call('customer', 'POST', '/api/quote', { email: 'alice@gmail.com', store_id: storeId, phone: '0812345678', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 4 }] }); check('but cannot grow it while the day is full', r.status === 409, r.json);
     await dbx.run("UPDATE holds SET expires_at = '2000-01-01 00:00:00' WHERE sets = ?", left);   // คิวของอีกคนหมดอายุ
     r = await call('customer', 'GET', '/api/stock'); check('expired hold frees the quota', r.json.order_window.today_remaining === left && r.json.order_window.today_held === 3, r.json.order_window);
+    // ใส่ตะกร้า = จองคิวทันที (/api/hold) — แทนที่คิวเดิมของลูกค้าคนเดิม, ตะกร้าว่าง = คืนคิว, จองเกินไม่ได้และคิวเดิมยังอยู่
+    await dbx.run('DELETE FROM holds');
+    r = await call('other', 'POST', '/api/hold', { lines: [{ set_id: A, quantity: 2 }] }); check('cart hold: 2 sets reserved on add-to-cart', r.status === 200 && r.json.held === 2 && r.json.stock.order_window.today_held === 2, r.json);
+    r = await call('other', 'POST', '/api/hold', { lines: [{ set_id: A, quantity: 1 }] }); check('cart hold: quantity change replaces the hold', r.status === 200 && r.json.stock.order_window.today_held === 1, r.json);
+    const left2 = r.json.stock.order_window.today_remaining;
+    r = await call('other', 'POST', '/api/hold', { lines: chunk(left2 + 2) }); check('cart hold: growing beyond what is left is refused', r.status === 409 && /เหลือเพียง/.test(r.json.error), r.json);
+    r = await call('customer', 'GET', '/api/stock'); check('cart hold: refused change keeps the previous hold (1 set)', r.json.order_window.today_held === 1, r.json.order_window);
+    r = await call('other', 'DELETE', '/api/hold', {}); check('cart hold: emptying the cart releases the hold', r.status === 200 && r.json.stock.order_window.today_held === 0, r.json);
     await dbx.run('DELETE FROM holds');   // เคลียร์คิวทดสอบ ไม่ให้กระทบตัวเลขในส่วนถัดไป
     r = await call('customer', 'POST', '/api/orders', { email: 'alice@gmail.com', store_id: storeId, phone: '0812345678', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 1 }] }); check('order without slip rejected (no order created)', r.status === 400 && r.json.field === 'slip', r.json);
     r = await placeOrder('customer', { store_id: storeId, phone: '0812345678', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 1 }] }, orderSeed); check('order with a slip already used rejected (no order created)', r.status === 400 && /เคยถูกใช้/.test(r.json.error), r.json);
