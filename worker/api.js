@@ -185,12 +185,15 @@ async function notifyIssue(c, orderId, { by = '', reason = '' } = {}) {
 }
 
 /* Reject → อีเมลถึงลูกค้า (อีเมลที่กรอกตอนสั่ง): เหตุผล + ลิงก์อัปโหลดใหม่ + QR LINE OA (LINE_OA_QR = URL/path รูป, LINE_OA_URL = ลิงก์เพิ่มเพื่อน) */
-const lineQrUrl = (c) => { const v = String(c.env.LINE_OA_QR == null ? '' : c.env.LINE_OA_QR).trim();   // ค่าเริ่มต้นว่างจนกว่าจะมีรูป QR ในระบบ return v ? (v.startsWith('http') ? v : baseUrlOf(c) + v) : ''; };
+const LINE_OA_QR_DEFAULT = '/img/line-oa-qr.png', LINE_OA_URL_DEFAULT = 'https://page.line.me/jiancha';
+const lineQrUrl = (c) => { const v = String(c.env.LINE_OA_QR == null ? LINE_OA_QR_DEFAULT : c.env.LINE_OA_QR).trim();   // ตั้ง LINE_OA_QR='' เพื่อปิดการแนบรูป
+  return v ? (v.startsWith('http') ? v : baseUrlOf(c) + v) : ''; };
+const lineOaUrl = (c) => String(c.env.LINE_OA_URL == null ? LINE_OA_URL_DEFAULT : c.env.LINE_OA_URL).trim();
 async function notifyRejected(c, orderId, { reason = '' } = {}) {
   const row = await getOrder(c.db, orderId); if (!row) return null;
   const cust = await customerRow(c.db, row.customer_id); const to = row.email || (cust && cust.email) || '';
   const o = await orderView(c, row); const camp = row.campaign_id ? await getCampaign(c.db, row.campaign_id) : null;
-  const mail = rejectEmail(o, camp, baseUrlOf(c), { reason, lineQr: lineQrUrl(c), lineUrl: String(c.env.LINE_OA_URL || '').trim() });
+  const mail = rejectEmail(o, camp, baseUrlOf(c), { reason, lineQr: lineQrUrl(c), lineUrl: lineOaUrl(c) });
   const r = to ? await sendMail(c.env, { to, ...mail }) : { status: 'failed', error: 'ออเดอร์นี้ไม่มีอีเมล' };
   await c.db.run('INSERT INTO mail_log(order_id, kind, to_email, subject, status, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', orderId, 'rejected', to, mail.subject, r.status, r.error || '', now());
   return r;
