@@ -268,6 +268,9 @@ const dbx = {
     r = await call('it', 'POST', '/api/admin/campaigns', { name: 'JIANCHA x SUMMER', slug: 'x' }); check('too-short slug rejected', r.status === 400);
 
     // ── stock (campaign jiancha-x-navori: 1000 sets; 4 used above: A×2 + B×1 + B×1) ──
+    // ยกโควตาชุด/วันชั่วคราว (ทดสอบสต๊อกรวมด้วยออเดอร์ใหญ่กว่า 200 ชุด) แล้วคืนค่าหลังจบส่วนนี้
+    const dz0 = (await call('it', 'GET', '/api/admin/campaigns/jiancha-x-navori/design')).json.design;
+    r = await call('it', 'PUT', '/api/admin/campaigns/jiancha-x-navori/design', { ...dz0, orders_per_day: 5000 }); check('temporarily lift per-day set quota for stock tests', r.status === 200 && r.json.design.orders_per_day === 5000, r.json);
     r = await call('customer', 'GET', '/api/stock'); check('stock view', r.json.limits.total === 1000 && r.json.used.total === 4 && r.json.remaining.total === 996 && r.json.used.drink === 4 && r.json.used.dessert === 8, r.json);
     const big = (n) => Array.from({ length: n }, () => ({ set_id: A, quantity: 99 }));
     r = await placeOrder('customer', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-25', pickup_time: '13:00-15:00 น.', lines: big(11) }); check('order above stock rejected', r.status === 409 && /เหลือเพียง 996/.test(r.json.error), r.json);
@@ -282,9 +285,10 @@ const dbx = {
     r = await call('it', 'POST', `/api/orders/${bigOrder.id}/code`); check('next approved order gets the next number (NVR260002), never reused after cancel', r.status === 200 && r.json.promo_code === 'NVR260002' && r.json.promo_code !== code1, r.json);
     r = await call('fin', 'POST', `/api/admin/orders/${bigOrder.id}/status`, { status: 'cancelled' }); check('finance cancels big order', r.json.status === 'cancelled');
     r = await call('customer', 'GET', '/api/stock'); check('cancelled order frees stock', r.json.remaining.total === 990, r.json);
+    r = await call('it', 'PUT', '/api/admin/campaigns/jiancha-x-navori/design', { ...dz0, orders_per_day: null }); check('per-day set quota restored to template (200)', r.status === 200 && (await call('customer', 'GET', '/api/stock')).json.order_window.per_day === 200);
     r = await call('it', 'GET', '/api/admin/summary?campaign=jiancha-x-navori'); check('summary per campaign', r.status === 200 && r.json.stock.remaining.total === 990);
 
-    // ── ช่วงเปิดรับออเดอร์ 18–22 ก.ย. 2026 + โควตา 200 ออเดอร์/วัน ──
+    // ── ช่วงเปิดรับออเดอร์ 18–22 ก.ย. 2026 + โควตา 200 ชุด/วัน (นับ quantity × pieces ไม่ใช่จำนวนออเดอร์) ──
     { // เปิดรับล่วงหน้า N ชั่วโมงก่อนวันแรก (lib/window.effectiveOrderDay)
       const { effectiveOrderDay } = require('../lib/window'); const days = ['2026-09-18', '2026-09-19'];
       const at = (s) => new Date(s + '+07:00');
@@ -304,10 +308,11 @@ const dbx = {
     r = await call('customer', 'GET', '/api/stock'); check('next window day starts at 0 orders', r.json.order_window.open === true && r.json.order_window.today_count === 0);
     const dzw = (await call('it', 'GET', '/api/admin/campaigns/jiancha-x-navori/design')).json.design;
     r = await call('it', 'PUT', '/api/admin/campaigns/jiancha-x-navori/design', { ...dzw, orders_per_day: 2 }); check('campaign design can set its own per-day quota', r.status === 200 && r.json.design.orders_per_day === 2, r.json.design);
+    r = await placeOrder('customer', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 3 }] }); check('quota counts sets: 3 sets in one order exceed 2/day (409)', r.status === 409 && /เหลือเพียง 2 ชุด/.test(r.json.error), r.json);
     r = await placeOrder('customer', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 1 }] }); check('quota: order 1 of 2 accepted', r.status === 201 && r.json.order_day === undefined, r.json.error);
     r = await placeOrder('customer', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 1 }] }); check('quota: order 2 of 2 accepted', r.status === 201, r.json.error);
     const quotaOrder = r.json;
-    r = await placeOrder('customer', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 1 }] }); check('quota: order 3 rejected, told to come back 20 Sep', r.status === 409 && /ครบ 2 ออเดอร์/.test(r.json.error) && /20 กันยายน 2569/.test(r.json.error), r.json);
+    r = await placeOrder('customer', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 1 }] }); check('quota: order 3 rejected, told to come back 20 Sep', r.status === 409 && /ครบ 2 ชุด/.test(r.json.error) && /20 กันยายน 2569/.test(r.json.error), r.json);
     r = await call('customer', 'GET', '/api/stock'); check('stock view reports today full', r.json.order_window.status === 'full' && r.json.order_window.today_remaining === 0);
     r = await call('fin', 'POST', `/api/admin/orders/${quotaOrder.id}/status`, { status: 'cancelled' }); check('cancel frees a quota slot', r.json.status === 'cancelled');
     r = await placeOrder('customer', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-26', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 1 }] }); check('quota: slot reused after cancel', r.status === 201, r.json.error);

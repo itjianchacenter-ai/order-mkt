@@ -91,8 +91,10 @@ const { fmtDayTH, fmtDayEN } = W;
 /** สถานะการรับออเดอร์ของแคมเปญวันนี้: open | before | closed | full (+ ข้อความแจ้งลูกค้า) */
 function orderWindow(c) {
   const menu = menuFor(c); const days = menu.order_days || []; const today = bangkokToday(menu);
-  const today_count = db.prepare("SELECT COUNT(*) AS n FROM orders WHERE campaign_id = ? AND order_day = ? AND status <> 'cancelled'").get(c.id, today).n;
-  const total_count = days.length ? db.prepare(`SELECT COUNT(*) AS n FROM orders WHERE campaign_id = ? AND status <> 'cancelled' AND order_day IN (${days.map(() => '?').join(',')})`).get(c.id, ...days).n : today_count;
+  // โควตาต่อวันนับเป็น "ชุด" (quantity × pieces) ไม่ใช่จำนวนออเดอร์
+  const SETS = 'COALESCE(SUM(l.quantity * COALESCE(l.pieces, 1)), 0) AS n';
+  const today_count = db.prepare(`SELECT ${SETS} FROM order_lines l JOIN orders o ON o.id = l.order_id WHERE o.campaign_id = ? AND o.order_day = ? AND o.status <> 'cancelled'`).get(c.id, today).n;
+  const total_count = days.length ? db.prepare(`SELECT ${SETS} FROM order_lines l JOIN orders o ON o.id = l.order_id WHERE o.campaign_id = ? AND o.status <> 'cancelled' AND o.order_day IN (${days.map(() => '?').join(',')})`).get(c.id, ...days).n : today_count;
   return W.computeOrderWindow(menu, today, { today_count, total_count });
 }
 const stockShortfall = (want, c) => M.stockShortfall(want, stockView(c).remaining);
@@ -357,6 +359,7 @@ function validateOrder(req, b) {
   if (built.error) return bad(400, built.error);
   const sv = stockView(campaign);
   if (!sv.order_window.open) return bad(409, sv.order_window.message, { stock: sv });
+  { const dshort = M.dayShortfall(built.want, sv.order_window); if (dshort) return bad(409, dshort, { stock: sv }); }
   const short = M.stockShortfall(built.want, sv.remaining); if (short) return bad(409, short, { stock: sv });
   return { ok: true, campaign, menu, store, store_name: `${store.brand} - ${store.name}`, phone, email, note: String(note).slice(0, 500), pickup_date: (mustPickup || menu.pickup_dates.length) ? pickup_date : '', pickup_time: menu.pickup_times.length ? pickup_time : '', rows: built.rows, want: built.want, total: built.total };
 }
@@ -399,6 +402,7 @@ app.post('/api/orders', upload.single('slip'), async (req, res) => {
     if (short) { const e = new Error(short); e.status = 409; throw e; }
     const ow = orderWindow(campaign); // ช่วงวันเปิดรับ + โควตาต่อวัน ตรวจใน transaction เดียวกัน กันสั่งเกินโควตาพร้อมกัน
     if (!ow.open) { const e = new Error(ow.message); e.status = 409; e.order_window = ow; throw e; }
+    { const dshort = M.dayShortfall(want, ow); if (dshort) { const e = new Error(dshort); e.status = 409; e.order_window = ow; throw e; } }   // โควตาชุดต่อวัน
     touchCustomer(req.customerId); linkCustomerCampaign(req.customerId, campaign.id);
     db.prepare('UPDATE customers SET email = ? WHERE id = ? AND google_sub IS NULL').run(v.email, req.customerId);   // ทะเบียนลูกค้า (บัญชี Google ใช้อีเมลของ Google)
     const pdpaAt = (customerRow(req.customerId) || {}).pdpa_accepted_at || '';
