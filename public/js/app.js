@@ -465,6 +465,9 @@ const STATUS_LABEL = {
   pending: ['Awaiting payment', 'รอชำระเงิน'], slip_uploaded: ['Verifying slip', 'รอตรวจสอบสลิป'], paid: ['Approved', 'บัญชีตรวจสอบรายการคำสั่งซื้อเรียบร้อย'], slip_rejected: ['Slip rejected', 'สลิปไม่ผ่าน กรุณาอัปโหลดใหม่'],
   picked_up: ['Picked up', 'รับสินค้าแล้ว'], cancelled: ['Cancelled', 'ยกเลิก'], draft: ['Awaiting slip', 'ยังไม่บันทึก — ออเดอร์จะถูกบันทึกเมื่อส่งสลิป'],
 };
+/* หมายเหตุการรับสินค้า (แสดงในรายละเอียดออเดอร์ของลูกค้าและใบรายการ) */
+const PICKUP_NOTICE = { title: 'หมายเหตุการรับสินค้า', p1: 'เนื่องจากสินค้ามีอายุการเก็บรักษาสั้น และเป็นสินค้าที่จัดเตรียมตามจำนวนการสั่งจอง เพื่อให้ลูกค้าได้รับสินค้าที่สดใหม่และคุณภาพดีที่สุด ขอความกรุณารับสินค้าตามวันที่และเวลาที่เลือกไว้', p2: 'กรณีลูกค้าไม่มารับสินค้าตามกำหนด ทางร้านขอสงวนสิทธิ์ไม่คืนเงินทุกกรณี' };
+const pickupNoticeHtml = () => `<div class="pickup-notice"><b>${esc(PICKUP_NOTICE.title)}</b><p>${esc(PICKUP_NOTICE.p1)}</p><p class="warn">${esc(PICKUP_NOTICE.p2)}</p></div>`;
 const PRINTABLE = ['paid', 'picked_up']; // ใบรายการพิมพ์ได้เมื่อบัญชี approve แล้วเท่านั้น
 function canPrint(o) { return PRINTABLE.includes(o && o.status); }
 function statusPill(s) { const [en, th] = STATUS_LABEL[s] || [s, '']; return `<span class="status ${esc(s)}">${en}<span class="th">${th}</span></span>`; }
@@ -495,6 +498,7 @@ function orderCard(o, { light = false, open = false, extra = '', badge = '', asi
       ${o.note ? `<div class="meta"><span><b>หมายเหตุ:</b> ${esc(o.note)}</span></div>` : ''}
       <div class="meta"><span>${fmtDateTime(o.created_at)}</span>${statusPill(o.status)}${o.slip_reason && ['pending', 'slip_uploaded', 'slip_rejected'].includes(o.status) && o.has_slip ? `<span>${esc(o.slip_reason)}</span>` : ''}</div>
       ${extra}
+      ${light ? '' : pickupNoticeHtml()}
     </div>
   </div>`;
 }
