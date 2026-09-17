@@ -382,6 +382,7 @@ a.btn{text-decoration:none}
 .pay{display:grid;grid-template-columns:1fr 1fr;gap:24px}
 @media (max-width:800px){.pay{grid-template-columns:1fr}}
 .paybox{border:1px solid var(--line);border-radius:var(--r-card);background:#fff;padding:24px 28px}
+.hold-note{margin-top:14px;padding:10px 14px;border:1.5px dashed #d32f2f;border-radius:12px;color:#b00020;font-size:13px;line-height:1.5}
 .paybox h3{margin:0 0 4px;font-size:20px}
 .paybox .sub{font-size:13px;display:block;margin-bottom:16px}
 .qr{width:260px;height:260px;margin:0 auto;display:block}

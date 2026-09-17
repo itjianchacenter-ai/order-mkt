@@ -117,9 +117,23 @@ const dbx = {
     r = await call('customer', 'GET', '/api/orders'); check('history lists own orders', r.status === 200 && r.json.length === 2);
     r = await call('other', 'GET', '/api/orders'); check('other browser sees nothing', r.json.length === 0);
     r = await call('other', 'GET', `/api/orders/${order.id}`); check('other browser cannot read order', r.status === 404);
-    r = await call('customer', 'POST', '/api/quote', { email: 'alice@gmail.com', store_id: storeId, phone: '0812345678', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 2 }, { set_id: B, quantity: 1 }] });
+    r = await call('customer', 'POST', '/api/quote', { email: 'alice@gmail.com', store_id: storeId, phone: '0812345678', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 2 }, { set_id: B, quantity: 1 }] }); const r0 = r;
     check('quote: total + QR payment, slip required, nothing saved', r.status === 200 && r.json.total === 1117 && r.json.slip_required === true && /^data:image\/(png|svg\+xml)/.test(r.json.payment.qr_data_url) && r.json.lines.length === 2 && r.json.pickup_date === '2026-09-25', r.json);
     r = await call('customer', 'GET', '/api/orders'); check('quote does not create an order', r.json.length === 2);
+    // ── จองคิวเมื่อกด Confirm (hold): quote ข้างบน 3 ชุด → หักโควตาวันนี้ทันที จนกว่าจะส่งสลิปหรือหมดอายุ ──
+    check('quote returns a hold expiry', /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(r0.json.hold_expires_at) && r0.json.hold_minutes === 15, r0.json.hold_expires_at);
+    r = await call('customer', 'GET', '/api/stock'); const heldView = r.json;
+    check('hold counted in today quota + stock', heldView.order_window.today_held === 3 && heldView.used.held === 3 && heldView.order_window.today_count >= 3, heldView.order_window);
+    const left = heldView.order_window.today_remaining; const chunk = (n) => { const out = []; for (let k = n; k > 0; k -= 99) out.push({ set_id: A, quantity: Math.min(99, k) }); return out; };   // จำกัด 99 ต่อบรรทัด
+    r = await call('other', 'POST', '/api/auth/google', { credential: 'bob' }); check('second customer signs in', r.status === 200);
+    r = await call('other', 'POST', '/api/quote', { email: 'bob@x.co', store_id: storeId, phone: '0899999999', pickup_time: '13:00-15:00 น.', lines: chunk(left + 1) }); check('another customer cannot reserve beyond what is left', r.status === 409 && /เหลือเพียง/.test(r.json.error), r.json);
+    r = await call('other', 'POST', '/api/quote', { email: 'bob@x.co', store_id: storeId, phone: '0899999999', pickup_time: '13:00-15:00 น.', lines: chunk(left) }); check('another customer reserves exactly what is left', r.status === 200, r.json);
+    r = await call('customer', 'GET', '/api/stock'); check('day is full while holds are active', r.json.order_window.status === 'full' && r.json.order_window.today_remaining === 0, r.json.order_window);
+    r = await call('customer', 'POST', '/api/quote', { email: 'alice@gmail.com', store_id: storeId, phone: '0812345678', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 2 }, { set_id: B, quantity: 1 }] }); check('re-confirming the same cart keeps my own reservation', r.status === 200, r.json);
+    r = await call('customer', 'POST', '/api/quote', { email: 'alice@gmail.com', store_id: storeId, phone: '0812345678', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 4 }] }); check('but cannot grow it while the day is full', r.status === 409, r.json);
+    await dbx.run("UPDATE holds SET expires_at = '2000-01-01 00:00:00' WHERE sets = ?", left);   // คิวของอีกคนหมดอายุ
+    r = await call('customer', 'GET', '/api/stock'); check('expired hold frees the quota', r.json.order_window.today_remaining === left && r.json.order_window.today_held === 3, r.json.order_window);
+    await dbx.run('DELETE FROM holds');   // เคลียร์คิวทดสอบ ไม่ให้กระทบตัวเลขในส่วนถัดไป
     r = await call('customer', 'POST', '/api/orders', { email: 'alice@gmail.com', store_id: storeId, phone: '0812345678', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 1 }] }); check('order without slip rejected (no order created)', r.status === 400 && r.json.field === 'slip', r.json);
     r = await placeOrder('customer', { store_id: storeId, phone: '0812345678', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 1 }] }, orderSeed); check('order with a slip already used rejected (no order created)', r.status === 400 && /เคยถูกใช้/.test(r.json.error), r.json);
     r = await call('customer', 'GET', '/api/orders'); check('rejected attempts leave no orders behind', r.json.length === 2);
@@ -246,7 +260,7 @@ const dbx = {
     r = await call('mkt', 'GET', '/api/admin/customers?campaign=jiancha-x-navori'); check('customer listed under the campaign she signed in from', r.json.total === 1 && r.json.campaign.slug === 'jianchaxnavori' && r.json.rows[0].joined_at, r.json);
     const navoriOrders = r.json.rows[0].orders;
     r = await call('mkt', 'GET', '/api/admin/customers?campaign=jiancha-x-summer'); check('summer lists alice only via her summer order, counted per campaign', r.json.total === 1 && r.json.rows[0].email === 'alice@gmail.com' && r.json.rows[0].orders >= 1 && r.json.rows[0].orders < navoriOrders, r.json.rows.map((c) => [c.email, c.orders]));
-    r = await call('mkt', 'GET', '/api/admin/customers?campaign=all'); check('all campaigns lists her once', r.json.total === 1 && r.json.campaign === null);
+    r = await call('mkt', 'GET', '/api/admin/customers?campaign=all'); check('all campaigns lists her once (plus bob from the hold test)', r.json.total === 2 && r.json.rows.filter((x) => x.email === 'alice@gmail.com').length === 1 && r.json.campaign === null, r.json);
     r = await call('customer2', 'POST', '/api/auth/google', { credential: 'bob', campaign: 'jianchaxsummer' }); check('bob signs in from the summer campaign page', r.json.logged_in === true && r.json.email === 'bob@gmail.com');
     r = await call('mkt', 'GET', '/api/admin/customers?campaign=jiancha-x-summer'); check('bob listed under summer with 0 orders (signed in from that page)', r.json.total === 2 && r.json.rows.some((c) => c.email === 'bob@gmail.com' && c.orders === 0), r.json.rows.map((c) => [c.email, c.orders]));
     r = await call('mkt', 'GET', '/api/admin/customers?campaign=jiancha-x-navori'); check('navori still only alice', r.json.total === 1 && r.json.rows[0].email === 'alice@gmail.com');
@@ -267,6 +281,7 @@ const dbx = {
     r = await call('customer', 'GET', '/api/menu?campaign=summer2026'); check('closed flag visible to customers', r.json.campaign.orders_open === false);
     r = await call('it', 'POST', '/api/admin/campaigns', { name: 'JIANCHA x SUMMER', slug: 'x' }); check('too-short slug rejected', r.status === 400);
 
+    await dbx.run('DELETE FROM holds');   // quote ทดสอบก่อนหน้าจองคิวไว้ → เคลียร์ก่อนตรวจสต๊อกรวม
     // ── stock (campaign jiancha-x-navori: 1000 sets; 4 used above: A×2 + B×1 + B×1) ──
     // ยกโควตาชุด/วันชั่วคราว (ทดสอบสต๊อกรวมด้วยออเดอร์ใหญ่กว่า 200 ชุด) แล้วคืนค่าหลังจบส่วนนี้
     const dz0 = (await call('it', 'GET', '/api/admin/campaigns/jiancha-x-navori/design')).json.design;
@@ -351,7 +366,7 @@ const dbx = {
     r = await call('it', 'POST', '/api/admin/reset', { confirm: 'nope' }); check('reset needs RESET confirmation', r.status === 400);
     r = await call('it', 'POST', '/api/admin/reset', { confirm: 'RESET' }); check('it-admin resets all orders', r.status === 200 && r.json.orders > 0 && r.json.slips > 0, r.json);
     r = await call('it', 'GET', '/api/admin/orders'); check('no orders after reset', r.json.total === 0);
-    r = await call('customer', 'GET', '/api/stock'); check('quota + stock back to full after reset', r.json.remaining.total === 1000 && r.json.order_window.today_count === 0, r.json);
+    r = await call('customer', 'GET', '/api/stock'); check('quota + stock back to full after reset', r.json.remaining.total === 1000 && r.json.order_window.today_count === 0 && r.json.order_window.today_held === 0, r.json);
     r = await call('mkt', 'GET', '/api/admin/customers?campaign=all'); check('customers kept after reset', r.json.total >= 2, r.json.total);
     r = await call('it', 'GET', '/api/admin/users'); check('accounts kept after reset', r.json.length >= 3);
     if (CF) { const m = await dbx.get("SELECT COUNT(*) AS n FROM meta WHERE key LIKE 'reset:%'"); check('scheduled reset (RESET_ORDERS_AT in the past) ran once on first request', m && m.n === 1, m); }

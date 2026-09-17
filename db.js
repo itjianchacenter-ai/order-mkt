@@ -109,6 +109,13 @@ db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_google ON customers(goo
 // ลูกค้าคนหนึ่งผูกกับแคมเปญที่เคยล็อกอิน/สั่งซื้อ (เช่น /jianchaxnavori/) ใช้แยกรายชื่อลูกค้าตามแคมเปญในหลังบ้าน
 // meta: one-off migration flags
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)');
+// จองคิว: กด Confirm → รอชำระเงิน = หักโควตา/สต๊อกทันที (หมดอายุอัตโนมัติ HOLD_MINUTES; ถูกใช้เมื่อส่งสลิป)
+db.exec(`CREATE TABLE IF NOT EXISTS holds (
+  id TEXT PRIMARY KEY, customer_id TEXT NOT NULL, campaign_id TEXT NOT NULL, order_day TEXT NOT NULL,
+  sets INTEGER NOT NULL DEFAULT 0, drink INTEGER NOT NULL DEFAULT 0, dessert INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now','localtime')), expires_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_holds_day ON holds(campaign_id, order_day, expires_at);
+CREATE INDEX IF NOT EXISTS idx_holds_customer ON holds(customer_id, campaign_id);`);
 db.exec(`CREATE TABLE IF NOT EXISTS customer_campaigns (
   customer_id TEXT NOT NULL REFERENCES customers(id),
   campaign_id TEXT NOT NULL,
