@@ -28,6 +28,13 @@ const DDL = [
   'CREATE INDEX IF NOT EXISTS idx_orders_store ON orders(store_id, created_at DESC)',
   'CREATE INDEX IF NOT EXISTS idx_orders_campaign ON orders(campaign_id, created_at DESC)',
   'CREATE INDEX IF NOT EXISTS idx_orders_day ON orders(campaign_id, order_day)',
+  // จองคิว: กด Confirm → รอชำระเงิน = หักโควตา/สต๊อกทันที (หมดอายุอัตโนมัติ HOLD_MINUTES; ถูกใช้เมื่อส่งสลิป)
+  `CREATE TABLE IF NOT EXISTS holds (
+    id TEXT PRIMARY KEY, customer_id TEXT NOT NULL, campaign_id TEXT NOT NULL, order_day TEXT NOT NULL,
+    sets INTEGER NOT NULL DEFAULT 0, drink INTEGER NOT NULL DEFAULT 0, dessert INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT DEFAULT (${NOW}), expires_at TEXT NOT NULL)`,
+  'CREATE INDEX IF NOT EXISTS idx_holds_day ON holds(campaign_id, order_day, expires_at)',
+  'CREATE INDEX IF NOT EXISTS idx_holds_customer ON holds(customer_id, campaign_id)',
   'CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_promo_code ON orders(promo_code) WHERE promo_code IS NOT NULL',
   `CREATE TABLE IF NOT EXISTS order_lines (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

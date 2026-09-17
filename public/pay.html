@@ -112,7 +112,8 @@
   }
   const pseudo = { id: '', order_number: '—', store_name: q.store_name, pickup_date: q.pickup_date, pickup_time: q.pickup_time, lines: q.lines, total: q.total, status: 'draft', phone: q.phone, email: q.email, note: q.note, created_at: '' };
   head.innerHTML = orderCard(pseudo, { open: true }); bindOrderToggles(head);
-  pay.innerHTML = `<div class="paybox"><div id="pay-how">${paymentHtml(q.payment, q.amount)}</div></div>` + uploadBox('อัปโหลดสลิปโอนเงินเพื่อยืนยันคำสั่งซื้อ — <b>ออเดอร์จะถูกบันทึกและได้เลขออเดอร์เมื่อส่งสลิปแล้ว</b> (ระบบย่อรูปให้อัตโนมัติ)');
+  const holdNote = q.hold_expires_at ? (() => { const t = String(q.hold_expires_at).slice(11, 16); return `<div class="hold-note">⏱ จองคิวไว้ให้แล้ว (หักโควตาวันนี้ ${q.lines.reduce((s, l) => s + (l.quantity || 0) * (l.pieces || 1), 0)} ชุด) กรุณาส่งสลิปภายใน <b>${t} น.</b> (${q.hold_minutes || 15} นาที) หากเกินเวลา คิวจะถูกคืนให้ลูกค้าท่านอื่น / Your sets are reserved until <b>${t}</b>. Please upload the slip before then.</div>`; })() : '';
+  pay.innerHTML = `<div class="paybox"><div id="pay-how">${paymentHtml(q.payment, q.amount)}</div>${holdNote}</div>` + uploadBox('อัปโหลดสลิปโอนเงินเพื่อยืนยันคำสั่งซื้อ — <b>ออเดอร์จะถูกบันทึกและได้เลขออเดอร์เมื่อส่งสลิปแล้ว</b> (ระบบย่อรูปให้อัตโนมัติ)');
   bindCopy($('#pay-how'));
   bindUpload(async (small) => {
     const fd = new FormData(); fd.append('order', JSON.stringify(draft)); fd.append('slip', small, small.name || 'slip.jpg');

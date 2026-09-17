@@ -15,6 +15,7 @@ export async function wipeOrders(env, { before = '' } = {}) {
     db.stmt(`DELETE FROM mail_log${w}`, ...a),
     db.stmt(`DELETE FROM files WHERE key LIKE 'slips/%'${before ? ' AND created_at < ?' : ''}`, ...a),
     db.stmt(`DELETE FROM orders${w}`, ...a),
+    db.stmt('DELETE FROM holds'),
     // เลขออเดอร์ของวันที่ล้างไปแล้วเริ่มนับใหม่ (วันที่ยังมีออเดอร์ค้างอยู่ไม่แตะ กันเลขซ้ำ)
     before ? db.stmt('DELETE FROM order_counters WHERE day < ?', dayKey) : db.stmt('DELETE FROM order_counters'),
   ];

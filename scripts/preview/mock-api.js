@@ -255,7 +255,7 @@ async function api(path, opts = {}) {
   // สรุปคำสั่งซื้อ + วิธีชำระเงิน (ยังไม่มีออเดอร์จนกว่าจะส่งสลิป)
   if (p === '/api/quote' && method === 'POST') {
     const { camp, o } = pvPrepare(body);
-    return { campaign: { id: camp.id, slug: camp.slug, url: `/${camp.slug}/`, name: camp.name }, campaign_name: camp.name, store_id: o.store_id, store_name: o.store_name, phone: o.phone, email: o.email, note: o.note, pickup_date: o.pickup_date, pickup_time: o.pickup_time, order_day: o.order_day, lines: o.lines, total: o.total, amount: o.total, payment: o.total > 0 ? { qr_data_url: pvQrDataUrl(o.total) } : null, slip_required: o.total > 0 };
+    return { campaign: { id: camp.id, slug: camp.slug, url: `/${camp.slug}/`, name: camp.name }, campaign_name: camp.name, store_id: o.store_id, hold_expires_at: (() => { const d = new Date(Date.now() + 15 * 60000); return d.toLocaleString('sv-SE', { timeZone: 'Asia/Bangkok' }).replace('T', ' '); })(), hold_minutes: 15, store_name: o.store_name, phone: o.phone, email: o.email, note: o.note, pickup_date: o.pickup_date, pickup_time: o.pickup_time, order_day: o.order_day, lines: o.lines, total: o.total, amount: o.total, payment: o.total > 0 ? { qr_data_url: pvQrDataUrl(o.total) } : null, slip_required: o.total > 0 };
   }
   // สั่งซื้อ = ส่งสลิปพร้อมรายการ (FormData: order = JSON, slip = รูป) — ออเดอร์เกิดเมื่อมีสลิปเท่านั้น (JSON ล้วนใช้ได้เฉพาะยอด 0 บาท)
   if (p === '/api/orders' && method === 'POST') {

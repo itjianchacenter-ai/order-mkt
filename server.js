@@ -76,8 +76,10 @@ function stockUsage(campaignId) {
                                COALESCE(SUM(l.quantity * COALESCE(l.drink_pieces, 0)), 0) AS drink,
                                COALESCE(SUM(l.quantity * COALESCE(l.dessert_pieces, 0)), 0) AS dessert
                         FROM order_lines l JOIN orders o ON o.id = l.order_id WHERE o.status <> 'cancelled' AND o.campaign_id = ?`).get(campaignId);
-  return { drink: r.drink, dessert: r.dessert, total: r.total };
+  const h = db.prepare('SELECT COALESCE(SUM(sets), 0) AS total, COALESCE(SUM(drink), 0) AS drink, COALESCE(SUM(dessert), 0) AS dessert FROM holds WHERE campaign_id = ? AND expires_at > ?').get(campaignId, W.bangkokNow());   // คิวที่จองไว้ (รอชำระเงิน)
+  return { drink: r.drink + h.drink, dessert: r.dessert + h.dessert, total: r.total + h.total, held: h.total };
 }
+const holdMinutes = () => Math.max(1, Number(process.env.HOLD_MINUTES) || 15);   // เวลาจองคิวหลังกด Confirm (นาที)
 function stockView(c) {
   const limits = { total: c.stock_total, drink: c.stock_drink, dessert: c.stock_dessert };
   const used = stockUsage(c.id); const remaining = {};
@@ -95,7 +97,10 @@ function orderWindow(c) {
   const SETS = 'COALESCE(SUM(l.quantity * COALESCE(l.pieces, 1)), 0) AS n';
   const today_count = db.prepare(`SELECT ${SETS} FROM order_lines l JOIN orders o ON o.id = l.order_id WHERE o.campaign_id = ? AND o.order_day = ? AND o.status <> 'cancelled'`).get(c.id, today).n;
   const total_count = days.length ? db.prepare(`SELECT ${SETS} FROM order_lines l JOIN orders o ON o.id = l.order_id WHERE o.campaign_id = ? AND o.status <> 'cancelled' AND o.order_day IN (${days.map(() => '?').join(',')})`).get(c.id, ...days).n : today_count;
-  return W.computeOrderWindow(menu, today, { today_count, total_count });
+  const ts = W.bangkokNow();
+  const today_held = db.prepare('SELECT COALESCE(SUM(sets), 0) AS n FROM holds WHERE campaign_id = ? AND order_day = ? AND expires_at > ?').get(c.id, today, ts).n;
+  const total_held = days.length ? db.prepare(`SELECT COALESCE(SUM(sets), 0) AS n FROM holds WHERE campaign_id = ? AND expires_at > ? AND order_day IN (${days.map(() => '?').join(',')})`).get(c.id, ts, ...days).n : today_held;
+  return { ...W.computeOrderWindow(menu, today, { today_count: today_count + today_held, total_count: total_count + total_held }), today_held };
 }
 const stockShortfall = (want, c) => M.stockShortfall(want, stockView(c).remaining);
 
@@ -358,15 +363,35 @@ function validateOrder(req, b) {
   const built = M.buildOrderRows(lines, menu);
   if (built.error) return bad(400, built.error);
   const sv = stockView(campaign);
-  if (!sv.order_window.open) return bad(409, sv.order_window.message, { stock: sv });
-  { const dshort = M.dayShortfall(built.want, sv.order_window); if (dshort) return bad(409, dshort, { stock: sv }); }
-  const short = M.stockShortfall(built.want, sv.remaining); if (short) return bad(409, short, { stock: sv });
+  if (!sv.order_window.open && sv.order_window.status !== 'full') return bad(409, sv.order_window.message, { stock: sv });
+  // คิวที่ลูกค้าคนนี้จองไว้เอง (กด Confirm ก่อนหน้า) บวกคืนก่อนตรวจ
+  const own = db.prepare('SELECT COALESCE(SUM(sets), 0) AS sets, COALESCE(SUM(drink), 0) AS drink, COALESCE(SUM(dessert), 0) AS dessert FROM holds WHERE customer_id = ? AND campaign_id = ? AND order_day = ? AND expires_at > ?').get(req.customerId, campaign.id, bangkokToday(menu), W.bangkokNow());
+  if (sv.order_window.status === 'full' && own.sets === 0) return bad(409, sv.order_window.message, { stock: sv });
+  const rem = { total: sv.remaining.total == null ? null : sv.remaining.total + own.sets, drink: sv.remaining.drink == null ? null : sv.remaining.drink + own.drink, dessert: sv.remaining.dessert == null ? null : sv.remaining.dessert + own.dessert };
+  const ow = { ...sv.order_window, today_remaining: sv.order_window.today_remaining == null ? null : sv.order_window.today_remaining + own.sets };
+  { const dshort = M.dayShortfall(built.want, ow); if (dshort) return bad(409, dshort, { stock: sv }); }
+  const short = M.stockShortfall(built.want, rem); if (short) return bad(409, short, { stock: sv });
   return { ok: true, campaign, menu, store, store_name: `${store.brand} - ${store.name}`, phone, email, note: String(note).slice(0, 500), pickup_date: (mustPickup || menu.pickup_dates.length) ? pickup_date : '', pickup_time: menu.pickup_times.length ? pickup_time : '', rows: built.rows, want: built.want, total: built.total };
 }
 const sendBad = (res, v) => { const { ok, status, ...rest } = v; return res.status(status).json(rest); };
 /** สรุปคำสั่งซื้อ + วิธีชำระเงิน (ยังไม่มีออเดอร์ในระบบจนกว่าจะส่งสลิป) */
+/** จองคิว (hold): ลบคิวเดิม/หมดอายุ → ตรวจโควตา+สต๊อก (ไม่รวมคิวตัวเอง) → จองใหม่ ใน transaction เดียว; คืน hold หรือ error */
+function reserveHold(req, v) {
+  const { campaign, menu, want } = v; const today = bangkokToday(menu); const ts = W.bangkokNow();
+  const exp = W.bangkokNow(new Date(Date.now() + holdMinutes() * 60000)); const id = crypto.randomUUID();
+  return db.transaction(() => {
+    db.prepare('DELETE FROM holds WHERE expires_at <= ?').run(ts);
+    db.prepare('DELETE FROM holds WHERE customer_id = ? AND campaign_id = ?').run(req.customerId, campaign.id);
+    const sv = stockView(campaign);
+    const short = M.stockShortfall(want, sv.remaining) || M.dayShortfall(want, sv.order_window) || (!sv.order_window.open ? sv.order_window.message : '');
+    if (short) return { error: short, stock: sv };
+    db.prepare('INSERT INTO holds(id, customer_id, campaign_id, order_day, sets, drink, dessert, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(id, req.customerId, campaign.id, today, want.total, want.drink, want.dessert, exp);
+    return { hold: { id, expires_at: exp } };
+  })();
+}
 app.post('/api/quote', async (req, res) => {
   const v = validateOrder(req, req.body || {}); if (!v.ok) return sendBad(res, v);
+  const hr = reserveHold(req, v); if (hr.error) return res.status(409).json({ error: hr.error, stock: hr.stock });   // กด Confirm = จองคิวทันที
   const lines = v.rows.map((r) => { let items = []; try { items = r.items_json ? JSON.parse(r.items_json) : []; } catch (e) { items = []; }
     return { set_id: r.set_id, set_label: r.set_label, set_name: r.set_name, items, name: r.set_id ? `${r.set_label || 'SET ' + r.set_id} · ${r.set_name}` : [r.drink_name, r.dessert_name].filter(Boolean).join(' + '), pieces: r.pieces, quantity: r.quantity, unit_price: r.unit_price, line_total: r.line_total }; });
   let payment = null;
@@ -374,7 +399,7 @@ app.post('/api/quote', async (req, res) => {
     if (!qrConfigured()) return res.status(503).json({ error: 'ยังไม่ได้ตั้งค่าบัญชีรับเงินของร้าน (BANK_ACCOUNT_NO หรือ PROMPTPAY_ID)' });
     const bank = bankAccount(process.env); payment = bank ? { bank } : { qr_data_url: await generateQR(v.total) };
   }
-  res.json({ campaign: campaignPublic(v.campaign), campaign_name: v.campaign.name, store_id: v.store.id, store_name: v.store_name, phone: v.phone, email: v.email, note: v.note, pickup_date: v.pickup_date, pickup_time: v.pickup_time, order_day: bangkokToday(v.menu), lines, total: v.total, amount: v.total, payment, slip_required: v.total > 0 });
+  res.json({ campaign: campaignPublic(v.campaign), campaign_name: v.campaign.name, store_id: v.store.id, store_name: v.store_name, phone: v.phone, email: v.email, note: v.note, pickup_date: v.pickup_date, pickup_time: v.pickup_time, order_day: bangkokToday(v.menu), lines, total: v.total, amount: v.total, payment, slip_required: v.total > 0, hold_expires_at: hr.hold.expires_at, hold_minutes: holdMinutes() });
 });
 /** สั่งซื้อ = ส่งสลิปพร้อมรายการ (multipart: order = JSON, slip = รูป) — ออเดอร์เกิดในระบบเมื่อมีสลิปเท่านั้น (JSON ล้วนใช้ได้เฉพาะยอด 0 บาท) */
 app.post('/api/orders', upload.single('slip'), async (req, res) => {
@@ -398,6 +423,7 @@ app.post('/api/orders', upload.single('slip'), async (req, res) => {
   const id = crypto.randomUUID();
   const status = total > 0 ? (r.verified ? 'paid' : 'slip_uploaded') : 'paid';
   const create = db.transaction(() => {
+    db.prepare('DELETE FROM holds WHERE customer_id = ? AND campaign_id = ?').run(req.customerId, campaign.id);   // คิวที่จองไว้ถูกใช้เป็นออเดอร์
     const short = stockShortfall(want, campaign); // checked inside the write transaction so two customers cannot both take the last pieces
     if (short) { const e = new Error(short); e.status = 409; throw e; }
     const ow = orderWindow(campaign); // ช่วงวันเปิดรับ + โควตาต่อวัน ตรวจใน transaction เดียวกัน กันสั่งเกินโควตาพร้อมกัน
@@ -514,7 +540,7 @@ app.post('/api/admin/reset', requirePerm('accounts'), (req, res) => {
   if (!req.body || req.body.confirm !== 'RESET') return res.status(400).json({ error: "ต้องยืนยันด้วยคำว่า RESET / Send { confirm: 'RESET' }" });
   const before = db.prepare('SELECT COUNT(*) AS n, COUNT(promo_code) AS codes FROM orders').get();
   const slips = db.prepare("SELECT slip_path FROM orders WHERE slip_path <> ''").all();
-  db.transaction(() => { db.exec('DELETE FROM order_lines; DELETE FROM mail_log; DELETE FROM orders; DELETE FROM order_counters;'); })();
+  db.transaction(() => { db.exec('DELETE FROM order_lines; DELETE FROM mail_log; DELETE FROM orders; DELETE FROM holds; DELETE FROM order_counters;'); })();
   for (const s of slips) fs.unlink(s.slip_path, () => {});
   res.json({ ok: true, orders: before.n, promo_codes: before.codes, slips: slips.length, before: null });
 });

@@ -44,6 +44,8 @@ function campaignView(c) {
 }
 const campaignPublic = (c) => ({ id: c.id, slug: c.slug, url: `/${c.slug}/`, name: c.name, active: Boolean(c.active), orders_open: c.orders_open !== 0 });
 const SETS_SUM = 'COALESCE(SUM(l.quantity * COALESCE(l.pieces, 1)), 0) AS n';
+const HOLD_USAGE_SQL = 'SELECT COALESCE(SUM(sets), 0) AS total, COALESCE(SUM(drink), 0) AS drink, COALESCE(SUM(dessert), 0) AS dessert FROM holds WHERE campaign_id = ? AND expires_at > ?';
+const holdMinutes = (env) => Math.max(1, Number(env.HOLD_MINUTES) || 15);   // เวลาจองคิวหลังกด Confirm (นาที)
 const USAGE_SQL = `SELECT COALESCE(SUM(l.quantity * COALESCE(l.pieces, 1)), 0) AS total, COALESCE(SUM(l.quantity * COALESCE(l.drink_pieces, 0)), 0) AS drink, COALESCE(SUM(l.quantity * COALESCE(l.dessert_pieces, 0)), 0) AS dessert
   FROM order_lines l JOIN orders o ON o.id = l.order_id WHERE o.status <> 'cancelled' AND o.campaign_id = ?`;
 /* stock/order-window ของแคมเปญ cache ในหน่วยความจำของ isolate สั้น ๆ (ค่าเริ่มต้น 5 วินาที; STOCK_CACHE_MS=0 = ปิด, ปิดอัตโนมัติใน TEST_MODE)
@@ -55,9 +57,11 @@ async function stockView(c, camp) {
   const ttl = stockCacheMs(c.env); const key = stockCacheKey(c, camp);
   if (ttl > 0) { const hit = stockCache.get(key); if (hit && hit.exp > Date.now()) return hit.value; }
   const limits = { total: camp.stock_total, drink: camp.stock_drink, dessert: camp.stock_dessert };
-  const used = await c.db.get(USAGE_SQL, camp.id); const remaining = {};
+  const o = await c.db.get(USAGE_SQL, camp.id);
+  const h = await c.db.get(HOLD_USAGE_SQL, camp.id, now());   // คิวที่จองไว้ (รอชำระเงิน) นับเป็นใช้แล้ว
+  const used = { total: o.total + h.total, drink: o.drink + h.drink, dessert: o.dessert + h.dessert }; const remaining = {};
   for (const k of ['total', 'drink', 'dessert']) remaining[k] = limits[k] == null ? null : Math.max(0, limits[k] - used[k]);
-  const value = { limits, used: { drink: used.drink, dessert: used.dessert, total: used.total }, remaining, sold_out: ['total', 'drink', 'dessert'].some((k) => remaining[k] === 0), order_window: await orderWindow(c, camp) };
+  const value = { limits, used: { drink: used.drink, dessert: used.dessert, total: used.total, held: h.total }, remaining, sold_out: ['total', 'drink', 'dessert'].some((k) => remaining[k] === 0), order_window: await orderWindow(c, camp) };
   if (ttl > 0) stockCache.set(key, { value, exp: Date.now() + ttl });
   return value;
 }
@@ -67,7 +71,11 @@ async function orderWindow(c, camp) {
   // โควตาต่อวันนับเป็น "ชุด" (quantity × pieces) ไม่ใช่จำนวนออเดอร์
   const today_count = (await c.db.get(`SELECT ${SETS_SUM} FROM order_lines l JOIN orders o ON o.id = l.order_id WHERE o.campaign_id = ? AND o.order_day = ? AND o.status <> 'cancelled'`, camp.id, today)).n;
   const total_count = days.length ? (await c.db.get(`SELECT ${SETS_SUM} FROM order_lines l JOIN orders o ON o.id = l.order_id WHERE o.campaign_id = ? AND o.status <> 'cancelled' AND o.order_day IN (${days.map(() => '?').join(',')})`, camp.id, ...days)).n : today_count;
-  return W.computeOrderWindow(menu, today, { today_count, total_count });
+  // คิวที่จองไว้ระหว่างรอชำระเงิน (ยังไม่หมดอายุ) หักโควตาด้วย
+  const ts = now();
+  const today_held = (await c.db.get('SELECT COALESCE(SUM(sets), 0) AS n FROM holds WHERE campaign_id = ? AND order_day = ? AND expires_at > ?', camp.id, today, ts)).n;
+  const total_held = days.length ? (await c.db.get(`SELECT COALESCE(SUM(sets), 0) AS n FROM holds WHERE campaign_id = ? AND expires_at > ? AND order_day IN (${days.map(() => '?').join(',')})`, camp.id, ts, ...days)).n : today_held;
+  return { ...W.computeOrderWindow(menu, today, { today_count: today_count + today_held, total_count: total_count + total_held }), today_held };
 }
 
 // ─── customers (anonymous cookie per browser; Google account once signed in) ───
@@ -263,14 +271,42 @@ async function validateOrder(c, b) {
   if (menu.pickup_times.length && !menu.pickup_times.includes(pickup_time)) fail(400, { error: 'กรุณาเลือกเวลาที่รับของ / Please choose a pick-up time', field: 'pickup_time' });
   const built = M.buildOrderRows(lines, menu); if (built.error) fail(400, built.error);
   // ช่วงวันเปิดรับ (นอกช่วง = ไม่ต้องลอง); โควตาต่อวันและสต๊อกตรวจซ้ำใน transaction ตอนบันทึก กันสั่งเกินพร้อมกัน
-  const sv = await stockView(c, campaign);
-  if (!sv.order_window.open) fail(409, { error: sv.order_window.message, stock: sv });
-  const short = M.stockShortfall(built.want, sv.remaining) || M.dayShortfall(built.want, sv.order_window); if (short) fail(409, { error: short, stock: sv });
+  invalidateStock(); const sv = await stockView(c, campaign);
+  if (!sv.order_window.open && !(sv.order_window.status === 'full')) fail(409, { error: sv.order_window.message, stock: sv });
+  // คิวที่ลูกค้าคนนี้จองไว้เอง (กด Confirm ก่อนหน้า) ไม่นับเป็นของคนอื่น → บวกคืนก่อนตรวจ
+  const own = (await c.db.get('SELECT COALESCE(SUM(sets), 0) AS sets, COALESCE(SUM(drink), 0) AS drink, COALESCE(SUM(dessert), 0) AS dessert FROM holds WHERE customer_id = ? AND campaign_id = ? AND order_day = ? AND expires_at > ?', c.customerId, campaign.id, today, now())) || { sets: 0, drink: 0, dessert: 0 };
+  const rem = { total: sv.remaining.total == null ? null : sv.remaining.total + own.sets, drink: sv.remaining.drink == null ? null : sv.remaining.drink + own.drink, dessert: sv.remaining.dessert == null ? null : sv.remaining.dessert + own.dessert };
+  const ow = { ...sv.order_window, today_remaining: sv.order_window.today_remaining == null ? null : sv.order_window.today_remaining + own.sets };
+  if (sv.order_window.status === 'full' && own.sets === 0) fail(409, { error: sv.order_window.message, stock: sv });
+  const short = M.stockShortfall(built.want, rem) || M.dayShortfall(built.want, ow); if (short) fail(409, { error: short, stock: sv });
   return { campaign, menu, today, store, store_name: `${store.brand} - ${store.name}`, phone, email, note: String(note).slice(0, 500), pickup_date: (mustPickup || menu.pickup_dates.length) ? pickup_date : '', pickup_time: menu.pickup_times.length ? pickup_time : '', rows: built.rows, want: built.want, total: built.total };
 }
 /** สรุปคำสั่งซื้อ + วิธีชำระเงิน (ยังไม่มีออเดอร์ในระบบจนกว่าจะส่งสลิป) */
+/** จองคิว (hold) ให้ลูกค้าคนนี้: ลบคิวเดิม/คิวหมดอายุ แล้วจองใหม่แบบตรวจโควตา+สต๊อกใน batch เดียว → hold row หรือ null (เต็ม) */
+async function reserveHold(c, v) {
+  const { campaign, menu, today, want } = v; const db = c.db; const ts = now();
+  const mins = holdMinutes(c.env); const exp = W.bangkokNow(new Date(Date.now() + mins * 60000)); const id = uuid();
+  const conds = [], cargs = [];
+  for (const [k, col] of [['total', 'COALESCE(l.pieces, 1)'], ['drink', 'COALESCE(l.drink_pieces, 0)'], ['dessert', 'COALESCE(l.dessert_pieces, 0)']]) {
+    const limit = campaign['stock_' + k]; if (limit == null) continue;
+    const hcol = k === 'total' ? 'sets' : k;
+    conds.push(`(SELECT COALESCE(SUM(l.quantity * ${col}), 0) FROM order_lines l JOIN orders o ON o.id = l.order_id WHERE o.status <> 'cancelled' AND o.campaign_id = ?) + (SELECT COALESCE(SUM(h.${hcol}), 0) FROM holds h WHERE h.campaign_id = ? AND h.expires_at > ?) + ? <= ?`); cargs.push(campaign.id, campaign.id, ts, want[k], limit);
+  }
+  if (menu.orders_per_day) { conds.push(`(SELECT COALESCE(SUM(l.quantity * COALESCE(l.pieces, 1)), 0) FROM order_lines l JOIN orders o ON o.id = l.order_id WHERE o.campaign_id = ? AND o.order_day = ? AND o.status <> 'cancelled') + (SELECT COALESCE(SUM(h.sets), 0) FROM holds h WHERE h.campaign_id = ? AND h.order_day = ? AND h.expires_at > ?) + ? <= ?`); cargs.push(campaign.id, today, campaign.id, today, ts, want.total, menu.orders_per_day); }
+  const where = conds.length ? ' WHERE ' + conds.join(' AND ') : '';
+  await db.batch([
+    db.stmt('DELETE FROM holds WHERE expires_at <= ?', ts),                                       // เก็บกวาดคิวหมดอายุ
+    db.stmt('DELETE FROM holds WHERE customer_id = ? AND campaign_id = ?', c.customerId, campaign.id),   // คิวเดิมของลูกค้าคนนี้ (จองใหม่แทน)
+    db.stmt(`INSERT INTO holds(id, customer_id, campaign_id, order_day, sets, drink, dessert, created_at, expires_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?${where}`, id, c.customerId, campaign.id, today, want.total, want.drink, want.dessert, ts, exp, ...cargs),
+  ]);
+  invalidateStock();
+  return await db.get('SELECT id, expires_at FROM holds WHERE id = ?', id);
+}
 on('POST', '/api/quote', async (c) => {
   const v = await validateOrder(c, await body(c));
+  // กด Confirm = จองคิวทันที (หักโควตา/สต๊อกระหว่างรอชำระเงิน) หมดอายุอัตโนมัติถ้าไม่ส่งสลิปทัน
+  const hold = await reserveHold(c, v);
+  if (!hold) { const sv = await stockView(c, v.campaign); fail(409, { error: M.stockShortfall(v.want, sv.remaining) || M.dayShortfall(v.want, sv.order_window) || sv.order_window.message || 'คิวเต็มแล้ว กรุณาลองใหม่', stock: sv }); }
   const lines = v.rows.map((r) => { let items = []; try { items = r.items_json ? JSON.parse(r.items_json) : []; } catch (e) { items = []; }
     return { set_id: r.set_id, set_label: r.set_label, set_name: r.set_name, items, name: r.set_id ? `${r.set_label || 'SET ' + r.set_id} · ${r.set_name}` : [r.drink_name, r.dessert_name].filter(Boolean).join(' + '), pieces: r.pieces, quantity: r.quantity, unit_price: r.unit_price, line_total: r.line_total }; });
   let payment = null;
@@ -278,7 +314,7 @@ on('POST', '/api/quote', async (c) => {
     if (!qrConfigured(c.env)) fail(503, 'ยังไม่ได้ตั้งค่าบัญชีรับเงินของร้าน (BANK_ACCOUNT_NO หรือ PROMPTPAY_ID)');
     const bank = bankAccount(c.env); payment = bank ? { bank } : { qr_data_url: generateQR(c.env, v.total) };
   }
-  return json({ campaign: campaignPublic(v.campaign), campaign_name: v.campaign.name, store_id: v.store.id, store_name: v.store_name, phone: v.phone, email: v.email, note: v.note, pickup_date: v.pickup_date, pickup_time: v.pickup_time, order_day: v.today, lines, total: v.total, amount: v.total, payment, slip_required: v.total > 0 });
+  return json({ campaign: campaignPublic(v.campaign), campaign_name: v.campaign.name, store_id: v.store.id, store_name: v.store_name, phone: v.phone, email: v.email, note: v.note, pickup_date: v.pickup_date, pickup_time: v.pickup_time, order_day: v.today, lines, total: v.total, amount: v.total, payment, slip_required: v.total > 0, hold_expires_at: hold.expires_at, hold_minutes: holdMinutes(c.env) });
 });
 /** บันทึกออเดอร์ (โควตาต่อวัน + สต๊อกตรวจใน transaction เดียวกับการบันทึก) → แถวออเดอร์ หรือ 409 */
 async function insertOrder(c, v, { slipStatus = null, slipAt = null } = {}) {
@@ -288,12 +324,15 @@ async function insertOrder(c, v, { slipStatus = null, slipAt = null } = {}) {
   const conds = [], cargs = [];
   for (const [k, col] of [['total', 'COALESCE(l.pieces, 1)'], ['drink', 'COALESCE(l.drink_pieces, 0)'], ['dessert', 'COALESCE(l.dessert_pieces, 0)']]) {
     const limit = campaign['stock_' + k]; if (limit == null) continue;
-    conds.push(`(SELECT COALESCE(SUM(l.quantity * ${col}), 0) FROM order_lines l JOIN orders o ON o.id = l.order_id WHERE o.status <> 'cancelled' AND o.campaign_id = ?) + ? <= ?`); cargs.push(campaign.id, want[k], limit);
+    const hcol = k === 'total' ? 'sets' : k;
+    conds.push(`(SELECT COALESCE(SUM(l.quantity * ${col}), 0) FROM order_lines l JOIN orders o ON o.id = l.order_id WHERE o.status <> 'cancelled' AND o.campaign_id = ?) + (SELECT COALESCE(SUM(h.${hcol}), 0) FROM holds h WHERE h.campaign_id = ? AND h.expires_at > ? AND h.customer_id <> ?) + ? <= ?`); cargs.push(campaign.id, campaign.id, ts, c.customerId, want[k], limit);
   }
-  if (menu.orders_per_day) { conds.push(`(SELECT COALESCE(SUM(l.quantity * COALESCE(l.pieces, 1)), 0) FROM order_lines l JOIN orders o ON o.id = l.order_id WHERE o.campaign_id = ? AND o.order_day = ? AND o.status <> 'cancelled') + ? <= ?`); cargs.push(campaign.id, today, want.total, menu.orders_per_day); }   // โควตาชุดต่อวัน
+  // โควตาชุดต่อวัน: ชุดที่ขายแล้ว + คิวที่คนอื่นจองไว้ (รอชำระเงิน) + ออเดอร์นี้ ≤ โควตา
+  if (menu.orders_per_day) { conds.push(`(SELECT COALESCE(SUM(l.quantity * COALESCE(l.pieces, 1)), 0) FROM order_lines l JOIN orders o ON o.id = l.order_id WHERE o.campaign_id = ? AND o.order_day = ? AND o.status <> 'cancelled') + (SELECT COALESCE(SUM(h.sets), 0) FROM holds h WHERE h.campaign_id = ? AND h.order_day = ? AND h.expires_at > ? AND h.customer_id <> ?) + ? <= ?`); cargs.push(campaign.id, today, campaign.id, today, ts, c.customerId, want.total, menu.orders_per_day); }
   const where = conds.length ? ' WHERE ' + conds.join(' AND ') : '';
   const status = total > 0 ? (slipStatus || 'pending') : 'paid';
   const stmts = [touchCustomerStmt(db, c.customerId), linkCampaignStmt(db, c.customerId, campaign.id),
+    db.stmt('DELETE FROM holds WHERE customer_id = ? AND campaign_id = ?', c.customerId, campaign.id),   // คิวที่จองไว้ถูกใช้เป็นออเดอร์
     // ทะเบียนลูกค้า: อีเมลที่กรอกติดกับตัวตนของเบราว์เซอร์นี้ (บัญชี Google ใช้อีเมลของ Google ไม่ทับ)
     db.stmt('UPDATE customers SET email = ? WHERE id = ? AND google_sub IS NULL', v.email, c.customerId),
     db.stmt(`INSERT INTO orders(id, order_number, customer_id, campaign_id, store_id, store_name, total, note, phone, email, pickup_date, pickup_time, pdpa_accepted_at, order_day, status, paid_at, created_at)
