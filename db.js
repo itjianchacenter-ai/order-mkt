@@ -213,12 +213,12 @@ function seedDefaults({ campaign } = {}) {
     db.prepare("INSERT INTO meta(key, value) VALUES ('promo_range_v2', ?)").run(campaign.promo_prefix);
   }
   // ชื่อขนมในเซ็ตเปลี่ยน (Golden Mung Snow Mooncake / Taro Mochi Mooncake) → แก้ใน design ที่บันทึกไว้ครั้งเดียว
-  if (!db.prepare("SELECT 1 FROM meta WHERE key = 'item_names_v2'").get()) {
+  if (!db.prepare("SELECT 1 FROM meta WHERE key = 'set_names_v3'").get()) {
     const { renameDesignItems } = require('./lib/menu');
     for (const row of db.prepare("SELECT id, design_json FROM campaigns WHERE design_json IS NOT NULL AND design_json <> ''").all()) {
       const next = renameDesignItems(row.design_json); if (next) db.prepare('UPDATE campaigns SET design_json = ? WHERE id = ?').run(next, row.id);
     }
-    db.prepare("INSERT INTO meta(key, value) VALUES ('item_names_v2', '1')").run();
+    db.prepare("INSERT INTO meta(key, value) VALUES ('set_names_v3', '1')").run();
   }
   // orders created before campaigns existed belong to the active campaign
   const active = db.prepare('SELECT id FROM campaigns WHERE active = 1 ORDER BY created_at LIMIT 1').get();

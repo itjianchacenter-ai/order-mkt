@@ -95,10 +95,10 @@ async function migrate(env) {
     await db.run("INSERT OR IGNORE INTO meta(key, value) VALUES ('promo_range_v2', ?)", MENU.promo_code.prefix);
   }
   // ชื่อขนมในเซ็ตเปลี่ยน (Golden Mung Snow Mooncake / Taro Mochi Mooncake) → แก้ใน design ที่บันทึกไว้ครั้งเดียว
-  if (!(await db.get("SELECT 1 AS x FROM meta WHERE key = 'item_names_v2'"))) {
+  if (!(await db.get("SELECT 1 AS x FROM meta WHERE key = 'set_names_v3'"))) {
     for (const row of await db.all("SELECT id, design_json FROM campaigns WHERE design_json IS NOT NULL AND design_json <> ''")) {
       const next = M.renameDesignItems(row.design_json); if (next) await db.run('UPDATE campaigns SET design_json = ? WHERE id = ?', next, row.id);
     }
-    await db.run("INSERT OR IGNORE INTO meta(key, value) VALUES ('item_names_v2', '1')");
+    await db.run("INSERT OR IGNORE INTO meta(key, value) VALUES ('set_names_v3', '1')");
   }
 }
