@@ -8,8 +8,8 @@ const app = require('../server');
 const mailer = require('../mailer');
 const o = { order_number: '2026091800042', total: 1117, store_name: 'JIANCHA - Siam Paragon', pickup_date: '2026-09-25', pickup_time: '13:00-15:00 น.', phone: '0812345678', note: 'หวานน้อย',
   lines: [
-    { name: 'SET A · Mooncake Set with Pomegranate Iced Tea', quantity: 2, line_total: 738, items: [{ name_en: 'Mooncake' }, { name_en: 'Snowy Mooncake' }, { name_en: 'Pomegranate Iced Tea with Grape' }] },
-    { name: 'SET B · Mooncake Set with Pomegranate Tea Smoothie', quantity: 1, line_total: 379, items: [{ name_en: 'Mooncake' }, { name_en: 'Snowy Mooncake' }, { name_en: 'Pomegranate Tea Smoothie with Grape' }] },
+    { name: 'SET A · MOONLIT RUBY FRESH SET', quantity: 2, line_total: 738, items: [{ name_en: 'Mooncake' }, { name_en: 'Snowy Mooncake' }, { name_en: 'Pomegranate Iced Tea with Grape' }] },
+    { name: 'SET B · MOONLIT RUBY SMOOTHIE SET', quantity: 1, line_total: 379, items: [{ name_en: 'Mooncake' }, { name_en: 'Snowy Mooncake' }, { name_en: 'Pomegranate Tea Smoothie with Grape' }] },
   ] };
 const mail = app.locals.approvalEmail(o, { name: 'JIANCHA x NAVORI', slug: 'jianchaxnavori' }, (process.env.PUBLIC_BASE_URL || 'https://order.jianchatea.com').replace(/\/+$/, ''));
 (async () => {

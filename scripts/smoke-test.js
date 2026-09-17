@@ -110,7 +110,7 @@ const dbx = {
     r = await call('customer2', 'POST', '/api/auth/logout'); check('logout', r.json.logged_in === false);
     r = await call('customer2', 'GET', '/api/orders'); check('after logout the browser has no orders', r.json.length === 0);
     r = await placeOrder('customer2', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-25', pickup_time: '13:00-15:00 น.', lines: [{ set_id: A, quantity: 1 }] }); check('after logout ordering needs login again', r.status === 401);
-    check('order lines + total', order.lines.length === 2 && order.total === 2 * 369 + 379 && order.pickup_date === '2026-09-25' && order.pickup_time === '13:00-15:00 น.' && order.lines[0].name === 'SET A · Mooncake Set with Pomegranate Iced Tea' && order.lines[0].items.length === 3 && order.store_name === 'JIANCHA - Central World Groove', order);
+    check('order lines + total', order.lines.length === 2 && order.total === 2 * 369 + 379 && order.pickup_date === '2026-09-25' && order.pickup_time === '13:00-15:00 น.' && order.lines[0].name === 'SET A · MOONLIT RUBY FRESH SET' && order.lines[0].items.length === 3 && order.store_name === 'JIANCHA - Central World Groove', order);
     r = await placeOrder('customer', { store_id: storeId, phone: '0812345678', pickup_date: '2026-09-25', pickup_time: '13:00-15:00 น.', lines: [{ set_id: B, quantity: 1 }] });
     check('order numbers increment', r.json.order_number === String(BigInt(order.order_number) + 1n), r.json.order_number);
     const order2 = r.json;
