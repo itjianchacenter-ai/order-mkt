@@ -54,7 +54,7 @@
           ${b.branch ? `<div class="bank-row"><span class="k">สาขา / Branch</span><b>${esc(b.branch)}</b></div>` : ''}
           <div class="bank-row total"><span class="k">ยอดโอน / Amount</span><b class="amt">${money(amount)} ฿</b><button type="button" class="pill copy" data-copy="${Number(amount).toFixed(2)}">Copy</button></div>
         </div>
-        <small class="th bank-note">กรุณาโอนให้ตรงยอด ${money(amount)} บาท เพื่อให้เจ้าหน้าที่ตรวจสอบและอนุมัติได้เร็ว / Please transfer the exact amount.</small>`;
+        <small class="th bank-note"><span class="req" title="จำเป็น">*</span> กรุณาโอนให้ตรงยอด ${money(amount)} บาท เพื่อให้เจ้าหน้าที่ตรวจสอบและอนุมัติได้เร็ว / Please transfer the exact amount.</small>`;
     }
     if (pm && pm.qr_data_url) return `<h3>1. Scan to pay</h3><span class="sub th">สแกน QR เพื่อชำระเงินผ่านแอปธนาคาร ยอด <b>${money(amount)} ฿</b></span><img class="qr" src="${pm.qr_data_url}" alt="PromptPay QR">`;
     return `<h3>1. Pay</h3><span class="sub th">ยอดที่ต้องชำระ <b>${money(amount)} ฿</b></span>`;

@@ -387,7 +387,8 @@ a.btn{text-decoration:none}
 .bank-row.total{background:#f6f6f6}
 .bank-row .amt{font-size:22px}
 .bank-row .copy{margin-left:auto;font-size:12px;padding:4px 12px;cursor:pointer}
-.bank-note{display:block;color:var(--muted);font-size:13px;line-height:1.5}
+.bank-note{display:block;color:#d32f2f;font-weight:700;font-size:14px;line-height:1.5}
+.bank-note .req{color:#d32f2f;font-weight:700;margin-right:2px}
 @media(max-width:480px){.bank-row .k{flex:1 0 100%}}
 .drop{display:block;border:1px dashed var(--line);border-radius:12px;padding:24px;text-align:center;background:var(--bg);cursor:pointer}
 .drop img{max-width:100%;max-height:260px;border-radius:8px}
