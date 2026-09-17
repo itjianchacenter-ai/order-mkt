@@ -10,7 +10,7 @@ import { putFile, getFile, deleteFile, fileMax, usingR2 } from './files.js';
 import { wipeOrders } from './reset.js';
 import * as M from '../lib/menu.js';
 import * as W from '../lib/window.js';
-import { approvalEmail, normalizeEmail, validEmail } from '../lib/email.js';
+import { approvalEmail, issueEmail, normalizeEmail, validEmail } from '../lib/email.js';
 
 const CUSTOMER_COOKIE = 'jc_cid', ADMIN_COOKIE = 'jc_admin';
 const YEAR = 365 * 24 * 3600;
@@ -137,7 +137,9 @@ async function orderView(c, o, { admin = false } = {}) {
     // หลังบ้านเห็นบัญชี Google (อีเมล/ชื่อ) ของผู้สั่ง + ผลอีเมลยืนยัน + เวลายอมรับ PDPA + สลิป
     const cu = await customerRow(c.db, o.customer_id);
     const m = await c.db.get("SELECT to_email, status, error, created_at FROM mail_log WHERE order_id = ? AND kind = 'approved' ORDER BY id DESC LIMIT 1", o.id);
+    const im = await c.db.get("SELECT to_email, status, error, created_at FROM mail_log WHERE order_id = ? AND kind = 'issue' ORDER BY id DESC LIMIT 1", o.id);
     Object.assign(v, { customer_email: (cu && cu.email) || '', customer_name: (cu && cu.name) || '', customer_google: Boolean(cu && cu.google_sub), approval_mail: m ? { to: m.to_email, status: m.status, error: m.error || '', at: m.created_at } : null,
+      issue_mail: im ? { to: im.to_email, status: im.status, error: im.error || '', at: im.created_at } : null,
       pdpa_accepted_at: o.pdpa_accepted_at || '', customer_id: o.customer_id, slip_url: o.slip_path ? `/uploads/${o.slip_path.split('/').pop()}` : '', slip_ref: o.slip_ref, slip_amount: o.slip_amount, slip_verified: o.slip_verified, cancelled_at: o.cancelled_at });
   }
   return v;
@@ -156,6 +158,17 @@ async function notifyApproved(c, orderId) {
   const mail = approvalEmail(o, camp, baseUrlOf(c), { logos: 'url' });
   const r = to ? await sendMail(c.env, { to, ...mail }) : { status: 'failed', error: 'ออเดอร์นี้ไม่มีอีเมล' };
   await c.db.run('INSERT INTO mail_log(order_id, kind, to_email, subject, status, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', orderId, 'approved', to, mail.subject, r.status, r.error || '', now());
+  return r;
+}
+/* บัญชีกด Reject สลิป → แจ้งทีมการตลาด (ISSUE_NOTIFY_EMAIL ค่าเริ่มต้น marketing@jianchatea.com; คั่นหลายคนด้วย , ; ว่าง = ไม่ส่ง) */
+const issueNotifyTo = (env) => (env.ISSUE_NOTIFY_EMAIL == null ? 'marketing@jianchatea.com' : String(env.ISSUE_NOTIFY_EMAIL).trim());
+async function notifyIssue(c, orderId, { by = '', reason = '' } = {}) {
+  const to = issueNotifyTo(c.env); if (!to) return null;
+  const row = await getOrder(c.db, orderId); if (!row) return null;
+  const o = await orderView(c, row, { admin: true }); const camp = row.campaign_id ? await getCampaign(c.db, row.campaign_id) : null;
+  const mail = issueEmail(o, camp, baseUrlOf(c), { by, reason });
+  const r = await sendMail(c.env, { to, ...mail });
+  await c.db.run('INSERT INTO mail_log(order_id, kind, to_email, subject, status, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', orderId, 'issue', to, mail.subject, r.status, r.error || '', now());
   return r;
 }
 
@@ -567,7 +580,7 @@ on('GET', '/api/admin/orders', async (c) => {
 on('GET', '/api/admin/orders/:id', async (c) => { await requirePerm(c, 'orders_view'); const o = await getOrder(c.db, c.params.id); if (!o) fail(404, 'ไม่พบคำสั่งซื้อ'); return json(await orderView(c, o, { admin: true })); });
 const TRANSITIONS = {
   paid: { from: ['pending', 'slip_uploaded', 'slip_rejected'], perm: 'slip_review', stamp: 'paid_at' },
-  slip_rejected: { from: ['slip_uploaded'], perm: 'slip_review' },
+  slip_rejected: { from: ['slip_uploaded', 'slip_rejected'], perm: 'slip_review' },   // Reject ซ้ำได้ระหว่างรอสลิปใหม่ (แจ้งทีมการตลาดอีกครั้ง)
   picked_up: { from: ['paid'], perm: 'pickup', stamp: 'picked_up_at' },
   cancelled: { from: ['pending', 'slip_uploaded', 'slip_rejected', 'paid'], perm: 'cancel', stamp: 'cancelled_at' },
 };
@@ -582,6 +595,7 @@ on('POST', '/api/admin/orders/:id/status', async (c) => {
   await c.db.run(`UPDATE orders SET status = ?, slip_reason = ?${t.stamp ? `, ${t.stamp} = ?` : ''} WHERE id = ?`, ...(t.stamp ? [to, reason, now(), o.id] : [to, reason, o.id]));
   invalidateStock();
   if (to === 'paid') await notifyApproved(c, o.id);   // บัญชีอนุมัติ → อีเมลยืนยันถึงลูกค้า
+  if (to === 'slip_rejected') await notifyIssue(c, o.id, { by: u.username || u.name || '', reason });   // Reject → แจ้งทีมการตลาดให้ตรวจสอบ
   return json(await orderView(c, await getOrder(c.db, o.id), { admin: true }));
 });
 on('GET', '/api/admin/summary', async (c) => {

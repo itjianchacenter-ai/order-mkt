@@ -3,6 +3,8 @@
    2) Resend (HTTP API): RESEND_API_KEY + MAIL_FROM
    ไม่ตั้งค่า = ไม่ส่งจริง บันทึก mail_log เป็น "logged"; MAIL_TRANSPORT=json = จำลองว่าส่งแล้ว (ใช้ทดสอบ) */
 const trim = (v) => String(v || '').trim();
+/* "a@x.com, b@x.com" → ['a@x.com','b@x.com'] */
+export const recipients = (to) => String(to || '').split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean);
 const graphConfigured = (env) => Boolean(trim(env.MS_TENANT_ID) && trim(env.MS_CLIENT_ID) && trim(env.MS_CLIENT_SECRET));
 export const mailConfigured = (env) => graphConfigured(env) || Boolean(trim(env.RESEND_API_KEY)) || env.MAIL_TRANSPORT === 'json';
 const DEFAULT_FROM = 'JIANCHA Order <no-reply@jianchatea.com>';
@@ -28,7 +30,7 @@ async function sendViaGraph(env, { to, subject, html, text }) {
   const from = parseFrom(env.MAIL_FROM);
   const token = await graphAccessToken(env);
   const base = trim(env.MS_GRAPH_URL) || 'https://graph.microsoft.com/v1.0';
-  const message = { subject, body: { contentType: 'HTML', content: html || text || '' }, toRecipients: [{ emailAddress: { address: to } }] };
+  const message = { subject, body: { contentType: 'HTML', content: html || text || '' }, toRecipients: recipients(to).map((address) => ({ emailAddress: { address } })) };
   if (from.name) message.from = { emailAddress: { address: from.address, name: from.name } };
   const r = await fetch(`${base}/users/${encodeURIComponent(from.address)}/sendMail`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ message, saveToSentItems: false }) });
   if (r.status === 202 || r.ok) return { status: 'sent', id: r.headers.get('request-id') || 'graph' };
@@ -40,7 +42,7 @@ async function sendViaGraph(env, { to, subject, html, text }) {
 /* ── Resend ── */
 async function sendViaResend(env, { to, subject, html, text }) {
   const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { authorization: `Bearer ${trim(env.RESEND_API_KEY)}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ from: trim(env.MAIL_FROM) || DEFAULT_FROM, to: [to], subject, html, text }) });
+    body: JSON.stringify({ from: trim(env.MAIL_FROM) || DEFAULT_FROM, to: recipients(to), subject, html, text }) });
   const data = await r.json().catch(() => ({}));
   if (!r.ok) return { status: 'failed', error: String(data.message || data.error || `HTTP ${r.status}`).slice(0, 300) };
   return { status: 'sent', id: data.id || '' };

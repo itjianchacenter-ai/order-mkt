@@ -162,7 +162,10 @@ const dbx = {
     r = await call('mkt', 'POST', `/api/admin/orders/${order.id}/status`, { status: 'cancelled' }); check('marketing cannot cancel', r.status === 403);
     r = await call('fin', 'POST', `/api/admin/orders/${order.id}/status`, { status: 'picked_up' }); check('invalid transition rejected', r.status === 400);
     r = await call('fin', 'POST', `/api/admin/orders/${order2.id}/status`, { status: 'slip_rejected', reason: 'ยอดไม่ตรง' }); check('finance rejects slip', r.json.status === 'slip_rejected' && r.json.slip_reason === 'ยอดไม่ตรง');
+    r = await call('fin', 'GET', `/api/admin/orders/${order2.id}`); check('reject notifies marketing (mail_log issue)', r.json.issue_mail && r.json.issue_mail.status === 'sent' && r.json.issue_mail.to === 'marketing@jianchatea.com', r.json.issue_mail);
+    if (CF) { const gm = graphMail[graphMail.length - 1]; check('issue mail sent via Graph to marketing with reason', gm && gm.to.join() === 'marketing@jianchatea.com' && /On Issue/.test(gm.subject) && /ยอดไม่ตรง/.test(gm.html) && gm.html.includes(order2.order_number), gm && { to: gm.to, subject: gm.subject }); }
     r = await call('customer', 'GET', `/api/orders/${order2.id}`); check('customer sees rejection + can re-pay', r.json.status === 'slip_rejected' && r.json.payable === true && r.json.slip_reason === 'ยอดไม่ตรง');
+    r = await call('fin', 'POST', `/api/admin/orders/${order2.id}/status`, { status: 'slip_rejected', reason: 'สลิปซ้ำ' }); check('finance can reject again while awaiting a new slip', r.status === 200 && r.json.status === 'slip_rejected' && r.json.slip_reason === 'สลิปซ้ำ', r.json);
     r = await call('customer', 'GET', `/api/orders/${order2.id}/qr`); check('qr available again after rejection', r.status === 200);
     r = await call('customer', 'POST', `/api/orders/${order2.id}/slip`, png(3)); check('re-upload after rejection', r.json.status === 'slip_uploaded');
     r = await call('customer', 'POST', `/api/orders/${order.id}/code`); check('code refused before approval', r.status === 400, r.json);

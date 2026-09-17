@@ -430,7 +430,7 @@ if (!window.PREVIEW_MODE && /^#\/backend/.test(location.hash)) { const q = locat
     acts.push(`<a class="btn ghost" href="/receipt?order=${esc(o.id)}" target="_blank" rel="noopener">${ICONS.eye} View PO</a>`);
     if (canPrint(o)) acts.push(`<a class="btn ghost" href="/receipt?order=${esc(o.id)}&print=1" target="_blank" rel="noopener" aria-label="Print">${ICONS.print}</a>`);
     if (P.slip_review && o.status === 'slip_uploaded') { acts.push(btn('paid', ICONS.check + ' Approve')); acts.push(btn('slip_rejected', 'Reject')); }
-    if (P.slip_review && (o.status === 'pending' || o.status === 'slip_rejected') && o.has_slip) acts.push(btn('paid', ICONS.check + ' Approve'));
+    if (P.slip_review && (o.status === 'pending' || o.status === 'slip_rejected') && o.has_slip) { acts.push(btn('paid', ICONS.check + ' Approve')); if (o.status === 'slip_rejected') acts.push(btn('slip_rejected', 'Reject')); }
     if (P.pickup && o.status === 'paid') acts.push(btn('picked_up', ICONS.store + ' รับสินค้าแล้ว'));
     if (P.cancel && ['pending', 'slip_uploaded', 'slip_rejected', 'paid'].includes(o.status)) acts.push(btn('cancelled', 'ยกเลิก', true));
     if (P.code && codeBox(o)) acts.push(codeBox(o));
@@ -440,7 +440,12 @@ if (!window.PREVIEW_MODE && /^#\/backend/.test(location.hash)) { const q = locat
       const label = !m ? 'ยังไม่ได้ส่งอีเมลยืนยัน' : m.status === 'sent' ? `ส่งอีเมลยืนยันแล้ว ${fmtDateTime(m.at)} → ${esc(m.to)}` : m.status === 'logged' ? `อีเมลยืนยัน (ยังไม่ได้ตั้งค่า SMTP จึงไม่ได้ส่งจริง) → ${esc(m.to)}` : m.status === 'preview' ? `อีเมลยืนยัน (preview จำลอง) → ${esc(m.to)}` : `ส่งอีเมลยืนยันไม่สำเร็จ${m.error ? ': ' + esc(m.error) : ''}${m.to ? ' → ' + esc(m.to) : ''}`;
       return `<div class="mail-note ${m && m.status === 'failed' ? 'bad' : ''}">${label}</div>`;
     })() : '';
-    return slip + mailNote + '<div class="actions">' + acts.join('') + '</div>';
+    const issueNote = o.status === 'slip_rejected' ? (() => {
+      const m = o.issue_mail;
+      const label = !m ? 'ยังไม่ได้แจ้งทีมการตลาด' : m.status === 'sent' ? `แจ้งทีมการตลาดแล้ว ${fmtDateTime(m.at)} → ${esc(m.to)}` : m.status === 'logged' ? `อีเมลแจ้งทีม (ยังไม่ได้ตั้งค่าอีเมล) → ${esc(m.to)}` : `แจ้งทีมการตลาดไม่สำเร็จ: ${esc(m.error || '')} → ${esc(m.to)}`;
+      return `<div class="mail-note ${m && m.status === 'failed' ? 'bad' : ''}">${label}</div>`;
+    })() : '';
+    return slip + mailNote + issueNote + '<div class="actions">' + acts.join('') + '</div>';
   }
   function headExtras(o) {
     if (!isSlips) return {};
