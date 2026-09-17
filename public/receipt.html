@@ -48,6 +48,7 @@
         <tbody>${rows}</tbody>
         <tfoot><tr><th colspan="3">Total <span class="th">/ ยอดรวม</span></th><th class="p">${money(o.total)} ฿</th></tr></tfoot>
       </table>
+      ${pickupNoticeHtml()}
       <p class="r-foot th">กรุณาแสดงใบรายการนี้หรือแจ้งเลขคำสั่งซื้อที่สาขาเพื่อรับสินค้า<br><span style="font-family:Montserrat,sans-serif">Show this receipt or quote your order number at the store to pick up.</span></p>
     </div>`;
   if (canPrint(o)) {
