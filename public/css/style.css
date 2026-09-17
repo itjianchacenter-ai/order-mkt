@@ -190,6 +190,9 @@ a.btn{text-decoration:none}
 .chips .pill b{font-weight:700}
 .chips .pill{gap:6px}
 .pill .brand-lg{display:block;height:14px;width:auto}
+.order .head .s .brand-lg{display:inline-block;height:13px;width:auto;vertical-align:-1px;filter:brightness(0) invert(1)}
+.order .head.light .s .brand-lg{filter:brightness(0)}
+.receipt .r-store .brand-lg{display:inline-block;height:16px;width:auto;vertical-align:-2px}
 .sumbox .store .brand-lg{display:inline-block;height:20px;width:auto;vertical-align:-3px}
 .pill.on .brand-lg{filter:invert(1)}
 

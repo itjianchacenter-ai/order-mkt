@@ -374,6 +374,8 @@ function renderHero(el, banners) {
 /* pick-up chips */
 /* "โลโก้ JIANCHA - ชื่อสาขา" (ใช้ในปุ่มเลือกสาขาและ Order Summary) */
 const storeLabel = (s) => `<img class="brand-lg" src="/img/logo-jiancha.png" alt="${esc(s.brand)}"> - ${esc(s.name)}`;
+/* ชื่อสาขาที่บันทึกในออเดอร์ ("JIANCHA - Siam Paragon") → "โลโก้ JIANCHA - Siam Paragon" (การ์ดออเดอร์, ใบรายการ) */
+const storeNameHtml = (name) => `<img class="brand-lg" src="/img/logo-jiancha.png" alt="JIANCHA"> - ${esc(String(name || '').replace(/^(JIANCHA|JIAN CHA)\s*-\s*/i, ''))}`;
 function storeChips(stores, selected) {
   return stores.map((s) => `<button type="button" class="pill ${s.id === selected ? 'on' : ''}" data-store="${esc(s.id)}">${storeLabel(s)}</button>`).join('');
 }
@@ -479,7 +481,7 @@ function orderCard(o, { light = false, open = false, extra = '', badge = '', asi
   }).join('');
   return `<div class="order" data-id="${esc(o.id)}">
     <button type="button" class="head ${light ? 'light' : ''}" aria-expanded="${open}">
-      <span><span class="t">Order Number: ${esc(o.order_number)}</span> ${badge}<br><span class="s"><b>Pick-up Location:</b> ${esc(o.store_name.replace(/^(JIANCHA|JIAN CHA) - /, ''))}</span>${o.pickup_date ? `<br><span class="s"><b>Pick-up Date:</b> ${esc(fmtPickupDate(o.pickup_date).en)}${o.pickup_time ? ` · <b>Time:</b> ${esc(o.pickup_time)}` : ''}</span>` : (o.pickup_time ? `<br><span class="s"><b>Pick-up Time:</b> ${esc(o.pickup_time)}</span>` : '')}</span>
+      <span><span class="t">Order Number: ${esc(o.order_number)}</span> ${badge}<br><span class="s"><b>Pick-up Location:</b> ${storeNameHtml(o.store_name)}</span>${o.pickup_date ? `<br><span class="s"><b>Pick-up Date:</b> ${esc(fmtPickupDate(o.pickup_date).en)}${o.pickup_time ? ` · <b>Time:</b> ${esc(o.pickup_time)}` : ''}</span>` : (o.pickup_time ? `<br><span class="s"><b>Pick-up Time:</b> ${esc(o.pickup_time)}</span>` : '')}</span>
       <span class="amt">${aside}${money(o.total)} ฿ ${open ? ICONS.down : ICONS.right}</span>
     </button>
     <div class="body ${open ? '' : 'hidden'}">
