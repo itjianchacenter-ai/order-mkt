@@ -14,7 +14,7 @@ const { verifySlip, isEnabled: slipOkEnabled } = require('./slip-verify');
 const mailer = require('./mailer');
 const M = require('./lib/menu');
 const W = require('./lib/window');
-const { approvalEmail: approvalEmailOf, issueEmail, normalizeEmail, validEmail } = require('./lib/email');
+const { approvalEmail: approvalEmailOf, issueEmail, rejectEmail, normalizeEmail, validEmail } = require('./lib/email');
 
 const PORT = parseInt(process.env.PORT || '3870', 10);
 const IS_PROD = process.env.NODE_ENV === 'production';
@@ -276,6 +276,8 @@ function orderView(o, { admin = false } = {}) {
     v.approval_mail = m ? { to: m.to_email, status: m.status, error: m.error || '', at: m.created_at } : null;
     const im = db.prepare("SELECT to_email, status, error, created_at FROM mail_log WHERE order_id = ? AND kind = 'issue' ORDER BY id DESC LIMIT 1").get(o.id);
     v.issue_mail = im ? { to: im.to_email, status: im.status, error: im.error || '', at: im.created_at } : null;
+    const rm = db.prepare("SELECT to_email, status, error, created_at FROM mail_log WHERE order_id = ? AND kind = 'rejected' ORDER BY id DESC LIMIT 1").get(o.id);
+    v.reject_mail = rm ? { to: rm.to_email, status: rm.status, error: rm.error || '', at: rm.created_at } : null;
   }
   if (admin) Object.assign(v, { pdpa_accepted_at: o.pdpa_accepted_at || '' });
   if (admin) Object.assign(v, { customer_id: o.customer_id, slip_url: o.slip_path ? `/uploads/${path.basename(o.slip_path)}` : '', slip_ref: o.slip_ref, slip_amount: o.slip_amount, slip_verified: o.slip_verified, cancelled_at: o.cancelled_at });
@@ -709,7 +711,7 @@ app.post('/api/admin/orders/:id/status', requireAdmin, async (req, res) => {
   const reason = to === 'slip_rejected' ? String((req.body || {}).reason || 'สลิปไม่ถูกต้อง กรุณาอัปโหลดใหม่').slice(0, 300) : (to === 'paid' ? 'ตรวจสอบผ่าน' : o.slip_reason);
   db.prepare(`UPDATE orders SET status = ?, slip_reason = ?${t.stamp ? `, ${t.stamp} = datetime('now','localtime')` : ''} WHERE id = ?`).run(to, reason, o.id);
   if (to === 'paid') await notifyApproved(o.id);   // บัญชีอนุมัติ → อีเมลยืนยันพร้อมรายการคำสั่งซื้อถึงลูกค้า
-  if (to === 'slip_rejected') await notifyIssue(o.id, { by: (u && u.username) || '', reason });   // Reject → แจ้งทีมการตลาดให้ตรวจสอบ
+  if (to === 'slip_rejected') { await notifyIssue(o.id, { by: (u && u.username) || '', reason }); await notifyRejected(o.id, { reason }); }   // Reject → แจ้งทีมการตลาด + แจ้งลูกค้า
   res.json(orderView(getOrder(o.id), { admin: true }));
 });
 
@@ -739,6 +741,18 @@ async function notifyIssue(orderId, { by = '', reason = '' } = {}) {
   const mail = issueEmail(o, camp, (process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, ''), { by, reason });
   const r = await mailer.sendMail({ to, ...mail });
   db.prepare('INSERT INTO mail_log(order_id, kind, to_email, subject, status, error) VALUES (?, ?, ?, ?, ?, ?)').run(orderId, 'issue', to, mail.subject, r.status, r.error || '');
+  return r;
+}
+/* Reject → อีเมลถึงลูกค้า: เหตุผล + ลิงก์อัปโหลดใหม่ + QR LINE OA */
+async function notifyRejected(orderId, { reason = '' } = {}) {
+  const row = getOrder(orderId); if (!row) return null;
+  const cust = customerRow(row.customer_id); const to = row.email || (cust && cust.email) || '';
+  const o = orderView(row); const camp = row.campaign_id ? getCampaign(row.campaign_id) : null;
+  const base = (process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, '');
+  const qr = String(process.env.LINE_OA_QR == null ? '' : process.env.LINE_OA_QR).trim();
+  const mail = rejectEmail(o, camp, base, { reason, lineQr: qr ? (qr.startsWith('http') ? qr : base + qr) : '', lineUrl: String(process.env.LINE_OA_URL || '').trim() });
+  const r = to ? await mailer.sendMail({ to, ...mail }) : { status: 'failed', error: 'ออเดอร์นี้ไม่มีอีเมล' };
+  db.prepare('INSERT INTO mail_log(order_id, kind, to_email, subject, status, error) VALUES (?, ?, ?, ?, ?, ?)').run(orderId, 'rejected', to, mail.subject, r.status, r.error || '');
   return r;
 }
 app.get('/api/admin/summary', requireAdmin, (req, res) => {
