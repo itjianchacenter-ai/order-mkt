@@ -45,12 +45,22 @@ function campaignView(c) {
 const campaignPublic = (c) => ({ id: c.id, slug: c.slug, url: `/${c.slug}/`, name: c.name, active: Boolean(c.active), orders_open: c.orders_open !== 0 });
 const USAGE_SQL = `SELECT COALESCE(SUM(l.quantity * COALESCE(l.pieces, 1)), 0) AS total, COALESCE(SUM(l.quantity * COALESCE(l.drink_pieces, 0)), 0) AS drink, COALESCE(SUM(l.quantity * COALESCE(l.dessert_pieces, 0)), 0) AS dessert
   FROM order_lines l JOIN orders o ON o.id = l.order_id WHERE o.status <> 'cancelled' AND o.campaign_id = ?`;
+/* stock/order-window ของแคมเปญ cache ในหน่วยความจำของ isolate สั้น ๆ (ค่าเริ่มต้น 5 วินาที; STOCK_CACHE_MS=0 = ปิด, ปิดอัตโนมัติใน TEST_MODE)
+   → ผู้เข้าชมพร้อมกันหลายพันคนใช้ผลอ่านฐานข้อมูลชุดเดียวกัน ไม่กระทบความถูกต้อง: โควตา/สต๊อกจริงตรวจซ้ำใน transaction ตอนบันทึกออเดอร์เสมอ */
+const stockCache = new Map();
+const stockCacheMs = (env) => (env.TEST_MODE === '1' ? 0 : (env.STOCK_CACHE_MS != null && env.STOCK_CACHE_MS !== '' ? Math.max(0, Number(env.STOCK_CACHE_MS) || 0) : 5000));
+const stockCacheKey = (c, camp) => `${camp.id}|${c.req.headers.get('x-test-day') || ''}|${camp.stock_total}|${camp.stock_drink}|${camp.stock_dessert}|${camp.design_json ? camp.design_json.length : 0}`;
 async function stockView(c, camp) {
+  const ttl = stockCacheMs(c.env); const key = stockCacheKey(c, camp);
+  if (ttl > 0) { const hit = stockCache.get(key); if (hit && hit.exp > Date.now()) return hit.value; }
   const limits = { total: camp.stock_total, drink: camp.stock_drink, dessert: camp.stock_dessert };
   const used = await c.db.get(USAGE_SQL, camp.id); const remaining = {};
   for (const k of ['total', 'drink', 'dessert']) remaining[k] = limits[k] == null ? null : Math.max(0, limits[k] - used[k]);
-  return { limits, used: { drink: used.drink, dessert: used.dessert, total: used.total }, remaining, sold_out: ['total', 'drink', 'dessert'].some((k) => remaining[k] === 0), order_window: await orderWindow(c, camp) };
+  const value = { limits, used: { drink: used.drink, dessert: used.dessert, total: used.total }, remaining, sold_out: ['total', 'drink', 'dessert'].some((k) => remaining[k] === 0), order_window: await orderWindow(c, camp) };
+  if (ttl > 0) stockCache.set(key, { value, exp: Date.now() + ttl });
+  return value;
 }
+const invalidateStock = () => stockCache.clear();   // หลังบันทึก/ยกเลิก/ล้างออเดอร์ใน isolate นี้ → ผู้สั่งเห็นตัวเลขใหม่ทันที
 async function orderWindow(c, camp) {
   const menu = menuFor(camp); const days = menu.order_days || []; const today = todayOf(c, menu);
   const today_count = (await c.db.get("SELECT COUNT(*) AS n FROM orders WHERE campaign_id = ? AND order_day = ? AND status <> 'cancelled'", camp.id, today)).n;
@@ -280,7 +290,7 @@ async function insertOrder(c, v, { slipStatus = null, slipAt = null } = {}) {
     db.stmt("UPDATE orders SET order_number = (SELECT day || printf('%05d', seq) FROM order_counters WHERE day = ?) WHERE id = ?", dayKey, id),
     ...rows.map((r) => db.stmt(`INSERT INTO order_lines(order_id, set_id, set_label, set_name, items_json, pieces, drink_pieces, dessert_pieces, drink_id, drink_name, dessert_id, dessert_name, quantity, unit_price, line_total)
       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?)`, id, r.set_id, r.set_label, r.set_name, r.items_json, r.pieces, r.drink_pieces, r.dessert_pieces, r.drink_id, r.drink_name, r.dessert_id, r.dessert_name, r.quantity, r.unit_price, r.line_total, id))];
-  await db.batch(stmts);
+  await db.batch(stmts); invalidateStock();
   const o = await getOrder(db, id);
   if (!o) {
     // ไม่ถูกบันทึก = สต๊อกไม่พอหรือโควตาวันนี้เต็มพอดี → บอกเหตุผล
@@ -443,7 +453,8 @@ on('PATCH', '/api/admin/users/:id', async (c) => {
 on('POST', '/api/admin/reset', async (c) => {
   await requirePerm(c, 'accounts');
   const b = await body(c); if (b.confirm !== 'RESET') fail(400, "ต้องยืนยันด้วยคำว่า RESET / Send { confirm: 'RESET' }");
-  return json({ ok: true, ...(await wipeOrders(c.env)) });
+  const r = await wipeOrders(c.env); invalidateStock();
+  return json({ ok: true, ...r });
 });
 on('DELETE', '/api/admin/users/:id', async (c) => {
   const me = await requirePerm(c, 'accounts');
@@ -569,6 +580,7 @@ on('POST', '/api/admin/orders/:id/status', async (c) => {
   if (!t.from.includes(o.status)) fail(400, `เปลี่ยนสถานะจาก ${o.status} เป็น ${to} ไม่ได้`);
   const reason = to === 'slip_rejected' ? String(b.reason || 'สลิปไม่ถูกต้อง กรุณาอัปโหลดใหม่').slice(0, 300) : (to === 'paid' ? 'ตรวจสอบผ่าน' : o.slip_reason);
   await c.db.run(`UPDATE orders SET status = ?, slip_reason = ?${t.stamp ? `, ${t.stamp} = ?` : ''} WHERE id = ?`, ...(t.stamp ? [to, reason, now(), o.id] : [to, reason, o.id]));
+  invalidateStock();
   if (to === 'paid') await notifyApproved(c, o.id);   // บัญชีอนุมัติ → อีเมลยืนยันถึงลูกค้า
   return json(await orderView(c, await getOrder(c.db, o.id), { admin: true }));
 });
