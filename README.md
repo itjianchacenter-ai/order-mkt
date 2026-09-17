@@ -29,7 +29,7 @@
 
 - นอกช่วงวัน: หน้าแคมเปญ/Cart แสดงป้าย "ยังไม่เปิดรับออเดอร์ เปิด 18–22 กันยายน 2569" หรือ "ปิดรับออเดอร์แล้ว" ปุ่ม Confirm กดไม่ได้ และ server ปฏิเสธ (409)
 - ในช่วงวัน: ป้าย "วันนี้เหลือ N / 200 ออเดอร์" เมื่อครบ 200 จะขึ้น "วันนี้ครบ 200 ออเดอร์แล้ว" และแจ้งให้สั่งใหม่วันถัดไป (ตรวจใน transaction เดียวกับสต๊อก กันสั่งเกินพร้อมกัน) ยกเลิกออเดอร์คืนโควตา
-- หลังบ้าน (เมนู Slip Issue) แสดง "วันนี้ X / 200 ออเดอร์ · รวม Y / 1000"; `/api/stock` และ `/api/menu` มี `order_window` (`days`, `per_day`, `today`, `today_count`, `today_remaining`, `total_count`, `total_max`, `status`, `message`)
+- หลังบ้าน (เมนู Slip Issue) แสดง "วันนี้ X / 200 ชุด · รวม Y / 1000"; `/api/stock` และ `/api/menu` มี `order_window` (`days`, `per_day`, `today`, `today_count`, `today_remaining`, `total_count`, `total_max`, `status`, `message`)
 - design ของแคมเปญกำหนด `order_days` / `orders_per_day` ของตัวเองได้ (ว่าง = ใช้ของแม่แบบ); ตัวแปร `ORDER_DAY_OVERRIDE=YYYY-MM-DD` ใช้จำลองวันตอนทดสอบ; `ORDER_EARLY_HOURS=N` เปิดรับล่วงหน้า N ชั่วโมงก่อนวันแรก (นับเป็นรอบของวันแรก)
 - **ข้อจำกัด preview (GitHub Pages)**: ไม่มี server กลาง โควตาต่อวันนับเฉพาะออเดอร์ในเบราว์เซอร์นั้น การจำกัด 200 ออเดอร์/วันจริงอยู่บนระบบจริง (Cloudflare Pages + D1 หรือ `node server.js`)
 

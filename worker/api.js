@@ -43,6 +43,7 @@ function campaignView(c) {
     cover: d.promote_images[0] || '', set_count: d.sets.filter((x) => x.active).length, has_design: Boolean(c.design_json) };
 }
 const campaignPublic = (c) => ({ id: c.id, slug: c.slug, url: `/${c.slug}/`, name: c.name, active: Boolean(c.active), orders_open: c.orders_open !== 0 });
+const SETS_SUM = 'COALESCE(SUM(l.quantity * COALESCE(l.pieces, 1)), 0) AS n';
 const USAGE_SQL = `SELECT COALESCE(SUM(l.quantity * COALESCE(l.pieces, 1)), 0) AS total, COALESCE(SUM(l.quantity * COALESCE(l.drink_pieces, 0)), 0) AS drink, COALESCE(SUM(l.quantity * COALESCE(l.dessert_pieces, 0)), 0) AS dessert
   FROM order_lines l JOIN orders o ON o.id = l.order_id WHERE o.status <> 'cancelled' AND o.campaign_id = ?`;
 /* stock/order-window ของแคมเปญ cache ในหน่วยความจำของ isolate สั้น ๆ (ค่าเริ่มต้น 5 วินาที; STOCK_CACHE_MS=0 = ปิด, ปิดอัตโนมัติใน TEST_MODE)
@@ -63,8 +64,9 @@ async function stockView(c, camp) {
 const invalidateStock = () => stockCache.clear();   // หลังบันทึก/ยกเลิก/ล้างออเดอร์ใน isolate นี้ → ผู้สั่งเห็นตัวเลขใหม่ทันที
 async function orderWindow(c, camp) {
   const menu = menuFor(camp); const days = menu.order_days || []; const today = todayOf(c, menu);
-  const today_count = (await c.db.get("SELECT COUNT(*) AS n FROM orders WHERE campaign_id = ? AND order_day = ? AND status <> 'cancelled'", camp.id, today)).n;
-  const total_count = days.length ? (await c.db.get(`SELECT COUNT(*) AS n FROM orders WHERE campaign_id = ? AND status <> 'cancelled' AND order_day IN (${days.map(() => '?').join(',')})`, camp.id, ...days)).n : today_count;
+  // โควตาต่อวันนับเป็น "ชุด" (quantity × pieces) ไม่ใช่จำนวนออเดอร์
+  const today_count = (await c.db.get(`SELECT ${SETS_SUM} FROM order_lines l JOIN orders o ON o.id = l.order_id WHERE o.campaign_id = ? AND o.order_day = ? AND o.status <> 'cancelled'`, camp.id, today)).n;
+  const total_count = days.length ? (await c.db.get(`SELECT ${SETS_SUM} FROM order_lines l JOIN orders o ON o.id = l.order_id WHERE o.campaign_id = ? AND o.status <> 'cancelled' AND o.order_day IN (${days.map(() => '?').join(',')})`, camp.id, ...days)).n : today_count;
   return W.computeOrderWindow(menu, today, { today_count, total_count });
 }
 
@@ -263,7 +265,7 @@ async function validateOrder(c, b) {
   // ช่วงวันเปิดรับ (นอกช่วง = ไม่ต้องลอง); โควตาต่อวันและสต๊อกตรวจซ้ำใน transaction ตอนบันทึก กันสั่งเกินพร้อมกัน
   const sv = await stockView(c, campaign);
   if (!sv.order_window.open) fail(409, { error: sv.order_window.message, stock: sv });
-  const short = M.stockShortfall(built.want, sv.remaining); if (short) fail(409, { error: short, stock: sv });
+  const short = M.stockShortfall(built.want, sv.remaining) || M.dayShortfall(built.want, sv.order_window); if (short) fail(409, { error: short, stock: sv });
   return { campaign, menu, today, store, store_name: `${store.brand} - ${store.name}`, phone, email, note: String(note).slice(0, 500), pickup_date: (mustPickup || menu.pickup_dates.length) ? pickup_date : '', pickup_time: menu.pickup_times.length ? pickup_time : '', rows: built.rows, want: built.want, total: built.total };
 }
 /** สรุปคำสั่งซื้อ + วิธีชำระเงิน (ยังไม่มีออเดอร์ในระบบจนกว่าจะส่งสลิป) */
@@ -288,7 +290,7 @@ async function insertOrder(c, v, { slipStatus = null, slipAt = null } = {}) {
     const limit = campaign['stock_' + k]; if (limit == null) continue;
     conds.push(`(SELECT COALESCE(SUM(l.quantity * ${col}), 0) FROM order_lines l JOIN orders o ON o.id = l.order_id WHERE o.status <> 'cancelled' AND o.campaign_id = ?) + ? <= ?`); cargs.push(campaign.id, want[k], limit);
   }
-  if (menu.orders_per_day) { conds.push("(SELECT COUNT(*) FROM orders WHERE campaign_id = ? AND order_day = ? AND status <> 'cancelled') < ?"); cargs.push(campaign.id, today, menu.orders_per_day); }
+  if (menu.orders_per_day) { conds.push(`(SELECT COALESCE(SUM(l.quantity * COALESCE(l.pieces, 1)), 0) FROM order_lines l JOIN orders o ON o.id = l.order_id WHERE o.campaign_id = ? AND o.order_day = ? AND o.status <> 'cancelled') + ? <= ?`); cargs.push(campaign.id, today, want.total, menu.orders_per_day); }   // โควตาชุดต่อวัน
   const where = conds.length ? ' WHERE ' + conds.join(' AND ') : '';
   const status = total > 0 ? (slipStatus || 'pending') : 'paid';
   const stmts = [touchCustomerStmt(db, c.customerId), linkCampaignStmt(db, c.customerId, campaign.id),
@@ -308,7 +310,7 @@ async function insertOrder(c, v, { slipStatus = null, slipAt = null } = {}) {
   if (!o) {
     // ไม่ถูกบันทึก = สต๊อกไม่พอหรือโควตาวันนี้เต็มพอดี → บอกเหตุผล
     const sv = await stockView(c, campaign);
-    const short = M.stockShortfall(want, sv.remaining);
+    const short = M.stockShortfall(want, sv.remaining) || M.dayShortfall(want, sv.order_window);
     fail(409, { error: short || sv.order_window.message || 'ไม่สามารถบันทึกคำสั่งซื้อได้ กรุณาลองใหม่', stock: sv });
   }
   return o;
