@@ -749,8 +749,8 @@ async function notifyRejected(orderId, { reason = '' } = {}) {
   const cust = customerRow(row.customer_id); const to = row.email || (cust && cust.email) || '';
   const o = orderView(row); const camp = row.campaign_id ? getCampaign(row.campaign_id) : null;
   const base = (process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, '');
-  const qr = String(process.env.LINE_OA_QR == null ? '' : process.env.LINE_OA_QR).trim();
-  const mail = rejectEmail(o, camp, base, { reason, lineQr: qr ? (qr.startsWith('http') ? qr : base + qr) : '', lineUrl: String(process.env.LINE_OA_URL || '').trim() });
+  const qr = String(process.env.LINE_OA_QR == null ? '/img/line-oa-qr.png' : process.env.LINE_OA_QR).trim();
+  const mail = rejectEmail(o, camp, base, { reason, lineQr: qr ? (qr.startsWith('http') ? qr : base + qr) : '', lineUrl: String(process.env.LINE_OA_URL == null ? 'https://page.line.me/jiancha' : process.env.LINE_OA_URL).trim() });
   const r = to ? await mailer.sendMail({ to, ...mail }) : { status: 'failed', error: 'ออเดอร์นี้ไม่มีอีเมล' };
   db.prepare('INSERT INTO mail_log(order_id, kind, to_email, subject, status, error) VALUES (?, ?, ?, ?, ?, ?)').run(orderId, 'rejected', to, mail.subject, r.status, r.error || '');
   return r;
