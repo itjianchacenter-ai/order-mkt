@@ -642,7 +642,8 @@ app.put('/api/admin/campaigns/:id/design', requirePerm('campaigns'), (req, res) 
   if (!c) return res.status(404).json({ error: 'ไม่พบแคมเปญ' });
   const d = normalizeDesign(req.body || {});
   db.prepare("UPDATE campaigns SET design_json = ?, updated_at = datetime('now','localtime') WHERE id = ?").run(JSON.stringify(d), c.id);
-  res.json({ campaign: campaignView(getCampaign(c.id)), design: d });
+  const saved = getCampaign(c.id);
+  res.json({ campaign: campaignView(saved), design: campaignDesign(saved) });
 });
 const designUpload = multer({
   storage: multer.diskStorage({

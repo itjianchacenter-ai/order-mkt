@@ -624,7 +624,8 @@ on('PUT', '/api/admin/campaigns/:id/design', async (c) => {
   const camp = await getCampaign(c.db, c.params.id); if (!camp) fail(404, 'ไม่พบแคมเปญ');
   const d = M.normalizeDesign(await body(c));
   await c.db.run('UPDATE campaigns SET design_json = ?, updated_at = ? WHERE id = ?', JSON.stringify(d), now(), camp.id);
-  return json({ campaign: campaignView(await getCampaign(c.db, camp.id)), design: d });
+  const saved = await getCampaign(c.db, camp.id);
+  return json({ campaign: campaignView(saved), design: campaignDesign(saved) });
 });
 on('POST', '/api/admin/design/upload', async (c) => {
   await requirePerm(c, 'campaigns');
