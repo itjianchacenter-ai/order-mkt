@@ -105,7 +105,7 @@ async function verifyGoogleToken(env, credential) {
 }
 
 // ─── back-office auth & roles ───
-const PERMS = { orders_view: ['it_admin', 'admin', 'finance'], slip_review: ['it_admin', 'finance'], pickup: ['it_admin', 'admin', 'finance'], cancel: ['it_admin', 'finance'], code: ['it_admin', 'admin', 'finance'], accounts: ['it_admin'], campaigns: ['it_admin'] };
+const PERMS = { orders_view: ['it_admin', 'admin', 'finance'], slip_review: ['it_admin', 'finance'], pickup: ['it_admin', 'admin', 'finance'], cancel: ['it_admin', 'finance'], code: ['it_admin', 'admin', 'finance'], accounts: ['it_admin'], campaigns: ['it_admin'], member_list: ['it_admin', 'admin'] };
 const ROLES = ['it_admin', 'admin', 'finance'];
 async function adminUser(c) {
   if (c._admin !== undefined) return c._admin;
@@ -265,6 +265,19 @@ on('POST', '/api/auth/logout', async (c) => { const cid = uuid(); await setCusto
 on('GET', '/api/menu', async (c) => { const camp = await requestCampaign(c); return json({ ...menuFor(camp), campaign: campaignPublic(camp), stock: await stockView(c, camp) }); });
 on('GET', '/api/stock', async (c) => json(await stockView(c, await requestCampaign(c))));
 on('GET', '/api/stores', async () => json(STORES));
+// รายชื่อ ELITE: เบอร์ใช้สมัครได้ไหม (ไม่มีรายชื่อ + แคมเปญไม่บังคับ = ได้ทุกเบอร์)
+async function eliteOk(c, camp, phone) {
+  const n = (await c.db.get('SELECT COUNT(*) AS n FROM member_list')).n;
+  return !M.memberListRequired(camp, n) || Boolean(await c.db.get('SELECT 1 AS x FROM member_list WHERE phone = ?', phone));
+}
+// ตรวจเบอร์ทันทีที่ลูกค้ากรอก: { campaign, phone } → { eligible }
+on('POST', '/api/members/check', async (c) => {
+  const b = await body(c); const camp = b.campaign ? await campaignBySlug(c.db, String(b.campaign)) : null;
+  if (!camp) fail(404, 'ไม่พบแคมเปญ / Campaign not found');
+  const phone = M.normPhoneTH(b.phone); if (!phone) return json({ error: 'กรุณาใส่เบอร์โทรศัพท์มือถือ 10 หลัก / Please enter a valid phone number', field: 'phone' }, 400);
+  const eligible = await eliteOk(c, camp, phone);
+  return json({ eligible, message: eligible ? '' : M.NOT_ELITE_MESSAGE });
+});
 // สมัครสมาชิก (หน้าแรกแบบ Membership): { campaign: slug, first_name, last_name, phone, pickup_time, store_id } — 1 เบอร์ต่อ 1 แคมเปญ (ส่งซ้ำ = อัปเดต)
 on('POST', '/api/members', async (c) => {
   const b = await body(c);
@@ -273,6 +286,7 @@ on('POST', '/api/members', async (c) => {
   if (campaignDesign(camp).home !== 'membership') fail(400, 'แคมเปญนี้ไม่ได้เปิดรับสมัครสมาชิก / This campaign has no membership sign-up');
   const v = M.readMemberBody(b, menuFor(camp), STORES);
   if (v.error) return json({ error: v.error, field: v.field }, 400);
+  if (!(await eliteOk(c, camp, v.phone))) return json({ error: M.NOT_ELITE_MESSAGE, field: 'phone', not_elite: true }, 403);
   const ts = now(); const store_name = `${v.store.brand} - ${v.store.name}`;
   await c.db.run(`INSERT INTO members(id, campaign_id, customer_id, first_name, last_name, phone, pickup_time, store_id, store_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(campaign_id, phone) DO UPDATE SET customer_id = excluded.customer_id, first_name = excluded.first_name, last_name = excluded.last_name, pickup_time = excluded.pickup_time, store_id = excluded.store_id, store_name = excluded.store_name, updated_at = excluded.updated_at`,
@@ -660,6 +674,33 @@ on('GET', '/api/admin/customers', async (c) => {
     ORDER BY COALESCE(c.last_login_at, c.last_seen_at) DESC, c.created_at DESC ${exp ? '' : 'LIMIT ? OFFSET ?'}`, ...allArgs, ...(exp ? [] : [PAGE_SIZE, (page - 1) * PAGE_SIZE]));
   return json({ campaign: camp ? campaignPublic(camp) : null, page, pages: exp ? 1 : Math.max(1, Math.ceil(total / PAGE_SIZE)), total, rows });
 });
+// ─── ELITE list (ข้อมูลลูกค้าสมาชิก จากไฟล์ member-ELITE-*.xlsx) ─── GET ?q=&page=&export=1; PUT { rows } = แทนที่ทั้งหมด
+on('GET', '/api/admin/member-list', async (c) => {
+  await requirePerm(c, 'orders_view'); const qp = c.url.searchParams;
+  const q = String(qp.get('q') || '').trim().toLowerCase(); const qd = q.replace(/\D/g, '');
+  const where = q ? `WHERE lower(name) LIKE ? OR lower(email) LIKE ?${qd ? ' OR phone LIKE ?' : ''}` : ''; const args = q ? [`%${q}%`, `%${q}%`, ...(qd ? [`%${qd.replace(/^66/, '')}%`] : [])] : [];
+  const total = (await c.db.get(`SELECT COUNT(*) AS n FROM member_list ${where}`, ...args)).n;
+  const all = await c.db.get('SELECT COUNT(*) AS n, MAX(imported_at) AS at FROM member_list');
+  const exp = qp.get('export') === '1'; const page = exp ? 1 : Math.max(1, parseInt(qp.get('page'), 10) || 1);
+  const rows = (await c.db.all(`SELECT phone, name, tier, email, data_json, imported_at FROM member_list ${where} ORDER BY rowid ${exp ? '' : 'LIMIT ? OFFSET ?'}`, ...args, ...(exp ? [] : [PAGE_SIZE, (page - 1) * PAGE_SIZE])))
+    .map(({ data_json, ...r }) => ({ ...r, data: (() => { try { return JSON.parse(data_json || '{}'); } catch (e) { return {}; } })() }));
+  return json({ total, all: all.n, imported_at: all.at || '', page, pages: exp ? 1 : Math.max(1, Math.ceil(total / PAGE_SIZE)), rows });
+});
+on('PUT', '/api/admin/member-list', async (c) => {
+  await requirePerm(c, 'member_list');
+  const v = M.readMemberListRows((await body(c)).rows);
+  if (v.error) fail(400, v.error);
+  if (!v.rows.length) fail(400, 'ไม่พบเบอร์โทรศัพท์ในไฟล์ / No phone numbers found');
+  const ts = now(); const stmts = [c.db.stmt('DELETE FROM member_list')];
+  // D1: ไม่เกิน 100 ค่าต่อคำสั่ง → 16 แถว (6 ค่า) ต่อ INSERT; batch เดียว = ทำทั้งหมดหรือไม่ทำเลย
+  for (let i = 0; i < v.rows.length; i += 16) {
+    const chunk = v.rows.slice(i, i + 16);
+    stmts.push(c.db.stmt(`INSERT INTO member_list(phone, name, tier, email, data_json, imported_at) VALUES ${chunk.map(() => '(?, ?, ?, ?, ?, ?)').join(', ')}`, ...chunk.flatMap((r) => [r.phone, r.name, r.tier, r.email, r.data_json, ts])));
+  }
+  await c.db.batch(stmts);
+  return json({ ok: true, imported: v.rows.length, skipped: v.skipped, imported_at: ts });
+});
+
 // ─── Members (สมัครจากหน้าแรกแบบ Membership) ───  ?campaign=<id|all>&q=&page=&export=1
 on('GET', '/api/admin/members', async (c) => {
   await requirePerm(c, 'orders_view'); const qp = c.url.searchParams;

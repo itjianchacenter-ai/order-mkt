@@ -119,6 +119,7 @@ if (!window.PREVIEW_MODE && /^#\/backend/.test(location.hash)) { const q = locat
   /* ───────── customers: ทะเบียนลูกค้าจากอีเมลที่กรอกตอนสั่งซื้อ (หรือบัญชี Google ถ้าเปิดใช้) — อีเมล ชื่อ ใช้งานล่าสุด ออเดอร์ ยอดชำระ ───────── */
   if (state.view === 'customers') return renderCustomers();
   async function renderCustomers() {
+    if (params.get('tab') === 'elite') return renderEliteList();
     // แยกตามแคมเปญ: ลูกค้าที่ล็อกอินจาก /<แคมเปญ>/ หรือสั่งซื้อในแคมเปญนั้น (ค่าเริ่มต้น = แคมเปญที่ Active; เลือก "ทุกแคมเปญ" ได้)
     const campaigns = await api('/api/admin/campaigns'); if (!alive()) return;
     const allC = state.campaign === 'all';
@@ -130,7 +131,8 @@ if (!window.PREVIEW_MODE && /^#\/backend/.test(location.hash)) { const q = locat
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
           <input class="search" id="q" placeholder="Email / ชื่อ …" value="${esc(state.q)}">
           ${campSelect}
-          <span class="pill" id="cust-count">${ICONS.customer} Customer</span>
+          <span class="pill on" id="cust-count">${ICONS.customer} Customer</span>
+          <a class="pill" href="${ADMIN_PATH}?view=customers&tab=elite">${ICONS.user} ELITE list</a>
         </div>
         <button type="button" class="pill" id="cust-csv">${ICONS.doc} Download CSV</button>
       </div>
@@ -165,6 +167,82 @@ if (!window.PREVIEW_MODE && /^#\/backend/.test(location.hash)) { const q = locat
       const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `customers-${campaign ? campaign.slug : 'all'}-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     });
+    load();
+  }
+
+  /* ───────── customers → ELITE list: ข้อมูลลูกค้าสมาชิก ELITE จากไฟล์ member-ELITE-*.xlsx (ใช้ตรวจเบอร์ที่หน้าสมัครสมาชิก) ───────── */
+  async function renderEliteList() {
+    const SHOW = ['ยอดสะสมระดับ', 'คะแนนคงเหลือ', 'สาขาที่สมัคร', 'ใช้งานล่าสุด'];
+    app.innerHTML = `
+      <div class="toolbar">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <input class="search" id="q" placeholder="ชื่อ / เบอร์ / อีเมล …" value="${esc(state.q)}">
+          <a class="pill" href="${ADMIN_PATH}?view=customers">${ICONS.customer} Customer</a>
+          <span class="pill on" id="el-count">${ICONS.user} ELITE list</span>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          ${P.member_list ? `<button type="button" class="pill" id="el-up">${ICONS.upload} Upload ELITE file (.xlsx / .csv)</button>` : ''}
+          <button type="button" class="pill" id="el-csv">${ICONS.doc} Download CSV</button>
+        </div>
+      </div>
+      <div class="th" id="el-note" style="margin:-6px 0 14px;color:var(--muted);font-size:13px"></div>
+      <div class="err" id="el-err"></div>
+      <input type="file" id="el-file" class="hidden" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv">
+      <div class="tbl-wrap"><table class="jc-tbl" id="el-tbl">
+        <thead><tr><th>Member</th><th>Tel</th><th>Tier</th>${SHOW.map((k) => `<th>${esc(k)}</th>`).join('')}<th>Email</th></tr></thead>
+        <tbody></tbody></table></div>
+      <div class="pager"><button type="button" id="prev">${ICONS.arrowL}</button><span class="pg" id="pg">1</span><button type="button" id="next">${ICONS.arrowR}</button></div>`;
+    const row = (m) => `<tr><td class="who">${ICONS.user} <b>${esc(m.name || '-')}</b></td><td class="mono">${esc(m.phone)}</td><td>${esc(m.tier || '-')}</td>${SHOW.map((k) => `<td>${esc((m.data || {})[k] ?? '')}</td>`).join('')}<td class="mono">${m.email ? `<a href="mailto:${esc(m.email)}">${esc(m.email)}</a>` : ''}</td></tr>`;
+    async function load() {
+      let data; try { data = await api('/api/admin/member-list?' + new URLSearchParams({ q: state.q, page: state.page })); } catch (e) { if (/401/.test(e.message)) return location.reload(); $('#el-err').textContent = e.message; return; }
+      if (!alive()) return;
+      state.page = data.page;
+      $('#el-tbl tbody').innerHTML = data.rows.map(row).join('') || `<tr><td colspan="${SHOW.length + 4}" class="empty">${data.all ? 'ไม่พบรายชื่อที่ค้นหา' : 'ยังไม่มีรายชื่อ ELITE — กด Upload ELITE file เพื่อนำเข้าไฟล์ member-ELITE-*.xlsx'}</td></tr>`;
+      $('#el-count').innerHTML = `${ICONS.user} ELITE list <b>${data.all.toLocaleString('en-US')}</b>`;
+      $('#el-note').textContent = data.all ? `อัปเดตล่าสุด ${fmtDateTime(data.imported_at)} · หน้าสมัครสมาชิก (Membership) รับเฉพาะเบอร์ในรายชื่อนี้ · อัปโหลดไฟล์ใหม่ = แทนที่รายชื่อทั้งหมด` : 'หน้าสมัครสมาชิก (Membership) รับเฉพาะเบอร์ในรายชื่อนี้';
+      $('#pg').textContent = `${data.page} / ${data.pages}`; $('#prev').disabled = data.page <= 1; $('#next').disabled = data.page >= data.pages;
+    }
+    let t; $('#q').addEventListener('input', (e) => { clearTimeout(t); t = setTimeout(() => { state.q = e.target.value.trim(); state.page = 1; load(); }, 250); });
+    $('#prev').addEventListener('click', () => { state.page--; load(); });
+    $('#next').addEventListener('click', () => { state.page++; load(); });
+    $('#el-csv').addEventListener('click', async () => {
+      const data = await api('/api/admin/member-list?' + new URLSearchParams({ q: state.q, export: '1' }));
+      const keys = [...new Set(data.rows.flatMap((m) => Object.keys(m.data || {})))];
+      const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+      const lines = [['phone', 'name', 'tier', 'email', ...keys].map(cell).join(','), ...data.rows.map((m) => [m.phone, m.name, m.tier, m.email, ...keys.map((k) => (m.data || {})[k])].map(cell).join(','))];
+      const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `elite-list-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    });
+    // อ่านไฟล์ในเบราว์เซอร์ (SheetJS) → ส่งเฉพาะแถวข้อมูล: sheet ชื่อ ELITE (ถ้ามี) หัวตารางคือแถวแรกที่มีคอลัมน์ "เบอร์โทร"
+    const loadXlsx = () => window.XLSX ? Promise.resolve() : new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload = ok; s.onerror = () => no(new Error('โหลดตัวอ่านไฟล์ Excel ไม่ได้')); document.head.appendChild(s); });
+    function parseSheet(aoa) {
+      const h = aoa.findIndex((r) => r.some((c) => /เบอร์|phone|tel|mobile/i.test(String(c))));
+      if (h < 0) throw new Error('ไม่พบคอลัมน์เบอร์โทรศัพท์ในไฟล์');
+      const head = aoa[h].map((c) => String(c).trim());
+      const col = (re, not = -1) => head.findIndex((c, i) => i !== not && re.test(c));
+      const ph = col(/เบอร์|phone|tel|mobile/i), nm = col(/^ชื่อ|name/i, ph), tr = col(/ระดับสมาชิก|tier|level/i), em = col(/อีเมล|e-?mail/i);
+      return aoa.slice(h + 1).filter((r) => String(r[ph] ?? '').trim()).map((r) => {
+        const data = {}; head.forEach((k, i) => { if (k && i !== ph && i !== nm && i !== em && !/^ลำดับ$|^no\.?$/i.test(k) && String(r[i] ?? '').trim() !== '') data[k] = String(r[i]); });
+        return { phone: String(r[ph]), name: nm >= 0 ? String(r[nm] ?? '') : '', tier: tr >= 0 ? String(r[tr] ?? '') : '', email: em >= 0 ? String(r[em] ?? '') : '', data };
+      });
+    }
+    if (P.member_list) {
+      $('#el-up').addEventListener('click', () => $('#el-file').click());
+      $('#el-file').addEventListener('change', async (e) => {
+        const f = e.target.files[0]; e.target.value = ''; if (!f) return; $('#el-err').textContent = '';
+        try {
+          await loadXlsx();
+          const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+          const name = wb.SheetNames.find((n) => /^elite$/i.test(n.trim())) || wb.SheetNames[0];
+          const rows = parseSheet(XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: false, defval: '' }));
+          if (!rows.length) throw new Error('ไม่พบรายชื่อในไฟล์');
+          if (!confirm(`พบ ${rows.length.toLocaleString('en-US')} รายชื่อใน sheet "${name}"\nแทนที่รายชื่อ ELITE เดิมทั้งหมด?`)) return;
+          const r = await api('/api/admin/member-list', { method: 'PUT', body: { rows } });
+          alert(`นำเข้าแล้ว ${r.imported.toLocaleString('en-US')} รายชื่อ${r.skipped ? ` (ข้าม ${r.skipped} แถวที่เบอร์ไม่ถูกต้อง)` : ''}`);
+          state.q = ''; $('#q').value = ''; state.page = 1; load();
+        } catch (ex) { $('#el-err').textContent = ex.message; }
+      });
+    }
     load();
   }
 

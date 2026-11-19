@@ -400,6 +400,23 @@ const dbx = {
       r = await call('guest', 'POST', '/api/quote', { campaign: 'jianchaxsummer', store_id: 'siam-paragon', phone: '0812345678', email: 'a@gmail.com', lines: [{ set_id: 'A', quantity: 1 }] }); check('membership campaign refuses orders', r.status === 400 || r.status === 401, r.json);
       { const M = require('../lib/menu'); const j = JSON.parse(M.membershipDesignJson(JSON.stringify({ sets: [{ id: 'A' }], home: 'order' }))); check('membership migration keeps design, sets home', j.home === 'membership' && j.sets.length === 1 && JSON.parse(M.membershipDesignJson(null)).home === 'membership' && M.MEMBERSHIP_HOME_SLUGS.includes('celebrateeverymomentwithjiancha')); }
       r = await call('it', 'POST', '/api/admin/campaigns', { name: 'JIANCHA MEMBERSHIP', slug: 'celebrateeverymomentwithjiancha' }); const memId = r.json.id;
+      // รายชื่อ ELITE: ลิงก์ celebrate รับเฉพาะเบอร์ในรายชื่อ (ยังไม่อัปโหลด = ไม่มีใครสมัครได้)
+      const cm = { ...sm, campaign: 'celebrateeverymomentwithjiancha' };
+      r = await call('guest', 'POST', '/api/members/check', { campaign: cm.campaign, phone: '0899999999' }); check('celebrate: no ELITE list yet = not eligible', r.status === 200 && r.json.eligible === false && /ยังไม่เป็นสมาชิกระดับ elite/.test(r.json.message), r.json);
+      r = await call('guest', 'POST', '/api/members', cm); check('celebrate: sign-up refused without ELITE list', r.status === 403 && r.json.not_elite === true && r.json.field === 'phone', r.json);
+      const eliteRows = [{ phone: '(66) 812345678', name: 'สุดา ทดสอบ', tier: 'ELITE', email: 'suda@example.com', data: { 'ยอดสะสมระดับ': '12000', 'สาขาที่สมัคร': 'JF001' } }, { phone: '(66) 898765432', name: 'B', tier: 'ELITE' }, { phone: 'n/a', name: 'bad' }, { phone: '0812345678', name: 'dup' }];
+      r = await call('fin', 'PUT', '/api/admin/member-list', { rows: eliteRows }); check('finance cannot upload ELITE list', r.status === 403);
+      r = await call('mkt', 'PUT', '/api/admin/member-list', { rows: [{ phone: 'x' }] }); check('ELITE upload with no phones rejected', r.status === 400);
+      r = await call('mkt', 'PUT', '/api/admin/member-list', { rows: eliteRows }); check('marketing uploads ELITE list (phones normalized, dupes merged)', r.status === 200 && r.json.imported === 2 && r.json.skipped === 1, r.json);
+      r = await call('fin', 'GET', '/api/admin/member-list?q=0812'); check('ELITE list searchable in Customer', r.status === 200 && r.json.all === 2 && r.json.total === 1 && r.json.rows[0].phone === '0812345678' && r.json.rows[0].name === 'dup' && r.json.rows[0].data, r.json);
+      r = await call('mkt', 'GET', '/api/admin/member-list?q=suda'); check('ELITE list search by email', r.json.total === 0 || r.json.rows.every((x) => /suda/.test(x.email)), r.json);
+      r = await call('guest', 'GET', '/api/admin/member-list'); check('ELITE list needs back-office login', r.status === 401);
+      r = await call('guest', 'POST', '/api/members/check', { campaign: cm.campaign, phone: '+66 89-876-5432' }); check('ELITE phone eligible (any format)', r.json.eligible === true, r.json);
+      r = await call('guest', 'POST', '/api/members/check', { campaign: cm.campaign, phone: '0899999999' }); check('non-ELITE phone gets the red message', r.json.eligible === false && r.json.message.includes('Line OA @jiancha'), r.json);
+      r = await call('guest', 'POST', '/api/members', { ...cm, phone: '0899999999' }); check('non-ELITE sign-up refused', r.status === 403 && r.json.not_elite === true);
+      r = await call('guest', 'POST', '/api/members', { ...cm, phone: '0898765432' }); check('ELITE member signs up', r.status === 201 && r.json.member.phone === '0898765432', r.json);
+      r = await call('guest', 'POST', '/api/members', { ...sm, phone: '0811111111' }); check('other membership campaigns also check the list once uploaded', r.status === 403);
+      r = await call('mkt', 'PUT', '/api/admin/member-list', { rows: [{ phone: '0811111111', name: 'C' }] }); r = await call('mkt', 'GET', '/api/admin/member-list'); check('re-upload replaces the whole list', r.json.all === 1 && r.json.rows[0].phone === '0811111111', r.json);
       r = await call('it', 'PUT', `/api/admin/campaigns/${memId}/design`, { home: 'order' }); check('celebrate link stays membership even if saved as order', r.status === 200 && r.json.design.home === 'membership', r.json && r.json.design);
       r = await fetch(base + '/celebrateeverymomentwithjiancha/'); check('celebrate link serves the sign-up form', r.status === 200 && /id="mb-form"/.test(await r.text()));
       r = await fetch(base + '/celebrateeverymomentwithjiancha/cart', { redirect: 'manual' }); check('celebrate link has no cart', r.status === 302);

@@ -66,6 +66,10 @@ const DDL = [
     created_at TEXT DEFAULT (${NOW}), updated_at TEXT DEFAULT (${NOW}))`,
   'CREATE UNIQUE INDEX IF NOT EXISTS idx_members_phone ON members(campaign_id, phone)',
   'CREATE INDEX IF NOT EXISTS idx_members_created ON members(campaign_id, created_at DESC)',
+  // รายชื่อสมาชิก ELITE (อัปโหลดจากหลังบ้าน → Customer → ELITE list; อัปโหลดใหม่ = แทนที่ทั้งหมด)
+  `CREATE TABLE IF NOT EXISTS member_list (
+    phone TEXT PRIMARY KEY, name TEXT DEFAULT '', tier TEXT DEFAULT '', email TEXT DEFAULT '', data_json TEXT DEFAULT '{}',
+    imported_at TEXT DEFAULT (${NOW}))`,
   `CREATE TABLE IF NOT EXISTS mail_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT, order_id TEXT, kind TEXT NOT NULL, to_email TEXT NOT NULL, subject TEXT NOT NULL,
     status TEXT NOT NULL, error TEXT DEFAULT '', created_at TEXT DEFAULT (${NOW}))`,
