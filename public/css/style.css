@@ -536,3 +536,9 @@ select.mb-input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://ww
 .mb-phone-err{max-width:450px;margin-top:-4px;color:#d32f2f;font-size:15px;font-weight:700;line-height:1.5}
 .mb-phone-err a{color:inherit}
 @media (max-width:900px){.mb-phone-err{max-width:none}}
+/* PC: ปุ่ม Membership Gift อยู่กึ่งกลางใต้คำว่า Membership ห่างลงมา 25px
+   รูป 1366×768 แสดงแบบ contain → คำนวณกรอบรูปจริงบนจอ (--lw × --lh) แล้ววางปุ่มที่จุด x 379/1366, y 438/768 ของรูป */
+@media (min-width:701px){
+  .landing{--lw:min(100vw,177.86vh);--lh:min(100vh,56.22vw)}
+  .landing-btn{position:absolute;left:calc((100vw - var(--lw)) / 2 + var(--lw) * .2775);top:calc((100vh - var(--lh)) / 2 + var(--lh) * .5703 + 25px);transform:translateX(-50%)}
+}
