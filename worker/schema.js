@@ -57,6 +57,14 @@ const DDL = [
   `CREATE TABLE IF NOT EXISTS customer_campaigns (
     customer_id TEXT NOT NULL REFERENCES customers(id), campaign_id TEXT NOT NULL,
     first_seen_at TEXT DEFAULT (${NOW}), last_seen_at TEXT DEFAULT (${NOW}), PRIMARY KEY (customer_id, campaign_id))`,
+  // สมาชิกจากหน้าแรกแบบ Membership — 1 เบอร์ต่อ 1 แคมเปญ (ส่งซ้ำ = อัปเดตข้อมูลเดิม)
+  `CREATE TABLE IF NOT EXISTS members (
+    id TEXT PRIMARY KEY, campaign_id TEXT NOT NULL, customer_id TEXT,
+    first_name TEXT NOT NULL DEFAULT '', last_name TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL,
+    pickup_time TEXT DEFAULT '', store_id TEXT DEFAULT '', store_name TEXT DEFAULT '',
+    created_at TEXT DEFAULT (${NOW}), updated_at TEXT DEFAULT (${NOW}))`,
+  'CREATE UNIQUE INDEX IF NOT EXISTS idx_members_phone ON members(campaign_id, phone)',
+  'CREATE INDEX IF NOT EXISTS idx_members_created ON members(campaign_id, created_at DESC)',
   `CREATE TABLE IF NOT EXISTS mail_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT, order_id TEXT, kind TEXT NOT NULL, to_email TEXT NOT NULL, subject TEXT NOT NULL,
     status TEXT NOT NULL, error TEXT DEFAULT '', created_at TEXT DEFAULT (${NOW}))`,

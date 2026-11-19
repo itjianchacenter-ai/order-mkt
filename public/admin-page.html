@@ -29,7 +29,7 @@ if (!window.PREVIEW_MODE && /^#\/backend/.test(location.hash)) { const q = locat
   // customer URL of a campaign: order.jianchatea.com/<slug>/ (preview: this file + #/<slug>/)
   const siteUrl = (c) => (me.public_base_url || (location.origin + (window.PREVIEW_MODE ? (location.protocol === 'file:' ? window.location['pathname'] + '#' : PV_BASE.replace(/\/$/, '')) : ''))) + c.url;
   // '' = home (campaign page). Every role sees Order / Slip Issue / Store Pick-up Order; IT-Admin also Account.
-  const VIEWS = { '': true, accounts: P.accounts, design: P.campaigns, orders: true, slips: true, pickup: true, customers: true };
+  const VIEWS = { '': true, accounts: P.accounts, design: P.campaigns, orders: true, slips: true, pickup: true, customers: true, members: true };
   if (!VIEWS[state.view]) state.view = '';
   // Every role gets the hamburger menu on every back-office page (it also holds Logout).
   renderHeader(state.view, { admin: true, role: user.role, user });
@@ -168,6 +168,55 @@ if (!window.PREVIEW_MODE && /^#\/backend/.test(location.hash)) { const q = locat
     load();
   }
 
+  /* ───────── members: สมัครสมาชิกจากหน้าแรกแบบ Membership (ชื่อ / เบอร์ / เวลา / สาขา) ───────── */
+  if (state.view === 'members') return renderMembers();
+  async function renderMembers() {
+    const campaigns = await api('/api/admin/campaigns'); if (!alive()) return;
+    const allC = state.campaign === 'all';
+    const campaign = allC ? null : (campaigns.find((c) => c.id === state.campaign) || campaigns.find((c) => c.active) || campaigns[0]);
+    const campParam = allC ? 'all' : (campaign ? campaign.id : '');
+    const campSelect = `<select class="pill" id="campaign-select" style="padding-right:28px">${campaigns.map((c) => `<option value="${esc(c.id)}" ${campaign && c.id === campaign.id ? 'selected' : ''}>${esc(c.name)} · /${esc(c.slug)}/${c.active ? '' : ' (inactive)'}</option>`).join('')}<option value="all" ${allC ? 'selected' : ''}>ทุกแคมเปญ / All campaigns</option></select>`;
+    app.innerHTML = `
+      <div class="toolbar">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <input class="search" id="q" placeholder="ชื่อ / เบอร์ / สาขา …" value="${esc(state.q)}">
+          ${campSelect}
+          <span class="pill" id="mem-count">${ICONS.customer} Members</span>
+        </div>
+        <button type="button" class="pill" id="mem-csv">${ICONS.doc} Download CSV</button>
+      </div>
+      <div class="tbl-wrap"><table class="jc-tbl" id="mem-tbl">
+        <thead><tr><th>Member</th><th>Tel</th><th>Time</th><th>Location</th>${allC ? '<th>Campaign</th>' : ''}<th>Signed up</th></tr></thead>
+        <tbody></tbody></table></div>
+      <div class="pager"><button type="button" id="prev">${ICONS.arrowL}</button><span class="pg" id="pg">1</span><button type="button" id="next">${ICONS.arrowR}</button></div>`;
+    const row = (m) => `<tr>
+        <td class="who">${ICONS.user} <b>${esc(m.first_name)} ${esc(m.last_name)}</b></td>
+        <td class="mono"><a href="tel:${esc(m.phone)}">${esc(m.phone)}</a></td>
+        <td>${esc(m.pickup_time || '-')}</td>
+        <td>${esc(m.store_name || '-')}</td>${allC ? `<td>${esc(m.campaign_name || m.campaign_id)}</td>` : ''}
+        <td>${fmtDateTime(m.created_at)}${m.updated_at && m.updated_at !== m.created_at ? `<br><small class="th" style="color:var(--muted)">แก้ไข ${fmtDateTime(m.updated_at)}</small>` : ''}</td></tr>`;
+    async function load() {
+      let data; try { data = await api('/api/admin/members?' + new URLSearchParams({ campaign: campParam, q: state.q, page: state.page })); } catch (e) { if (/401/.test(e.message)) return location.reload(); $('#mem-tbl tbody').innerHTML = `<tr><td colspan="6" class="err">${esc(e.message)}</td></tr>`; return; }
+      if (!alive()) return;
+      state.page = data.page;
+      $('#mem-tbl tbody').innerHTML = data.rows.map(row).join('') || `<tr><td colspan="6" class="empty">ยังไม่มีสมาชิก${campaign ? 'ในแคมเปญ ' + esc(campaign.name) : ''} / No members yet</td></tr>`;
+      $('#mem-count').innerHTML = `${ICONS.customer} Members <b>${data.total}</b>${campaign ? ` <span class="th">· ${esc(campaign.name)}</span>` : ' <span class="th">· ทุกแคมเปญ</span>'}`;
+      $('#pg').textContent = `${data.page} / ${data.pages}`; $('#prev').disabled = data.page <= 1; $('#next').disabled = data.page >= data.pages;
+    }
+    $('#campaign-select').addEventListener('change', (e) => go({ view: 'members', campaign: e.target.value, q: state.q }));
+    let t; $('#q').addEventListener('input', (e) => { clearTimeout(t); t = setTimeout(() => { state.q = e.target.value.trim(); state.page = 1; load(); }, 250); });
+    $('#prev').addEventListener('click', () => { state.page--; load(); });
+    $('#next').addEventListener('click', () => { state.page++; load(); });
+    $('#mem-csv').addEventListener('click', async () => {
+      const data = await api('/api/admin/members?' + new URLSearchParams({ campaign: campParam, q: state.q, export: '1' }));
+      const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+      const lines = [['campaign', 'first_name', 'last_name', 'phone', 'time', 'location', 'signed_up', 'updated'].join(','), ...data.rows.map((m) => [m.campaign_name || m.campaign_id, m.first_name, m.last_name, m.phone, m.pickup_time, m.store_name, m.created_at, m.updated_at].map(cell).join(','))];
+      const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `members-${campaign ? campaign.slug : 'all'}-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    });
+    load();
+  }
+
   /* ───────── accounts (IT-Admin) ───────── */
   if (state.view === 'accounts') return renderAccounts();
   async function renderAccounts() {
@@ -259,6 +308,11 @@ if (!window.PREVIEW_MODE && /^#\/backend/.test(location.hash)) { const q = locat
     if (!alive()) return;
     app.innerHTML = `
       <div class="dz-head"><span class="dz-name">${esc(campaign.name)}</span><a class="pill" href="${esc(siteUrl(campaign))}" target="_blank" rel="noopener">${ICONS.eye} ${esc(siteUrl(campaign).replace(/^https?:\/\//, ''))}</a><span class="dz-state" id="dz-state">${campaign.active ? 'แคมเปญหลัก · แสดงที่หน้าแรกด้วย' : 'เปิดได้จากลิงก์ของแคมเปญ'}</span><a class="pill on dz-another" href="${ADMIN_PATH}?view=design">Another Campaign</a></div>
+      <div class="dz-title"><span>Homepage</span><span class="dz-size">หน้าแรกของลิงก์แคมเปญ</span></div>
+      <div class="dz-home"><select class="pill" id="dz-home" style="padding-right:28px">
+        <option value="order" ${design.home !== 'membership' ? 'selected' : ''}>Order menu · เมนูสั่งซื้อ (Promote Image + Set)</option>
+        <option value="membership" ${design.home === 'membership' ? 'selected' : ''}>Membership sign-up · ฟอร์มสมัครสมาชิก (ชื่อ / เบอร์ / เวลา / สาขา)</option>
+      </select> <a class="pill" href="${ADMIN_PATH}?view=members&campaign=${encodeURIComponent(campaign.id)}">${ICONS.customer} Members</a></div>
       <div class="dz-title"><span>Promote Image</span><span class="dz-size">1180 × 570 px · svg / png · รูปใหญ่รวมน้ำ + ขนม (หลายรูป = สไลด์)</span></div>
       <div class="dz-row promo" id="promos"></div>
       <div id="sets"></div>
@@ -314,6 +368,7 @@ if (!window.PREVIEW_MODE && /^#\/backend/.test(location.hash)) { const q = locat
     }
     const queueSave = () => { setState('แก้ไขแล้ว ยังไม่บันทึก'); setDirty(true); };
     $('#dz-save').addEventListener('click', save);
+    $('#dz-home').addEventListener('change', (e) => { design.home = e.target.value; queueSave(); });
     $('#dz-discard').addEventListener('click', () => { if (confirm('ยกเลิกการแก้ไขทั้งหมดที่ยังไม่ได้บันทึก?')) location.reload(); });
     const guard = (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } };
     window.addEventListener('beforeunload', guard);

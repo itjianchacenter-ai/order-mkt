@@ -242,6 +242,7 @@ function renderHeader(active, { admin = false, role = '', user = null, hideNav =
     items.push(mi('slips', ICONS.slip, 'Slip Issue'));
     items.push(mi('pickup', ICONS.store, 'Pick-up Order'));
     items.push(mi('customers', ICONS.customer, 'Customer'));
+    items.push(mi('members', ICONS.customer, 'Member'));
     if (user) items.push(`<button type="button" class="mi" id="logout" title="${esc(user.username)}">${ICONS.logout}<span>Logout</span></button>`);
     return `<nav class="nav burger" id="burger">
       <button type="button" class="burger-btn" id="burger-btn" aria-label="Menu" aria-haspopup="true" aria-expanded="false" aria-controls="burger-menu">${ICONS.menu}</button>

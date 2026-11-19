@@ -315,6 +315,7 @@ async function api(path, opts = {}) {
     if (admin.password !== body.current) pvFail('รหัสผ่านเดิมไม่ถูกต้อง'); if (String(body.password || '').length < 6) pvFail('รหัสผ่านใหม่ต้องยาวอย่างน้อย 6 ตัวอักษร');
     admin.password = body.password; pvSave(d); return { ok: true };
   }
+  if (p === '/api/admin/members') return { campaign: null, page: 1, pages: 1, total: 0, rows: [] };   // preview ไม่มีหน้า Membership (ต้องใช้ระบบจริง)
   if (p === '/api/admin/customers') {
     const cs = d.customers || [];
     const qq = (q.get('q') || '').toLowerCase(); const cp = q.get('campaign') || '';

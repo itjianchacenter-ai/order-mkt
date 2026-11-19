@@ -246,6 +246,22 @@ app.use(express.static(PUBLIC_DIR, { extensions: ['html'], index: false }));
 app.get('/api/menu', (req, res) => { const c = requestCampaign(req); res.json({ ...menuFor(c), campaign: campaignPublic(c), stock: stockView(c) }); });
 app.get('/api/stock', (req, res) => res.json(stockView(requestCampaign(req))));
 app.get('/api/stores', (req, res) => res.json(loadStores()));
+// สมัครสมาชิก (หน้าแรกแบบ Membership): { campaign: slug, first_name, last_name, phone, pickup_time, store_id }
+//   1 เบอร์ต่อ 1 แคมเปญ — ส่งซ้ำด้วยเบอร์เดิม = อัปเดตข้อมูลเดิม
+app.post('/api/members', (req, res) => {
+  const b = req.body || {};
+  const campaign = b.campaign ? campaignBySlug(String(b.campaign)) : null;
+  if (!campaign) return res.status(404).json({ error: 'ไม่พบแคมเปญ / Campaign not found' });
+  if (campaignDesign(campaign).home !== 'membership') return res.status(400).json({ error: 'แคมเปญนี้ไม่ได้เปิดรับสมัครสมาชิก / This campaign has no membership sign-up' });
+  const v = M.readMemberBody(b, menuFor(campaign), loadStores());
+  if (v.error) return res.status(400).json({ error: v.error, field: v.field });
+  const ts = W.bangkokNow(); const store_name = `${v.store.brand} - ${v.store.name}`;
+  db.prepare(`INSERT INTO members(id, campaign_id, customer_id, first_name, last_name, phone, pickup_time, store_id, store_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(campaign_id, phone) DO UPDATE SET customer_id = excluded.customer_id, first_name = excluded.first_name, last_name = excluded.last_name, pickup_time = excluded.pickup_time, store_id = excluded.store_id, store_name = excluded.store_name, updated_at = excluded.updated_at`)
+    .run(crypto.randomUUID(), campaign.id, req.customerId || null, v.first_name, v.last_name, v.phone, v.pickup_time, v.store.id, store_name, ts, ts);
+  const m = db.prepare('SELECT first_name, last_name, phone, pickup_time, store_id, store_name, created_at, updated_at FROM members WHERE campaign_id = ? AND phone = ?').get(campaign.id, v.phone);
+  res.status(201).json({ ok: true, member: m, campaign: campaignPublic(campaign) });
+});
 app.get('/api/config', (req, res) => res.json({ payment_ready: qrConfigured(), payment_mode: paymentMode(process.env), slip_auto_verify: slipOkEnabled(), login_required: loginRequired(), google_client_id: GOOGLE_CLIENT_ID }));
 
 
@@ -668,6 +684,25 @@ app.get('/api/admin/customers', requireAdmin, (req, res) => {
   res.json({ campaign: camp ? campaignPublic(camp) : null, page, pages: exp ? 1 : Math.max(1, Math.ceil(total / PAGE_SIZE)), total, rows });
 });
 
+// ─── Members (สมัครจากหน้าแรกแบบ Membership) ───
+// GET /api/admin/members?campaign=<id|all>&q=&page=&export=1   (ไม่ส่ง campaign = แคมเปญที่ Active)
+app.get('/api/admin/members', requireAdmin, (req, res) => {
+  const q = String(req.query.q || '').trim().toLowerCase();
+  const cparam = String(req.query.campaign || '');
+  const camp = cparam === 'all' ? null : (cparam ? getCampaign(cparam) : activeCampaign());
+  if (cparam && cparam !== 'all' && !camp) return res.status(404).json({ error: 'ไม่พบแคมเปญ' });
+  const where = []; const args = [];
+  if (camp) { where.push('m.campaign_id = ?'); args.push(camp.id); }
+  if (q) { where.push("(lower(m.first_name || ' ' || m.last_name) LIKE ? OR m.phone LIKE ? OR lower(m.store_name) LIKE ?)"); args.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+  const w = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const total = db.prepare(`SELECT COUNT(*) AS n FROM members m ${w}`).get(...args).n;
+  const exp = req.query.export === '1';
+  const page = exp ? 1 : Math.max(1, parseInt(req.query.page, 10) || 1);
+  const rows = db.prepare(`SELECT m.id, m.campaign_id, c.name AS campaign_name, m.first_name, m.last_name, m.phone, m.pickup_time, m.store_id, m.store_name, m.created_at, m.updated_at
+    FROM members m LEFT JOIN campaigns c ON c.id = m.campaign_id ${w} ORDER BY m.created_at DESC ${exp ? '' : 'LIMIT ? OFFSET ?'}`).all(...args, ...(exp ? [] : [PAGE_SIZE, (page - 1) * PAGE_SIZE]));
+  res.json({ campaign: camp ? campaignPublic(camp) : null, page, pages: exp ? 1 : Math.max(1, Math.ceil(total / PAGE_SIZE)), total, rows });
+});
+
 app.get('/api/admin/orders', requireAdmin, (req, res) => {
   const q = String(req.query.q || '').trim();
   const date = String(req.query.date || '').trim();      // YYYY-MM-DD
@@ -776,9 +811,11 @@ app.use('/api', (req, res) => res.status(404).json({ error: 'not found' }));
 const CAMPAIGN_PAGES = { '': 'index', cart: 'cart', orders: 'orders', stores: 'stores', pay: 'pay', receipt: 'receipt' };
 app.get('/:slug/:page?', (req, res, next) => {
   const page = CAMPAIGN_PAGES[req.params.page || ''];
-  if (page === undefined || !campaignBySlug(req.params.slug)) return next();
+  const camp = page === undefined ? null : campaignBySlug(req.params.slug);
+  if (!camp) return next();
   if (!req.params.page && !req.path.endsWith('/')) return res.redirect(301, `/${req.params.slug}/${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`);
-  res.sendFile(path.join(PUBLIC_DIR, page + '.html'));
+  // หน้าแรกแบบ Membership (ตั้งในหน้า Design ของแคมเปญ) → ฟอร์มสมัครสมาชิกแทนเมนูสั่งซื้อ
+  res.sendFile(path.join(PUBLIC_DIR, (page === 'index' && campaignDesign(camp).home === 'membership' ? 'membership' : page) + '.html'));
 });
 app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
   if (err && err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'ไฟล์ใหญ่เกิน 8 MB' });
