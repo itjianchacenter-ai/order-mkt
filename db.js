@@ -116,6 +116,18 @@ db.exec(`CREATE TABLE IF NOT EXISTS holds (
   created_at TEXT DEFAULT (datetime('now','localtime')), expires_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_holds_day ON holds(campaign_id, order_day, expires_at);
 CREATE INDEX IF NOT EXISTS idx_holds_customer ON holds(customer_id, campaign_id);`);
+// สมาชิกจากหน้าแรกแบบ Membership (ฟอร์ม ชื่อ/นามสกุล/เบอร์/เวลา/สาขา) — 1 เบอร์ต่อ 1 แคมเปญ (ส่งซ้ำ = อัปเดตข้อมูลเดิม)
+db.exec(`CREATE TABLE IF NOT EXISTS members (
+  id TEXT PRIMARY KEY,
+  campaign_id TEXT NOT NULL,
+  customer_id TEXT,
+  first_name TEXT NOT NULL DEFAULT '', last_name TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL,
+  pickup_time TEXT DEFAULT '', store_id TEXT DEFAULT '', store_name TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now','localtime')),
+  updated_at TEXT DEFAULT (datetime('now','localtime'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_members_phone ON members(campaign_id, phone);
+CREATE INDEX IF NOT EXISTS idx_members_created ON members(campaign_id, created_at DESC);`);
 db.exec(`CREATE TABLE IF NOT EXISTS customer_campaigns (
   customer_id TEXT NOT NULL REFERENCES customers(id),
   campaign_id TEXT NOT NULL,

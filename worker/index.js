@@ -1,7 +1,7 @@
 /* Cloudflare Pages worker: API + uploads + page routing; everything else is a static asset from public/ */
 import { ensureSchema } from './schema.js';
 import { maybeScheduledReset } from './reset.js';
-import { makeContext, withCookies, handleApi, serveSlip, serveDesign, campaignBySlug } from './api.js';
+import { makeContext, withCookies, handleApi, serveSlip, serveDesign, campaignBySlug, campaignHome } from './api.js';
 
 const CAMPAIGN_PAGES = { '': 'home', cart: 'cart', orders: 'orders', stores: 'stores', pay: 'pay', receipt: 'receipt' };
 const NO_CACHE = { 'cache-control': 'no-cache' };
@@ -39,9 +39,10 @@ export default {
       // Campaign pages: order.jianchatea.com/<slug>/ shows that campaign (and /<slug>/cart, /orders, /stores, /pay, /receipt)
       const m = p.match(/^\/([A-Za-z0-9-]+)(?:\/([a-z]*))?$/);
       const pg = m ? CAMPAIGN_PAGES[m[2] || ''] : undefined;
-      if (m && pg !== undefined && !['backend', 'admin-page', 'cart', 'orders', 'stores', 'pay', 'receipt', 'landing', 'home'].includes(m[1]) && await campaignBySlug(c.db, m[1])) {
+      const camp = m && pg !== undefined && !['backend', 'admin-page', 'cart', 'orders', 'stores', 'pay', 'receipt', 'landing', 'home', 'membership'].includes(m[1]) ? await campaignBySlug(c.db, m[1]) : null;
+      if (camp) {
         if (m[2] === undefined) res = redirect(`/${m[1]}/${url.search}`);
-        else res = await page(env, url, pg);
+        else res = await page(env, url, pg === 'home' && campaignHome(camp) === 'membership' ? 'membership' : pg);   // หน้าแรกแบบ Membership → ฟอร์มสมัครสมาชิก
       } else res = await env.ASSETS.fetch(request);
     }
     return withCookies(res, c);
