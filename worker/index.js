@@ -42,6 +42,7 @@ export default {
       const camp = m && pg !== undefined && !['backend', 'admin-page', 'cart', 'orders', 'stores', 'pay', 'receipt', 'landing', 'home', 'membership'].includes(m[1]) ? await campaignBySlug(c.db, m[1]) : null;
       if (camp) {
         if (m[2] === undefined) res = redirect(`/${m[1]}/${url.search}`);
+        else if (m[2] && campaignHome(camp) === 'membership') res = new Response(null, { status: 302, headers: { location: `/${m[1]}/`, ...NO_CACHE } });   // หน้าสมัครสมาชิก: ไม่มีหน้าสั่งซื้อ
         else res = await page(env, url, pg === 'home' && campaignHome(camp) === 'membership' ? 'membership' : pg);   // หน้าแรกแบบ Membership → ฟอร์มสมัครสมาชิก
       } else res = await env.ASSETS.fetch(request);
     }

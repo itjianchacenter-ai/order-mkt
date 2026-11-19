@@ -313,9 +313,12 @@ if (!window.PREVIEW_MODE && /^#\/backend/.test(location.hash)) { const q = locat
         <option value="order" ${design.home !== 'membership' ? 'selected' : ''}>Order menu · เมนูสั่งซื้อ (Promote Image + Set)</option>
         <option value="membership" ${design.home === 'membership' ? 'selected' : ''}>Membership sign-up · ฟอร์มสมัครสมาชิก (ชื่อ / เบอร์ / เวลา / สาขา)</option>
       </select> <a class="pill" href="${ADMIN_PATH}?view=members&campaign=${encodeURIComponent(campaign.id)}">${ICONS.customer} Members</a></div>
+      <div id="dz-order-only">
       <div class="dz-title"><span>Promote Image</span><span class="dz-size">1180 × 570 px · svg / png · รูปใหญ่รวมน้ำ + ขนม (หลายรูป = สไลด์)</span></div>
       <div class="dz-row promo" id="promos"></div>
       <div id="sets"></div>
+      </div>
+      <div class="dz-home-note th" id="dz-member-note" hidden>หน้าแรกเป็นฟอร์มสมัครสมาชิก: ลูกค้าสั่งซื้อจากลิงก์นี้ไม่ได้ (Promote Image / Set ไม่แสดง) — ดูรายชื่อที่เมนู Member</div>
       <input type="file" id="dz-file" accept="image/*" class="hidden">
       <div class="err" id="dz-err"></div>
       <div class="dz-savebar" id="dz-savebar"><span class="th" id="dz-dirty">ยังไม่มีการแก้ไข</span><button type="button" class="btn ghost" id="dz-discard" disabled>ยกเลิกการแก้ไข</button><button type="button" class="btn" id="dz-save" disabled>${ICONS.check} Save <span class="th">/ บันทึก</span></button></div>`;
@@ -368,7 +371,9 @@ if (!window.PREVIEW_MODE && /^#\/backend/.test(location.hash)) { const q = locat
     }
     const queueSave = () => { setState('แก้ไขแล้ว ยังไม่บันทึก'); setDirty(true); };
     $('#dz-save').addEventListener('click', save);
-    $('#dz-home').addEventListener('change', (e) => { design.home = e.target.value; queueSave(); });
+    const showHome = () => { const mem = design.home === 'membership'; $('#dz-order-only').hidden = mem; $('#dz-member-note').hidden = !mem; };
+    $('#dz-home').addEventListener('change', (e) => { design.home = e.target.value; showHome(); queueSave(); });
+    showHome();
     $('#dz-discard').addEventListener('click', () => { if (confirm('ยกเลิกการแก้ไขทั้งหมดที่ยังไม่ได้บันทึก?')) location.reload(); });
     const guard = (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } };
     window.addEventListener('beforeunload', guard);
