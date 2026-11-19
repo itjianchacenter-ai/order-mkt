@@ -128,6 +128,11 @@ db.exec(`CREATE TABLE IF NOT EXISTS members (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_members_phone ON members(campaign_id, phone);
 CREATE INDEX IF NOT EXISTS idx_members_created ON members(campaign_id, created_at DESC);`);
+// รายชื่อสมาชิก ELITE (อัปโหลดจากหลังบ้าน → Customer → ELITE list; อัปโหลดใหม่ = แทนที่ทั้งหมด) ใช้ตรวจเบอร์ที่หน้าสมัครสมาชิก
+db.exec(`CREATE TABLE IF NOT EXISTS member_list (
+  phone TEXT PRIMARY KEY, name TEXT DEFAULT '', tier TEXT DEFAULT '', email TEXT DEFAULT '', data_json TEXT DEFAULT '{}',
+  imported_at TEXT DEFAULT (datetime('now','localtime'))
+)`);
 db.exec(`CREATE TABLE IF NOT EXISTS customer_campaigns (
   customer_id TEXT NOT NULL REFERENCES customers(id),
   campaign_id TEXT NOT NULL,

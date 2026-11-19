@@ -4,7 +4,7 @@ const PREVIEW_DB_KEY = 'jc_preview_db_v4';
 const PAGE_SIZE = 20; // รายการออเดอร์หลังบ้าน หน้าละ 20
 const PV_PERMS = {
   orders_view: ['it_admin', 'admin', 'finance'], slip_review: ['it_admin', 'finance'], pickup: ['it_admin', 'admin', 'finance'],
-  cancel: ['it_admin', 'finance'], code: ['it_admin', 'admin', 'finance'], accounts: ['it_admin'], campaigns: ['it_admin'],
+  cancel: ['it_admin', 'finance'], code: ['it_admin', 'admin', 'finance'], accounts: ['it_admin'], campaigns: ['it_admin'], member_list: ['it_admin', 'admin'],
 };
 const PV_TRANSITIONS = {
   paid: { from: ['pending', 'slip_uploaded', 'slip_rejected'], perm: 'slip_review', stamp: 'paid_at' },
@@ -315,6 +315,7 @@ async function api(path, opts = {}) {
     if (admin.password !== body.current) pvFail('รหัสผ่านเดิมไม่ถูกต้อง'); if (String(body.password || '').length < 6) pvFail('รหัสผ่านใหม่ต้องยาวอย่างน้อย 6 ตัวอักษร');
     admin.password = body.password; pvSave(d); return { ok: true };
   }
+  if (p === '/api/admin/member-list') return { total: 0, all: 0, imported_at: '', page: 1, pages: 1, rows: [] };   // preview: ไม่มีรายชื่อ ELITE (ต้องใช้ระบบจริง)
   if (p === '/api/admin/members') return { campaign: null, page: 1, pages: 1, total: 0, rows: [] };   // preview ไม่มีหน้า Membership (ต้องใช้ระบบจริง)
   if (p === '/api/admin/customers') {
     const cs = d.customers || [];

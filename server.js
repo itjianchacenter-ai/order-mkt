@@ -210,6 +210,7 @@ const PERMS = {
   code: ['it_admin', 'admin', 'finance'],
   accounts: ['it_admin'],
   campaigns: ['it_admin'],
+  member_list: ['it_admin', 'admin'],   // อัปโหลดรายชื่อ ELITE
 };
 const ADMIN_COOKIE = 'jc_admin';
 function adminFromReq(req) {
@@ -246,6 +247,19 @@ app.use(express.static(PUBLIC_DIR, { extensions: ['html'], index: false }));
 app.get('/api/menu', (req, res) => { const c = requestCampaign(req); res.json({ ...menuFor(c), campaign: campaignPublic(c), stock: stockView(c) }); });
 app.get('/api/stock', (req, res) => res.json(stockView(requestCampaign(req))));
 app.get('/api/stores', (req, res) => res.json(loadStores()));
+// รายชื่อ ELITE: เบอร์ใช้สมัครได้ไหม (ไม่มีรายชื่อ + แคมเปญไม่บังคับ = ได้ทุกเบอร์)
+function eliteOk(campaign, phone) {
+  const n = db.prepare('SELECT COUNT(*) AS n FROM member_list').get().n;
+  return !M.memberListRequired(campaign, n) || Boolean(db.prepare('SELECT 1 FROM member_list WHERE phone = ?').get(phone));
+}
+// ตรวจเบอร์ทันทีที่ลูกค้ากรอก: { campaign, phone } → { eligible }
+app.post('/api/members/check', (req, res) => {
+  const b = req.body || {}; const campaign = b.campaign ? campaignBySlug(String(b.campaign)) : null;
+  if (!campaign) return res.status(404).json({ error: 'ไม่พบแคมเปญ / Campaign not found' });
+  const phone = M.normPhoneTH(b.phone); if (!phone) return res.status(400).json({ error: 'กรุณาใส่เบอร์โทรศัพท์มือถือ 10 หลัก / Please enter a valid phone number', field: 'phone' });
+  const eligible = eliteOk(campaign, phone);
+  res.json({ eligible, message: eligible ? '' : M.NOT_ELITE_MESSAGE });
+});
 // สมัครสมาชิก (หน้าแรกแบบ Membership): { campaign: slug, first_name, last_name, phone, pickup_time, store_id }
 //   1 เบอร์ต่อ 1 แคมเปญ — ส่งซ้ำด้วยเบอร์เดิม = อัปเดตข้อมูลเดิม
 app.post('/api/members', (req, res) => {
@@ -255,6 +269,7 @@ app.post('/api/members', (req, res) => {
   if (campaignDesign(campaign).home !== 'membership') return res.status(400).json({ error: 'แคมเปญนี้ไม่ได้เปิดรับสมัครสมาชิก / This campaign has no membership sign-up' });
   const v = M.readMemberBody(b, menuFor(campaign), loadStores());
   if (v.error) return res.status(400).json({ error: v.error, field: v.field });
+  if (!eliteOk(campaign, v.phone)) return res.status(403).json({ error: M.NOT_ELITE_MESSAGE, field: 'phone', not_elite: true });
   const ts = W.bangkokNow(); const store_name = `${v.store.brand} - ${v.store.name}`;
   db.prepare(`INSERT INTO members(id, campaign_id, customer_id, first_name, last_name, phone, pickup_time, store_id, store_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(campaign_id, phone) DO UPDATE SET customer_id = excluded.customer_id, first_name = excluded.first_name, last_name = excluded.last_name, pickup_time = excluded.pickup_time, store_id = excluded.store_id, store_name = excluded.store_name, updated_at = excluded.updated_at`)
@@ -685,6 +700,27 @@ app.get('/api/admin/customers', requireAdmin, (req, res) => {
   const rows = db.prepare(`SELECT c.id, c.email, c.name, c.picture, c.created_at, c.last_login_at, c.last_seen_at, COALESCE(o.orders, 0) AS orders, COALESCE(o.paid_total, 0) AS paid_total, o.last_order_at${camp ? ', cc.first_seen_at AS joined_at' : ''} ${sql}
     ORDER BY COALESCE(c.last_login_at, c.last_seen_at) DESC, c.created_at DESC ${exp ? '' : 'LIMIT ? OFFSET ?'}`).all(...allArgs, ...(exp ? [] : [PAGE_SIZE, (page - 1) * PAGE_SIZE]));
   res.json({ campaign: camp ? campaignPublic(camp) : null, page, pages: exp ? 1 : Math.max(1, Math.ceil(total / PAGE_SIZE)), total, rows });
+});
+
+// ─── ELITE list (ข้อมูลลูกค้าสมาชิก จากไฟล์ member-ELITE-*.xlsx) ───
+// GET ?q=&page=&export=1 → { total, imported_at, rows }; PUT { rows: [{ phone, name, tier, email, data }] } = แทนที่ทั้งหมด
+app.get('/api/admin/member-list', requireAdmin, (req, res) => {
+  const q = String(req.query.q || '').trim().toLowerCase(); const qd = q.replace(/\D/g, '');
+  const where = q ? `WHERE lower(name) LIKE ? OR lower(email) LIKE ?${qd ? ' OR phone LIKE ?' : ''}` : ''; const args = q ? [`%${q}%`, `%${q}%`, ...(qd ? [`%${qd.replace(/^66/, '')}%`] : [])] : [];
+  const total = db.prepare(`SELECT COUNT(*) AS n FROM member_list ${where}`).get(...args).n;
+  const all = db.prepare('SELECT COUNT(*) AS n, MAX(imported_at) AS at FROM member_list').get();
+  const exp = req.query.export === '1'; const page = exp ? 1 : Math.max(1, parseInt(req.query.page, 10) || 1);
+  const rows = db.prepare(`SELECT phone, name, tier, email, data_json, imported_at FROM member_list ${where} ORDER BY rowid ${exp ? '' : 'LIMIT ? OFFSET ?'}`).all(...args, ...(exp ? [] : [PAGE_SIZE, (page - 1) * PAGE_SIZE]))
+    .map(({ data_json, ...r }) => ({ ...r, data: (() => { try { return JSON.parse(data_json || '{}'); } catch (e) { return {}; } })() }));
+  res.json({ total, all: all.n, imported_at: all.at || '', page, pages: exp ? 1 : Math.max(1, Math.ceil(total / PAGE_SIZE)), rows });
+});
+app.put('/api/admin/member-list', requirePerm('member_list'), (req, res) => {
+  const v = M.readMemberListRows((req.body || {}).rows);
+  if (v.error) return res.status(400).json({ error: v.error });
+  if (!v.rows.length) return res.status(400).json({ error: 'ไม่พบเบอร์โทรศัพท์ในไฟล์ / No phone numbers found' });
+  const ts = W.bangkokNow(); const ins = db.prepare('INSERT INTO member_list(phone, name, tier, email, data_json, imported_at) VALUES (?, ?, ?, ?, ?, ?)');
+  db.transaction(() => { db.prepare('DELETE FROM member_list').run(); for (const r of v.rows) ins.run(r.phone, r.name, r.tier, r.email, r.data_json, ts); })();
+  res.json({ ok: true, imported: v.rows.length, skipped: v.skipped, imported_at: ts });
 });
 
 // ─── Members (สมัครจากหน้าแรกแบบ Membership) ───

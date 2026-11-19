@@ -19,7 +19,8 @@
 
       <div class="mb-field">
         <span class="mb-label"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 10.8a15.2 15.2 0 0 0 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1A17 17 0 0 1 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z" fill="currentColor"/></svg><b>Tel</b> | <span class="th-b">เบอร์โทรสมาชิก</span></span>
-        <input class="mb-input" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="08x-xxx-xxxx" maxlength="20" required aria-label="เบอร์โทรศัพท์ / Phone">
+        <input class="mb-input" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="08x-xxx-xxxx" maxlength="20" required aria-label="เบอร์โทรศัพท์ / Phone" aria-describedby="mb-phone-err">
+        <div class="mb-phone-err th" id="mb-phone-err" role="alert" hidden></div>
       </div>
 
       <div class="mb-field">
@@ -57,7 +58,7 @@
     const init = { credentials: 'same-origin', ...opts };
     if (init.body) { init.headers = { 'Content-Type': 'application/json' }; init.body = JSON.stringify(init.body); }
     const r = await fetch(path, init); let d = null; try { d = await r.json(); } catch (e) { /* no body */ }
-    if (!r.ok) { const e = new Error((d && d.error) || `HTTP ${r.status}`); e.field = d && d.field; throw e; }
+    if (!r.ok) { const e = new Error((d && d.error) || `HTTP ${r.status}`); e.field = d && d.field; e.notElite = Boolean(d && d.not_elite); throw e; }
     return d;
   }
   const form = $('#mb-form'), err = $('#mb-err'), btn = $('#mb-submit');
@@ -80,13 +81,36 @@
     try { const saved = JSON.parse(localStorage.getItem(KEY) || 'null'); if (saved) { for (const k of ['first_name', 'last_name', 'phone', 'pickup_time', 'store_id']) if (saved[k] && form[k]) form[k].value = saved[k]; showDone(saved); } } catch (e) { /* storage blocked */ }
   })();
 
-  form.addEventListener('input', (e) => { e.target.classList.remove('invalid'); err.textContent = ''; });
+  // เบอร์ต้องอยู่ในรายชื่อสมาชิก ELITE: ตรวจทันทีที่กรอกครบ แสดงข้อความสีแดงใต้ช่องเบอร์
+  const phoneErr = $('#mb-phone-err');
+  const LINE_OA = 'https://page.line.me/jiancha';
+  const showNotElite = (msg) => {
+    if (!msg) { phoneErr.hidden = true; phoneErr.textContent = ''; return; }
+    phoneErr.innerHTML = esc(msg).replace('Line OA @jiancha', `<a href="${LINE_OA}" target="_blank" rel="noopener">Line OA @jiancha</a>`);
+    phoneErr.hidden = false; form.phone.classList.add('invalid');
+  };
+  const phoneDigits = (v) => { let d = String(v || '').replace(/\D/g, ''); if (d.startsWith('66') && d.length === 11) d = '0' + d.slice(2); return d; };
+  let checkSeq = 0, notElite = false;
+  async function checkPhone() {
+    const d = phoneDigits(form.phone.value); const seq = ++checkSeq;
+    if (!/^0\d{9}$/.test(d)) { notElite = false; showNotElite(''); return true; }
+    try {
+      const r = await api('/api/members/check', { method: 'POST', body: { campaign: slug, phone: d } });
+      if (seq !== checkSeq) return !notElite;
+      notElite = !r.eligible; showNotElite(r.eligible ? '' : r.message);
+      return r.eligible;
+    } catch (e) { return true; }   // ตรวจไม่ได้ (เน็ต) → ให้เซิร์ฟเวอร์ตรวจตอนกด Confirm
+  }
+  form.phone.addEventListener('input', () => { if (/^0\d{9}$/.test(phoneDigits(form.phone.value))) checkPhone(); else { notElite = false; showNotElite(''); } });
+  form.phone.addEventListener('blur', checkPhone);
+  form.addEventListener('input', (e) => { if (e.target !== form.phone || !notElite) e.target.classList.remove('invalid'); err.textContent = ''; });
   form.addEventListener('submit', async (e) => {
     e.preventDefault(); err.textContent = '';
     for (const el of form.querySelectorAll('[required]')) {
       const empty = el.type === 'checkbox' ? !el.checked : !el.value.trim();
       if (empty) { el.classList.add('invalid'); el.focus(); err.textContent = el.type === 'checkbox' ? 'กรุณากดยินยอมก่อนยืนยัน / Please accept to continue' : 'กรุณากรอกข้อมูลให้ครบ / Please fill in every field'; return; }
     }
+    if (!(await checkPhone())) { form.phone.focus(); return; }
     btn.disabled = true; btn.textContent = '…';
     const body = { campaign: slug, first_name: form.first_name.value, last_name: form.last_name.value, phone: form.phone.value, pickup_time: form.pickup_time.value, store_id: form.store_id.value };
     try {
@@ -95,8 +119,8 @@
       try { localStorage.setItem(KEY, JSON.stringify(r.member)); } catch (x) { /* storage blocked */ }
       showDone(r.member);
     } catch (ex) {
-      err.textContent = ex.message;
-      if (ex.field && form[ex.field]) { form[ex.field].classList.add('invalid'); form[ex.field].focus(); }
+      if (ex.notElite) { notElite = true; showNotElite(ex.message); form.phone.focus(); }
+      else { err.textContent = ex.message; if (ex.field && form[ex.field]) { form[ex.field].classList.add('invalid'); form[ex.field].focus(); } }
     } finally { btn.disabled = false; btn.textContent = 'Confirm'; }
   });
 })();
