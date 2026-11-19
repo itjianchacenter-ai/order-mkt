@@ -437,7 +437,7 @@ const dbx = {
     r = await fetch(base + '/backend/'); check('back-office served at /backend/', r.status === 200 && /JIANCHA Page/.test(await r.text()));
     r = await fetch(base + '/admin-page?view=orders', { redirect: 'manual' }); check('old /admin-page redirects to /backend', r.status === 301 && r.headers.get('location') === '/backend?view=orders');
     r = await fetch(base + '/cart'); check('extensionless page served', r.status === 200);
-    r = await fetch(base + '/'); check('root is the Order with us landing', r.status === 200 && /Order with us/.test(await r.text()));
+    r = await fetch(base + '/'); check('root is the Membership Gift landing', r.status === 200 && /Membership Gift/.test(await r.text()));
     r = await fetch(base + '/index'); check('/index is the active campaign home', r.status === 200 && /id="sets"/.test(await r.text()));
   } finally {
     tokeninfo.close();

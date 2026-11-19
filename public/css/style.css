@@ -460,12 +460,12 @@ a.btn{text-decoration:none}
 .dz-savebar.dirty{border-color:#000;box-shadow:0 -6px 18px rgba(0,0,0,.08)}
 .dz-savebar.dirty .th{color:#000;font-weight:700}
 .dz-savebar .btn:disabled{opacity:.45;cursor:default}
-/* root landing page (order.jianchatea.com): แบนเนอร์เต็มจอเป็นพื้นหลัง — PC ใช้ Banner Pre order, มือถือใช้ป้ายแคมเปญแนวตั้ง — ปุ่ม Order with us อยู่ด้านล่าง */
+/* root landing page (order.jianchatea.com): แบนเนอร์เต็มจอเป็นพื้นหลัง — JIANCHA Membership + ต้นคริสต์มาส (PC แนวนอน, มือถือแนวตั้ง) — ปุ่ม Membership Gift อยู่ด้านล่าง */
 /* .landing เป็นชั้นเต็มจอ (position:fixed) ใส่พื้นหลังที่ตัวมันเอง — ใช้ได้ทั้ง server จริงและ preview ที่ใช้ <body> ร่วมกัน; contain = เห็นแบนเนอร์เต็มทุกขนาดจอ */
-.landing{position:fixed;inset:0;z-index:5;background:#efe5dc url(/img/landing-desktop-2560.jpg) center center/contain no-repeat;background-image:-webkit-image-set(url(/img/landing-desktop-2560.jpg) 1x,url(/img/landing-desktop.jpg) 2x);background-image:image-set(url(/img/landing-desktop-2560.jpg) 1x,url(/img/landing-desktop.jpg) 2x);display:flex;align-items:flex-end;justify-content:center;padding:0 16px 7vh}
-body.landing-page{background:#efe5dc}
+.landing{position:fixed;inset:0;z-index:5;background:#fefdf9 url(/img/landing-membership.webp) center center/contain no-repeat;display:flex;align-items:flex-end;justify-content:center;padding:0 16px 7vh}
+body.landing-page{background:#fefdf9}
 .landing-btn{font-size:24px;font-weight:800;padding:8px 32px;letter-spacing:-.2px;background:#000;color:#fff;border-color:#000;box-shadow:0 6px 18px rgba(0,0,0,.25)}
-@media (max-width:700px){.landing{background-image:url(/img/landing-mobile.jpg);padding-bottom:9vh}.landing-btn{font-size:20px}}
+@media (max-width:700px){.landing{background-image:url(/img/landing-membership-mobile.webp);padding-bottom:9vh}.landing-btn{font-size:20px}}
 /* รอบสั่ง → รอบรับ (ใต้ปุ่มวันที่รับของ) */
 .pair-note{margin-top:12px;font-size:13px}
 .pair-note b{display:block;margin-bottom:6px;font-weight:700}
@@ -536,3 +536,9 @@ select.mb-input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://ww
 .mb-phone-err{max-width:450px;margin-top:-4px;color:#d32f2f;font-size:15px;font-weight:700;line-height:1.5}
 .mb-phone-err a{color:inherit}
 @media (max-width:900px){.mb-phone-err{max-width:none}}
+/* PC: ปุ่ม Membership Gift กึ่งกลางตรงกับโลโก้ JIANCHA ห่างลงมาจากคำว่า Membership 50px
+   รูป 1366×768 แสดงแบบ contain → คำนวณกรอบรูปจริงบนจอ (--lw × --lh) แล้ววางปุ่มที่ x 436.5/1366 (กลางโลโก้ JIANCHA), y 438/768 (ใต้ Membership) ของรูป */
+@media (min-width:701px){
+  .landing{--lw:min(100vw,177.86vh);--lh:min(100vh,56.22vw)}
+  .landing-btn{position:absolute;left:calc((100vw - var(--lw)) / 2 + var(--lw) * .3196);top:calc((100vh - var(--lh)) / 2 + var(--lh) * .5703 + 50px);transform:translateX(-50%)}
+}

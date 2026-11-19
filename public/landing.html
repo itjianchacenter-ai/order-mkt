@@ -6,7 +6,7 @@
 </head>
 <body class="landing-page">
 <div class="wrap">
-  <div class="landing"><a class="pill landing-btn" id="order-btn" href="/index">Order with us</a></div>
+  <div class="landing"><a class="pill landing-btn" id="order-btn" href="/index">Membership Gift</a></div>
 </div>
 <script src="/js/app.js"></script>
 <script>
@@ -18,7 +18,7 @@ if (!window.PREVIEW_MODE && /^#\/./.test(location.hash)) location.replace(locati
     const menu = await api('/api/menu');
     const url = menu.campaign && menu.campaign.url ? menu.campaign.url : '/index';
     $('#order-btn').setAttribute('href', (window.PREVIEW_MODE ? '#' : '') + url);
-    if (menu.campaign && menu.campaign.name) document.title = menu.campaign.name + ' | Order';
+    if (menu.campaign && menu.campaign.name) document.title = menu.campaign.name;
   } catch (e) { /* keep the fallback link */ }
 })();
 </script>
