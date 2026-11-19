@@ -295,6 +295,7 @@ async function validateOrder(c, b) {
   if (!store) fail(400, 'กรุณาเลือกสาขาที่รับสินค้า');
   if (!Array.isArray(lines) || lines.length === 0) fail(400, 'ยังไม่มีรายการในตะกร้า');
   const campaign = await requestCampaign(c, b);
+  if (campaignDesign(campaign).home === 'membership') fail(400, M.MEMBERSHIP_NO_ORDER);
   if (campaign.orders_open === 0) fail(400, 'แคมเปญนี้ปิดรับคำสั่งซื้อแล้ว / This campaign is closed');
   const menu = menuFor(campaign); const today = todayOf(c, menu);
   // วันรับของกำหนดจากรอบสั่ง (pickup_map) ลูกค้าไม่ต้องเลือก; แคมเปญที่ไม่มีตารางยังให้เลือกจากรายการได้
@@ -345,6 +346,7 @@ on('POST', '/api/hold', async (c) => {
   const b = await body(c); const campaign = await requestCampaign(c, b);
   const menu = menuFor(campaign); const today = todayOf(c, menu);
   const lines = Array.isArray(b.lines) ? b.lines : [];
+  if (lines.length && campaignDesign(campaign).home === 'membership') fail(400, M.MEMBERSHIP_NO_ORDER);
   if (!lines.length || campaign.orders_open === 0) { await c.db.run('DELETE FROM holds WHERE customer_id = ? AND campaign_id = ?', c.customerId, campaign.id); invalidateStock(); return json({ held: 0, stock: await stockView(c, campaign) }); }
   const built = M.buildOrderRows(lines, menu); if (built.error) fail(400, built.error);
   invalidateStock(); const sv0 = await stockView(c, campaign);

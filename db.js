@@ -232,6 +232,15 @@ function seedDefaults({ campaign } = {}) {
     }
     db.prepare("INSERT INTO meta(key, value) VALUES ('set_names_v3', '1')").run();
   }
+  // แคมเปญ Membership (celebrateeverymomentwithjiancha) → หน้าแรกเป็นฟอร์มสมัครสมาชิก ครั้งเดียว
+  if (!db.prepare("SELECT 1 FROM meta WHERE key = 'membership_home_v1'").get()) {
+    const { MEMBERSHIP_HOME_SLUGS, membershipDesignJson } = require('./lib/menu');
+    for (const slug of MEMBERSHIP_HOME_SLUGS) {
+      const row = db.prepare('SELECT id, design_json FROM campaigns WHERE slug = ?').get(slug);
+      if (row) db.prepare("UPDATE campaigns SET design_json = ?, updated_at = datetime('now','localtime') WHERE id = ?").run(membershipDesignJson(row.design_json), row.id);
+    }
+    db.prepare("INSERT INTO meta(key, value) VALUES ('membership_home_v1', '1')").run();
+  }
   // orders created before campaigns existed belong to the active campaign
   const active = db.prepare('SELECT id FROM campaigns WHERE active = 1 ORDER BY created_at LIMIT 1').get();
   if (active) db.prepare('UPDATE orders SET campaign_id = ? WHERE campaign_id IS NULL').run(active.id);

@@ -370,6 +370,7 @@ function validateOrder(req, b) {
   if (!store) return bad(400, 'กรุณาเลือกสาขาที่รับสินค้า');
   if (!Array.isArray(lines) || lines.length === 0) return bad(400, 'ยังไม่มีรายการในตะกร้า');
   const campaign = (b && b.campaign && campaignBySlug(b.campaign)) || requestCampaign(req);
+  if (campaignDesign(campaign).home === 'membership') return bad(400, M.MEMBERSHIP_NO_ORDER);
   if (campaign.orders_open === 0) return bad(400, 'แคมเปญนี้ปิดรับคำสั่งซื้อแล้ว / This campaign is closed');
   const menu = menuFor(campaign);
   // วันรับของกำหนดจากรอบสั่ง (ตาราง pickup_map) ลูกค้าไม่ต้องเลือก; แคมเปญที่ไม่มีตารางยังให้เลือกจากรายการได้
@@ -415,6 +416,7 @@ function reserveHold(req, v) {
 app.post('/api/hold', (req, res) => {
   const campaign = requestCampaign(req); const menu = menuFor(campaign); const b = req.body || {};
   const lines = Array.isArray(b.lines) ? b.lines : [];
+  if (lines.length && campaignDesign(campaign).home === 'membership') return res.status(400).json({ error: M.MEMBERSHIP_NO_ORDER });
   if (!lines.length || campaign.orders_open === 0) { db.prepare('DELETE FROM holds WHERE customer_id = ? AND campaign_id = ?').run(req.customerId, campaign.id); return res.json({ held: 0, stock: stockView(campaign) }); }
   const built = M.buildOrderRows(lines, menu); if (built.error) return res.status(400).json({ error: built.error });
   const sv0 = stockView(campaign);
@@ -813,6 +815,8 @@ app.get('/:slug/:page?', (req, res, next) => {
   const page = CAMPAIGN_PAGES[req.params.page || ''];
   const camp = page === undefined ? null : campaignBySlug(req.params.slug);
   if (!camp) return next();
+  // แคมเปญหน้าสมัครสมาชิก: ไม่มีหน้าสั่งซื้อ (cart / orders / pay …) → กลับหน้าฟอร์ม
+  if (req.params.page && campaignDesign(camp).home === 'membership') return res.redirect(302, `/${req.params.slug}/`);
   if (!req.params.page && !req.path.endsWith('/')) return res.redirect(301, `/${req.params.slug}/${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`);
   // หน้าแรกแบบ Membership (ตั้งในหน้า Design ของแคมเปญ) → ฟอร์มสมัครสมาชิกแทนเมนูสั่งซื้อ
   res.sendFile(path.join(PUBLIC_DIR, (page === 'index' && campaignDesign(camp).home === 'membership' ? 'membership' : page) + '.html'));

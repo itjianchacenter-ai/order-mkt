@@ -394,6 +394,11 @@ const dbx = {
       r = await call('mkt', 'GET', '/api/admin/members?campaign=jiancha-x-summer&q=jaid'); check('members search', r.json.total === 1);
       r = await call('mkt', 'GET', '/api/admin/members?campaign=jiancha-x-navori'); check('members are per campaign', r.json.total === 0);
       r = await call('mkt', 'GET', '/api/admin/members?campaign=all&export=1'); check('members export all', r.json.total === 1 && r.json.rows[0].campaign_name === 'JIANCHA x SUMMER', r.json);
+      r = await fetch(base + '/jianchaxsummer/cart', { redirect: 'manual' }); check('membership campaign has no cart page', r.status === 302 && r.headers.get('location') === '/jianchaxsummer/', r.status);
+      r = await fetch(base + '/jianchaxsummer/orders', { redirect: 'manual' }); check('membership campaign has no order history page', r.status === 302);
+      r = await call('guest', 'POST', '/api/hold', { campaign: 'jianchaxsummer', lines: [{ set_id: 'A', quantity: 1 }] }); check('membership campaign refuses cart holds', r.status === 400 && /สมัครสมาชิก/.test(r.json.error), r.json);
+      r = await call('guest', 'POST', '/api/quote', { campaign: 'jianchaxsummer', store_id: 'siam-paragon', phone: '0812345678', email: 'a@gmail.com', lines: [{ set_id: 'A', quantity: 1 }] }); check('membership campaign refuses orders', r.status === 400 || r.status === 401, r.json);
+      { const M = require('../lib/menu'); const j = JSON.parse(M.membershipDesignJson(JSON.stringify({ sets: [{ id: 'A' }], home: 'order' }))); check('membership migration keeps design, sets home', j.home === 'membership' && j.sets.length === 1 && JSON.parse(M.membershipDesignJson(null)).home === 'membership' && M.MEMBERSHIP_HOME_SLUGS.includes('celebrateeverymomentwithjiancha')); }
       r = await call('it', 'PUT', '/api/admin/campaigns/jiancha-x-summer/design', { ...dz, home: 'order' }); r = await fetch(base + '/jianchaxsummer/'); check('switching back restores the order menu', r.status === 200 && /id="sets"/.test(await r.text()));
     }
 

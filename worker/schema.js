@@ -3,6 +3,7 @@
 import { sql, uuid, hashPassword } from './util.js';
 import { MENU } from './data.js';
 import * as M from '../lib/menu.js';
+import { bangkokNow } from '../lib/window.js';
 
 const NOW = "strftime('%Y-%m-%d %H:%M:%S', 'now', '+7 hours')";
 const DDL = [
@@ -108,5 +109,13 @@ async function migrate(env) {
       const next = M.renameDesignItems(row.design_json); if (next) await db.run('UPDATE campaigns SET design_json = ? WHERE id = ?', next, row.id);
     }
     await db.run("INSERT OR IGNORE INTO meta(key, value) VALUES ('set_names_v3', '1')");
+  }
+  // แคมเปญ Membership (celebrateeverymomentwithjiancha) → หน้าแรกเป็นฟอร์มสมัครสมาชิก ครั้งเดียว (เปลี่ยนกลับได้ที่หน้า Design)
+  if (!(await db.get("SELECT 1 AS x FROM meta WHERE key = 'membership_home_v1'"))) {
+    for (const slug of M.MEMBERSHIP_HOME_SLUGS) {
+      const row = await db.get('SELECT id, design_json FROM campaigns WHERE slug = ?', slug);
+      if (row) await db.run('UPDATE campaigns SET design_json = ?, updated_at = ? WHERE id = ?', M.membershipDesignJson(row.design_json), row.id, bangkokNow());
+    }
+    await db.run("INSERT OR IGNORE INTO meta(key, value) VALUES ('membership_home_v1', '1')");
   }
 }
