@@ -225,7 +225,7 @@ async function api(path, opts = {}) {
   /* ── public ── */
   if (p === '/api/menu') return { ...pvMenuFor(reqCamp), campaign: pvCampaignPublic(reqCamp), stock: pvStockView(d, reqCamp) };
   if (p === '/api/stock') return pvStockView(d, reqCamp);
-  if (p === '/api/stores') return PREVIEW_STORES;
+  if (p === '/api/stores' || p === '/api/member-stores') return PREVIEW_STORES;
   if (p === '/api/config') return { payment_ready: true, slip_auto_verify: false };
   // ตรวจคำสั่งซื้อ (ยังไม่บันทึก) → ออเดอร์ที่พร้อมบันทึก
   const pvPrepare = (ob) => {

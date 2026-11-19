@@ -73,7 +73,7 @@
 
   (async () => {
     try {
-      const [menu, stores] = await Promise.all([api('/api/menu?campaign=' + encodeURIComponent(slug)), api('/api/stores')]);
+      const [menu, stores] = await Promise.all([api('/api/menu?campaign=' + encodeURIComponent(slug)), api('/api/member-stores')]);
       if (menu.campaign && menu.campaign.name) document.title = `${menu.campaign.name} | JIANCHA Membership`;
       fill('pickup_time', (menu.pickup_times || []).map((t) => [t, t]));
       fill('store_id', stores.map((s) => [s.id, s.name]));

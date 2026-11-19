@@ -1,6 +1,6 @@
 /* /api/* of the ordering system on Cloudflare (Pages Functions + D1 + R2). Same contract as server.js so public/*.html work unchanged. */
 import { json, fail, HttpError, signToken, verifyToken, hashPassword, checkPassword, parseCookies, cookie, sql, uuid, randomHex, randomInt } from './util.js';
-import { MENU, STORES } from './data.js';
+import { MENU, STORES, MEMBER_STORES } from './data.js';
 import { generateQR } from './qr.js';
 import { bankAccount, paymentMode } from '../lib/payment.js';
 const qrConfigured = (env) => Boolean(paymentMode(env));
@@ -265,6 +265,7 @@ on('POST', '/api/auth/logout', async (c) => { const cid = uuid(); await setCusto
 on('GET', '/api/menu', async (c) => { const camp = await requestCampaign(c); return json({ ...menuFor(camp), campaign: campaignPublic(camp), stock: await stockView(c, camp) }); });
 on('GET', '/api/stock', async (c) => json(await stockView(c, await requestCampaign(c))));
 on('GET', '/api/stores', async () => json(STORES));
+on('GET', '/api/member-stores', async () => json(MEMBER_STORES));   // Location ของหน้าสมัครสมาชิก
 // รายชื่อ ELITE: เบอร์ใช้สมัครได้ไหม (ไม่มีรายชื่อ + แคมเปญไม่บังคับ = ได้ทุกเบอร์)
 async function eliteOk(c, camp, phone) {
   const n = (await c.db.get('SELECT COUNT(*) AS n FROM member_list')).n;
@@ -284,7 +285,7 @@ on('POST', '/api/members', async (c) => {
   const camp = b.campaign ? await campaignBySlug(c.db, String(b.campaign)) : null;
   if (!camp) fail(404, 'ไม่พบแคมเปญ / Campaign not found');
   if (campaignDesign(camp).home !== 'membership') fail(400, 'แคมเปญนี้ไม่ได้เปิดรับสมัครสมาชิก / This campaign has no membership sign-up');
-  const v = M.readMemberBody(b, menuFor(camp), STORES);
+  const v = M.readMemberBody(b, menuFor(camp), MEMBER_STORES);
   if (v.error) return json({ error: v.error, field: v.field }, 400);
   if (!(await eliteOk(c, camp, v.phone))) return json({ error: M.NOT_ELITE_MESSAGE, field: 'phone', not_elite: true }, 403);
   const ts = now(); const store_name = `${v.store.brand} - ${v.store.name}`;

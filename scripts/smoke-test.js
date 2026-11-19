@@ -373,7 +373,7 @@ const dbx = {
 
     // หน้าแรกแบบ Membership: ตั้งใน Design → /<slug>/ เป็นฟอร์มสมัครสมาชิก, POST /api/members, หลังบ้าน Members
     {
-      const sm = { campaign: 'jianchaxsummer', first_name: ' Somchai ', last_name: 'Jaidee', phone: '081-234-5678', pickup_time: '13:00-15:00 น.', store_id: 'siam-paragon' };
+      const sm = { campaign: 'jianchaxsummer', first_name: ' Somchai ', last_name: 'Jaidee', phone: '081-234-5678', pickup_time: '13:00-15:00 น.', store_id: 'JF001' };
       r = await call('guest', 'POST', '/api/members', sm); check('membership sign-up refused while homepage is the order menu', r.status === 400, r.json);
       let dz = (await call('it', 'GET', '/api/admin/campaigns/jiancha-x-summer/design')).json.design;
       check('design defaults to order homepage', dz.home === 'order', dz.home);
@@ -381,13 +381,14 @@ const dbx = {
       r = await fetch(base + '/jianchaxsummer/'); check('membership campaign home serves the sign-up form', r.status === 200 && /id="mb-form"/.test(await r.text()));
       r = await fetch(base + '/JianchaXSummer/'); check('membership home works with mixed-case link', r.status === 200 && /id="mb-form"/.test(await r.text()));
       r = await fetch(base + '/jianchaxnavori/'); check('other campaigns keep the order menu', r.status === 200 && /id="sets"/.test(await r.text()));
+      r = await call('guest', 'GET', '/api/member-stores'); check('membership locations = full JIANCHA branch list (A-Z)', r.status === 200 && r.json.length === 68 && r.json.some((x) => x.id === 'JF001' && x.name === 'Fashion Island') && r.json[0].name.localeCompare(r.json[1].name) <= 0, r.json && r.json.length);
       r = await call('guest', 'GET', '/api/menu?campaign=jianchaxsummer'); check('menu exposes home + pickup times', r.json.home === 'membership' && r.json.pickup_times.includes('13:00-15:00 น.'), r.json.home);
       r = await call('guest', 'POST', '/api/members', { ...sm, phone: '12' }); check('bad phone rejected', r.status === 400 && r.json.field === 'phone', r.json);
       r = await call('guest', 'POST', '/api/members', { ...sm, last_name: '' }); check('missing last name rejected', r.status === 400 && r.json.field === 'last_name', r.json);
       r = await call('guest', 'POST', '/api/members', { ...sm, pickup_time: '03:00' }); check('unknown time rejected', r.status === 400 && r.json.field === 'pickup_time', r.json);
       r = await call('guest', 'POST', '/api/members', { ...sm, store_id: 'nope' }); check('unknown store rejected', r.status === 400 && r.json.field === 'store_id', r.json);
-      r = await call('guest', 'POST', '/api/members', sm); check('member signs up', r.status === 201 && r.json.member.first_name === 'Somchai' && r.json.member.phone === '0812345678' && /Siam Paragon/.test(r.json.member.store_name), r.json);
-      r = await call('guest', 'POST', '/api/members', { ...sm, store_id: 'central-world' }); check('same phone again updates the member', r.status === 201 && /Central World/.test(r.json.member.store_name), r.json);
+      r = await call('guest', 'POST', '/api/members', sm); check('member signs up', r.status === 201 && r.json.member.first_name === 'Somchai' && r.json.member.phone === '0812345678' && /Fashion Island/.test(r.json.member.store_name), r.json);
+      r = await call('guest', 'POST', '/api/members', { ...sm, store_id: 'JC003' }); check('same phone again updates the member', r.status === 201 && /Central World/.test(r.json.member.store_name), r.json);
       r = await call('guest', 'POST', '/api/members', { ...sm, campaign: 'nope' }); check('unknown campaign rejected', r.status === 404);
       r = await call('guest', 'GET', '/api/admin/members'); check('members list needs back-office login', r.status === 401);
       r = await call('mkt', 'GET', '/api/admin/members?campaign=jiancha-x-summer'); check('back-office lists members (one per phone)', r.status === 200 && r.json.total === 1 && r.json.rows[0].last_name === 'Jaidee' && /Central World/.test(r.json.rows[0].store_name), r.json);

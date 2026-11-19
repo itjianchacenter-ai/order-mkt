@@ -1,0 +1,410 @@
+[
+  {
+    "id": "JC002",
+    "brand": "JIANCHA",
+    "name": "Banthat Thong(Dragon Town)",
+    "active": true
+  },
+  {
+    "id": "JC003",
+    "brand": "JIANCHA",
+    "name": "Central World",
+    "active": true
+  },
+  {
+    "id": "JC004",
+    "brand": "JIANCHA",
+    "name": "Athenee Tower",
+    "active": true
+  },
+  {
+    "id": "JC006",
+    "brand": "JIANCHA",
+    "name": "Siam Discovery",
+    "active": true
+  },
+  {
+    "id": "JC007",
+    "brand": "JIANCHA",
+    "name": "Siam Paragon Premium",
+    "active": true
+  },
+  {
+    "id": "JC008",
+    "brand": "JIANCHA",
+    "name": "Central Ladprao",
+    "active": true
+  },
+  {
+    "id": "JC009",
+    "brand": "JIANCHA",
+    "name": "Emsphere",
+    "active": true
+  },
+  {
+    "id": "JC010",
+    "brand": "JIANCHA",
+    "name": "Central world Groove",
+    "active": true
+  },
+  {
+    "id": "JC011",
+    "brand": "JIANCHA",
+    "name": "Shell Ram Inthra km 3.5",
+    "active": true
+  },
+  {
+    "id": "JC012",
+    "brand": "JIANCHA",
+    "name": "Seacon Srinakarin",
+    "active": true
+  },
+  {
+    "id": "JC013",
+    "brand": "JIANCHA",
+    "name": "The Cove Hill (Chatrium Hotel)",
+    "active": true
+  },
+  {
+    "id": "JC014",
+    "brand": "JIANCHA",
+    "name": "Little Walk Prannok",
+    "active": true
+  },
+  {
+    "id": "JF001",
+    "brand": "JIANCHA",
+    "name": "Fashion Island",
+    "active": true
+  },
+  {
+    "id": "JF002",
+    "brand": "JIANCHA",
+    "name": "Central Pinklao",
+    "active": true
+  },
+  {
+    "id": "JF003",
+    "brand": "JIANCHA",
+    "name": "The ParQ Rama 4",
+    "active": true
+  },
+  {
+    "id": "JF005",
+    "brand": "JIANCHA",
+    "name": "JIANCHA PTT Station Borrom 97",
+    "active": true
+  },
+  {
+    "id": "JF008",
+    "brand": "JIANCHA",
+    "name": "Gump‘s Cross",
+    "active": true
+  },
+  {
+    "id": "JF010",
+    "brand": "JIANCHA",
+    "name": "Future park",
+    "active": true
+  },
+  {
+    "id": "JF012",
+    "brand": "JIANCHA",
+    "name": "The Up Rama 3",
+    "active": true
+  },
+  {
+    "id": "JF013",
+    "brand": "JIANCHA",
+    "name": "Icon Siam",
+    "active": true
+  },
+  {
+    "id": "JF014",
+    "brand": "JIANCHA",
+    "name": "Central Hatyai",
+    "active": true
+  },
+  {
+    "id": "JF015",
+    "brand": "JIANCHA",
+    "name": "Central Rama9",
+    "active": true
+  },
+  {
+    "id": "JF016",
+    "brand": "JIANCHA",
+    "name": "G Tower",
+    "active": true
+  },
+  {
+    "id": "JF017",
+    "brand": "JIANCHA",
+    "name": "One Bangkok",
+    "active": true
+  },
+  {
+    "id": "JF018",
+    "brand": "JIANCHA",
+    "name": "The Mall Bangkae",
+    "active": true
+  },
+  {
+    "id": "JF019",
+    "brand": "JIANCHA",
+    "name": "True Digital Park",
+    "active": true
+  },
+  {
+    "id": "JF020",
+    "brand": "JIANCHA",
+    "name": "Unilever",
+    "active": true
+  },
+  {
+    "id": "JF022",
+    "brand": "JIANCHA",
+    "name": "CW Tower",
+    "active": true
+  },
+  {
+    "id": "JF023",
+    "brand": "JIANCHA",
+    "name": "Central Pattaya",
+    "active": true
+  },
+  {
+    "id": "JF024",
+    "brand": "JIANCHA",
+    "name": "The Circle Ratchapruk",
+    "active": true
+  },
+  {
+    "id": "JF025",
+    "brand": "JIANCHA",
+    "name": "Central Eastville",
+    "active": true
+  },
+  {
+    "id": "JF026",
+    "brand": "JIANCHA",
+    "name": "Esplanade Khaerai",
+    "active": true
+  },
+  {
+    "id": "JF027",
+    "brand": "JIANCHA",
+    "name": "Central Westgate",
+    "active": true
+  },
+  {
+    "id": "JF028",
+    "brand": "JIANCHA",
+    "name": "Thai Summit",
+    "active": true
+  },
+  {
+    "id": "JF029",
+    "brand": "JIANCHA",
+    "name": "Seacon Bangkae",
+    "active": true
+  },
+  {
+    "id": "JF033",
+    "brand": "JIANCHA",
+    "name": "Emporium",
+    "active": true
+  },
+  {
+    "id": "JF035",
+    "brand": "JIANCHA",
+    "name": "Cosmo Barzar",
+    "active": true
+  },
+  {
+    "id": "JF036",
+    "brand": "JIANCHA",
+    "name": "La Villa Ari",
+    "active": true
+  },
+  {
+    "id": "JF037",
+    "brand": "JIANCHA",
+    "name": "Gateway Bang Sue",
+    "active": true
+  },
+  {
+    "id": "JF039",
+    "brand": "JIANCHA",
+    "name": "Maya Chiang mai",
+    "active": true
+  },
+  {
+    "id": "JF041",
+    "brand": "JIANCHA",
+    "name": "Mercury Ville",
+    "active": true
+  },
+  {
+    "id": "JF042",
+    "brand": "JIANCHA",
+    "name": "Sun Towers",
+    "active": true
+  },
+  {
+    "id": "JF043",
+    "brand": "JIANCHA",
+    "name": "The Scene Town in Town",
+    "active": true
+  },
+  {
+    "id": "JF045",
+    "brand": "JIANCHA",
+    "name": "Charn Avenue",
+    "active": true
+  },
+  {
+    "id": "JF046",
+    "brand": "JIANCHA",
+    "name": "Ekkamai Corner",
+    "active": true
+  },
+  {
+    "id": "JF048",
+    "brand": "JIANCHA",
+    "name": "Chula Samyan",
+    "active": true
+  },
+  {
+    "id": "JF049",
+    "brand": "JIANCHA",
+    "name": "Market Place Dusit",
+    "active": true
+  },
+  {
+    "id": "JF050",
+    "brand": "JIANCHA",
+    "name": "Passion Rayong",
+    "active": true
+  },
+  {
+    "id": "JF051",
+    "brand": "JIANCHA",
+    "name": "Silom Complex",
+    "active": true
+  },
+  {
+    "id": "JF052",
+    "brand": "JIANCHA",
+    "name": "Avenue Ratchayothin",
+    "active": true
+  },
+  {
+    "id": "JF055",
+    "brand": "JIANCHA",
+    "name": "Central Nakhon Pathom",
+    "active": true
+  },
+  {
+    "id": "JF056",
+    "brand": "JIANCHA",
+    "name": "Robinson Lifestyle Suvarnabhumi",
+    "active": true
+  },
+  {
+    "id": "JF057",
+    "brand": "JIANCHA",
+    "name": "Marketplace Prachauthit",
+    "active": true
+  },
+  {
+    "id": "JF058",
+    "brand": "JIANCHA",
+    "name": "PTT Park Mall Srinakarin",
+    "active": true
+  },
+  {
+    "id": "JF059",
+    "brand": "JIANCHA",
+    "name": "Red Spoon",
+    "active": true
+  },
+  {
+    "id": "JF060",
+    "brand": "JIANCHA",
+    "name": "OR space Ramkhamhaeng 129",
+    "active": true
+  },
+  {
+    "id": "JF061",
+    "brand": "JIANCHA",
+    "name": "Robinson Samutprakarn",
+    "active": true
+  },
+  {
+    "id": "JF062",
+    "brand": "JIANCHA",
+    "name": "Mega Bangna",
+    "active": true
+  },
+  {
+    "id": "JF063",
+    "brand": "JIANCHA",
+    "name": "Lotus Bangna",
+    "active": true
+  },
+  {
+    "id": "JF064",
+    "brand": "JIANCHA",
+    "name": "Kanlapaphruek Market",
+    "active": true
+  },
+  {
+    "id": "JF065",
+    "brand": "JIANCHA",
+    "name": "PTT Saimai 56",
+    "active": true
+  },
+  {
+    "id": "JF066",
+    "brand": "JIANCHA",
+    "name": "Mingle Kavalon",
+    "active": true
+  },
+  {
+    "id": "x-central-nakhon-sawan",
+    "brand": "JIANCHA",
+    "name": "Central Nakhon Sawan",
+    "active": true
+  },
+  {
+    "id": "x-ptt-wang-noi",
+    "brand": "JIANCHA",
+    "name": "PTT Wang noi",
+    "active": true
+  },
+  {
+    "id": "x-robinson-kanchanaburi",
+    "brand": "JIANCHA",
+    "name": "Robinson Kanchanaburi",
+    "active": true
+  },
+  {
+    "id": "x-ronbinson-banchang",
+    "brand": "JIANCHA",
+    "name": "Ronbinson Banchang",
+    "active": true
+  },
+  {
+    "id": "x-robinson-chachoengsao",
+    "brand": "JIANCHA",
+    "name": "Robinson Chachoengsao",
+    "active": true
+  },
+  {
+    "id": "x-the-mall-bangkapi",
+    "brand": "JIANCHA",
+    "name": "The Mall Bangkapi",
+    "active": true
+  }
+]

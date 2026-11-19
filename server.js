@@ -36,6 +36,8 @@ function readJson(name, fallback) {
 }
 function loadMenu() { return M.normalizeMenu(readJson('menu.json', { sets: [] })); }
 function loadStores() { return M.normalizeStores(readJson('stores.json', [])); }
+// สาขาให้เลือกที่หน้าสมัครสมาชิก (Location) — จากรายชื่อสาขา JIANCHA ทั้งหมด เรียงตามชื่อ
+function loadMemberStores() { return M.normalizeStores(readJson('member-stores.json', [])).sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' })); }
 // Campaign design (promote images + Match Sets) lives in lib/menu.js; a campaign without a saved design uses data/menu.json as its template.
 const { normalizeDesign, slugOf, slugify, lim, readCampaignBody } = M;
 const campaignDesign = (c) => M.campaignDesign(c, loadMenu());
@@ -247,6 +249,7 @@ app.use(express.static(PUBLIC_DIR, { extensions: ['html'], index: false }));
 app.get('/api/menu', (req, res) => { const c = requestCampaign(req); res.json({ ...menuFor(c), campaign: campaignPublic(c), stock: stockView(c) }); });
 app.get('/api/stock', (req, res) => res.json(stockView(requestCampaign(req))));
 app.get('/api/stores', (req, res) => res.json(loadStores()));
+app.get('/api/member-stores', (req, res) => res.json(loadMemberStores()));   // Location ของหน้าสมัครสมาชิก
 // รายชื่อ ELITE: เบอร์ใช้สมัครได้ไหม (ไม่มีรายชื่อ + แคมเปญไม่บังคับ = ได้ทุกเบอร์)
 function eliteOk(campaign, phone) {
   const n = db.prepare('SELECT COUNT(*) AS n FROM member_list').get().n;
@@ -267,7 +270,7 @@ app.post('/api/members', (req, res) => {
   const campaign = b.campaign ? campaignBySlug(String(b.campaign)) : null;
   if (!campaign) return res.status(404).json({ error: 'ไม่พบแคมเปญ / Campaign not found' });
   if (campaignDesign(campaign).home !== 'membership') return res.status(400).json({ error: 'แคมเปญนี้ไม่ได้เปิดรับสมัครสมาชิก / This campaign has no membership sign-up' });
-  const v = M.readMemberBody(b, menuFor(campaign), loadStores());
+  const v = M.readMemberBody(b, menuFor(campaign), loadMemberStores());
   if (v.error) return res.status(400).json({ error: v.error, field: v.field });
   if (!eliteOk(campaign, v.phone)) return res.status(403).json({ error: M.NOT_ELITE_MESSAGE, field: 'phone', not_elite: true });
   const ts = W.bangkokNow(); const store_name = `${v.store.brand} - ${v.store.name}`;
