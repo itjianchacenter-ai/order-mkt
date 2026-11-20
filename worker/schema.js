@@ -91,7 +91,14 @@ async function migrate(env) {
   try { await db.run("ALTER TABLE campaigns ADD COLUMN promo_prefix TEXT DEFAULT ''"); } catch (e) { /* มีอยู่แล้ว */ }
   try { await db.run("ALTER TABLE orders ADD COLUMN email TEXT DEFAULT ''"); } catch (e) { /* มีอยู่แล้ว */ }
   try { await db.run("ALTER TABLE members ADD COLUMN email TEXT DEFAULT ''"); } catch (e) { /* มีอยู่แล้ว */ }
-  try { await db.run("ALTER TABLE members ADD COLUMN pickup_date TEXT DEFAULT ''"); } catch (e) { /* มีอยู่แล้ว */ }   // วันที่รับของ (YYYY-MM-DD)   // อีเมลสมาชิก (เติมจากรายชื่อ ELITE ได้)   // อีเมลผู้สั่ง (กรอกที่หน้า Order Summary)
+  try { await db.run("ALTER TABLE members ADD COLUMN pickup_date TEXT DEFAULT ''"); } catch (e) { /* มีอยู่แล้ว */ }
+  try { await db.run('ALTER TABLE members ADD COLUMN date_changes INTEGER DEFAULT 0'); } catch (e) { /* มีอยู่แล้ว */ }   // เปลี่ยนวันที่รับของได้ 1 ครั้ง
+  try { await db.run("ALTER TABLE members ADD COLUMN first_pickup_date TEXT DEFAULT ''"); } catch (e) { /* มีอยู่แล้ว */ }
+  // รหัสรับของ (ส่งทางอีเมลทุกครั้งที่เลือกวันที่รับของ) + สถานะอีเมลล่าสุด
+  try { await db.run('ALTER TABLE members ADD COLUMN pickup_code TEXT'); } catch (e) { /* มีอยู่แล้ว */ }
+  try { await db.run("ALTER TABLE members ADD COLUMN mail_status TEXT DEFAULT ''"); } catch (e) { /* มีอยู่แล้ว */ }
+  try { await db.run("ALTER TABLE members ADD COLUMN mail_at TEXT DEFAULT ''"); } catch (e) { /* มีอยู่แล้ว */ }
+  await db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_members_code ON members(pickup_code) WHERE pickup_code IS NOT NULL');   // วันที่รับของ (YYYY-MM-DD)   // อีเมลสมาชิก (เติมจากรายชื่อ ELITE ได้)   // อีเมลผู้สั่ง (กรอกที่หน้า Order Summary)
   // First run: the three back-office accounts (change the passwords in the Account page before going live)
   if ((await db.get('SELECT COUNT(*) AS n FROM users')).n === 0) {
     const seed = [['it-admin', 'jiancha2026', 'it_admin', 'IT - Admin', 'IT'], ['admin', 'marketing', 'admin', 'Admin', 'Marketing'], ['finance', 'jiancha', 'finance', 'Finance', 'Finance']];

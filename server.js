@@ -14,7 +14,7 @@ const { verifySlip, isEnabled: slipOkEnabled } = require('./slip-verify');
 const mailer = require('./mailer');
 const M = require('./lib/menu');
 const W = require('./lib/window');
-const { approvalEmail: approvalEmailOf, issueEmail, rejectEmail, normalizeEmail, validEmail } = require('./lib/email');
+const { approvalEmail: approvalEmailOf, issueEmail, rejectEmail, normalizeEmail, validEmail, memberCodeEmail } = require('./lib/email');
 
 const PORT = parseInt(process.env.PORT || '3870', 10);
 const IS_PROD = process.env.NODE_ENV === 'production';
@@ -263,11 +263,13 @@ app.post('/api/members/check', (req, res) => {
   const phone = M.normPhoneTH(b.phone); if (!phone) return res.status(400).json({ error: 'กรุณาใส่เบอร์โทรศัพท์มือถือ 10 หลัก / Please enter a valid phone number', field: 'phone' });
   const eligible = eliteOk(campaign, phone);
   const row = eligible ? db.prepare('SELECT email FROM member_list WHERE phone = ?').get(phone) : null;
-  res.json({ eligible, message: eligible ? '' : M.NOT_ELITE_MESSAGE, email: row ? row.email || '' : '', email_masked: row ? M.maskEmail(row.email) : '' });   // email เต็ม: เติมให้ลูกค้า (สีเทา) ตามที่ทีมการตลาดต้องการ
+  const mem = eligible ? db.prepare('SELECT pickup_date, date_changes FROM members WHERE campaign_id = ? AND phone = ?').get(campaign.id, phone) : null;   // สมัครแล้ว: วันที่รับของเดิม + สิทธิ์เปลี่ยนที่เหลือ
+  res.json({ eligible, message: eligible ? '' : M.NOT_ELITE_MESSAGE, email: row ? row.email || '' : '', email_masked: row ? M.maskEmail(row.email) : '',
+    member: mem && mem.pickup_date ? { pickup_date: mem.pickup_date, date_changes_left: M.dateChangesLeft(mem) } : null });   // email เต็ม: เติมให้ลูกค้า (สีเทา) ตามที่ทีมการตลาดต้องการ
 });
 // สมัครสมาชิก (หน้าแรกแบบ Membership): { campaign: slug, first_name, last_name, phone, email, pickup_date, store_id }
 //   1 เบอร์ต่อ 1 แคมเปญ — ส่งซ้ำด้วยเบอร์เดิม = อัปเดตข้อมูลเดิม
-app.post('/api/members', (req, res) => {
+app.post('/api/members', async (req, res) => {
   const b = req.body || {};
   const campaign = b.campaign ? campaignBySlug(String(b.campaign)) : null;
   if (!campaign) return res.status(404).json({ error: 'ไม่พบแคมเปญ / Campaign not found' });
@@ -277,11 +279,33 @@ app.post('/api/members', (req, res) => {
   if (!eliteOk(campaign, v.phone)) return res.status(403).json({ error: M.NOT_ELITE_MESSAGE, field: 'phone', not_elite: true });
   const ts = W.bangkokNow(); const store_name = `${v.store.brand} - ${v.store.name}`;
   const email = v.use_list_email ? ((db.prepare('SELECT email FROM member_list WHERE phone = ?').get(v.phone) || {}).email || '').toLowerCase() : v.email;
-  db.prepare(`INSERT INTO members(id, campaign_id, customer_id, first_name, last_name, phone, email, pickup_date, store_id, store_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(campaign_id, phone) DO UPDATE SET customer_id = excluded.customer_id, first_name = excluded.first_name, last_name = excluded.last_name, email = excluded.email, pickup_date = excluded.pickup_date, pickup_time = '', store_id = excluded.store_id, store_name = excluded.store_name, updated_at = excluded.updated_at`)
-    .run(crypto.randomUUID(), campaign.id, req.customerId || null, v.first_name, v.last_name, v.phone, email, v.pickup_date, v.store.id, store_name, ts, ts);
-  const m = db.prepare('SELECT first_name, last_name, phone, email, pickup_date, store_id, store_name, created_at, updated_at FROM members WHERE campaign_id = ? AND phone = ?').get(campaign.id, v.phone);
-  res.status(201).json({ ok: true, member: m, campaign: campaignPublic(campaign) });
+  if (!email) return res.status(400).json({ error: 'กรุณาใส่อีเมล เพื่อรับรหัสรับของ / Please enter your email to receive your pick-up code', field: 'email' });
+  // สมัครแล้วกลับมาเปลี่ยนวันที่รับของได้ 1 ครั้ง (ข้อมูลอื่นแก้ได้ตามปกติ)
+  const prev = db.prepare('SELECT pickup_date, date_changes, first_pickup_date, pickup_code FROM members WHERE campaign_id = ? AND phone = ?').get(campaign.id, v.phone);
+  const dc = M.memberDateChange(prev, v.pickup_date);
+  if (dc.error) return res.status(409).json(dc);
+  const isNew = !prev || !prev.pickup_date; const dateChanged = Boolean(prev && prev.pickup_date && prev.pickup_date !== v.pickup_date);
+  let code = (prev && prev.pickup_code) || '';
+  if (!code) {   // รหัสใหม่: สุ่มเลขที่ยังไม่ถูกใช้ในช่วงรหัสของแคมเปญ (เช่น JCMB0001–JCMB2000)
+    const used = new Set(db.prepare('SELECT pickup_code FROM members WHERE pickup_code IS NOT NULL').all().map((r) => r.pickup_code));
+    code = M.memberPickupCode(campaign, used, (n) => crypto.randomInt(n));
+    if (!code) return res.status(409).json({ error: M.CODES_FULL_MESSAGE });
+  }
+  db.prepare(`INSERT INTO members(id, campaign_id, customer_id, first_name, last_name, phone, email, pickup_date, date_changes, first_pickup_date, pickup_code, store_id, store_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(campaign_id, phone) DO UPDATE SET customer_id = excluded.customer_id, first_name = excluded.first_name, last_name = excluded.last_name, email = excluded.email, pickup_date = excluded.pickup_date, date_changes = excluded.date_changes, first_pickup_date = excluded.first_pickup_date, pickup_code = COALESCE(members.pickup_code, excluded.pickup_code), pickup_time = '', store_id = excluded.store_id, store_name = excluded.store_name, updated_at = excluded.updated_at`)
+    .run(crypto.randomUUID(), campaign.id, req.customerId || null, v.first_name, v.last_name, v.phone, email, v.pickup_date, dc.date_changes, dc.first_pickup_date, code, v.store.id, store_name, ts, ts);
+  let m = db.prepare('SELECT first_name, last_name, phone, email, pickup_date, date_changes, first_pickup_date, pickup_code, mail_status, store_id, store_name, created_at, updated_at FROM members WHERE campaign_id = ? AND phone = ?').get(campaign.id, v.phone);
+  // ทุกครั้งที่เลือกวันที่รับของ (สมัครครั้งแรก / เปลี่ยนวัน) → อีเมลรหัสรับของถึงลูกค้า
+  let mail = null;
+  if (isNew || dateChanged) {
+    const msg = memberCodeEmail(m, campaign, (process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, ''), { changed: dateChanged, left: M.dateChangesLeft(m) });
+    const r = await mailer.sendMail({ to: m.email, ...msg });
+    const mid = db.prepare('SELECT id FROM members WHERE campaign_id = ? AND phone = ?').get(campaign.id, v.phone).id;
+    db.prepare('INSERT INTO mail_log(order_id, kind, to_email, subject, status, error) VALUES (?, ?, ?, ?, ?, ?)').run(mid, dateChanged ? 'member_date_changed' : 'member_code', m.email, msg.subject, r.status, r.error || '');
+    db.prepare('UPDATE members SET mail_status = ?, mail_at = ? WHERE campaign_id = ? AND phone = ?').run(r.status, W.bangkokNow(), campaign.id, v.phone);
+    mail = { status: r.status, to: m.email }; m = db.prepare('SELECT first_name, last_name, phone, email, pickup_date, date_changes, first_pickup_date, pickup_code, mail_status, store_id, store_name, created_at, updated_at FROM members WHERE campaign_id = ? AND phone = ?').get(campaign.id, v.phone);
+  }
+  res.status(201).json({ ok: true, member: { ...m, date_changes_left: M.dateChangesLeft(m) }, mail, campaign: campaignPublic(campaign) });
 });
 app.get('/api/config', (req, res) => res.json({ payment_ready: qrConfigured(), payment_mode: paymentMode(process.env), slip_auto_verify: slipOkEnabled(), login_required: loginRequired(), google_client_id: GOOGLE_CLIENT_ID }));
 
@@ -738,12 +762,12 @@ app.get('/api/admin/members', requireAdmin, (req, res) => {
   if (cparam && cparam !== 'all' && !camp) return res.status(404).json({ error: 'ไม่พบแคมเปญ' });
   const where = []; const args = [];
   if (camp) { where.push('m.campaign_id = ?'); args.push(camp.id); }
-  if (q) { where.push("(lower(m.first_name || ' ' || m.last_name) LIKE ? OR m.phone LIKE ? OR lower(m.store_name) LIKE ? OR lower(m.email) LIKE ?)"); args.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`); }
+  if (q) { where.push("(lower(m.first_name || ' ' || m.last_name) LIKE ? OR m.phone LIKE ? OR lower(m.store_name) LIKE ? OR lower(m.email) LIKE ? OR lower(m.pickup_code) LIKE ?)"); args.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`); }
   const w = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const total = db.prepare(`SELECT COUNT(*) AS n FROM members m ${w}`).get(...args).n;
   const exp = req.query.export === '1';
   const page = exp ? 1 : Math.max(1, parseInt(req.query.page, 10) || 1);
-  const rows = db.prepare(`SELECT m.id, m.campaign_id, c.name AS campaign_name, m.first_name, m.last_name, m.phone, m.email, m.pickup_date, m.pickup_time, m.store_id, m.store_name, m.created_at, m.updated_at
+  const rows = db.prepare(`SELECT m.id, m.campaign_id, c.name AS campaign_name, m.first_name, m.last_name, m.phone, m.email, m.pickup_date, m.pickup_time, m.date_changes, m.first_pickup_date, m.pickup_code, m.mail_status, m.mail_at, m.store_id, m.store_name, m.created_at, m.updated_at
     FROM members m LEFT JOIN campaigns c ON c.id = m.campaign_id ${w} ORDER BY m.created_at DESC ${exp ? '' : 'LIMIT ? OFFSET ?'}`).all(...args, ...(exp ? [] : [PAGE_SIZE, (page - 1) * PAGE_SIZE]));
   res.json({ campaign: camp ? campaignPublic(camp) : null, page, pages: exp ? 1 : Math.max(1, Math.ceil(total / PAGE_SIZE)), total, rows });
 });

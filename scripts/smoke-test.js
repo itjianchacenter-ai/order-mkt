@@ -373,7 +373,7 @@ const dbx = {
 
     // หน้าแรกแบบ Membership: ตั้งใน Design → /<slug>/ เป็นฟอร์มสมัครสมาชิก, POST /api/members, หลังบ้าน Members
     {
-      const sm = { campaign: 'jianchaxsummer', first_name: ' Somchai ', last_name: 'Jaidee', phone: '081-234-5678', pickup_date: '2026-12-25', store_id: 'JF001' };
+      const sm = { campaign: 'jianchaxsummer', first_name: ' Somchai ', last_name: 'Jaidee', phone: '081-234-5678', email: 'somchai@example.com', pickup_date: '2026-12-25', store_id: 'JF001' };
       r = await call('guest', 'POST', '/api/members', sm); check('membership sign-up refused while homepage is the order menu', r.status === 400, r.json);
       let dz = (await call('it', 'GET', '/api/admin/campaigns/jiancha-x-summer/design')).json.design;
       check('design defaults to order homepage', dz.home === 'order', dz.home);
@@ -402,7 +402,7 @@ const dbx = {
       r = await call('guest', 'POST', '/api/hold', { campaign: 'jianchaxsummer', lines: [{ set_id: 'A', quantity: 1 }] }); check('membership campaign refuses cart holds', r.status === 400 && /สมัครสมาชิก/.test(r.json.error), r.json);
       r = await call('guest', 'POST', '/api/quote', { campaign: 'jianchaxsummer', store_id: 'siam-paragon', phone: '0812345678', email: 'a@gmail.com', lines: [{ set_id: 'A', quantity: 1 }] }); check('membership campaign refuses orders', r.status === 400 || r.status === 401, r.json);
       { const M = require('../lib/menu'); const j = JSON.parse(M.membershipDesignJson(JSON.stringify({ sets: [{ id: 'A' }], home: 'order' }))); check('membership migration keeps design, sets home', j.home === 'membership' && j.sets.length === 1 && JSON.parse(M.membershipDesignJson(null)).home === 'membership' && M.MEMBERSHIP_HOME_SLUGS.includes('celebrateeverymomentwithjiancha')); }
-      r = await call('it', 'POST', '/api/admin/campaigns', { name: 'JIANCHA MEMBERSHIP', slug: 'celebrateeverymomentwithjiancha' }); const memId = r.json.id;
+      r = await call('it', 'POST', '/api/admin/campaigns', { name: 'JIANCHA MEMBERSHIP', slug: 'celebrateeverymomentwithjiancha', promo_prefix: 'JCMB', promo_from: 1, promo_to: 2000 }); const memId = r.json.id;
       // รายชื่อ ELITE: ลิงก์ celebrate รับเฉพาะเบอร์ในรายชื่อ (ยังไม่อัปโหลด = ไม่มีใครสมัครได้)
       const cm = { ...sm, campaign: 'celebrateeverymomentwithjiancha' };
       r = await call('guest', 'POST', '/api/members/check', { campaign: cm.campaign, phone: '0899999999' }); check('celebrate: no ELITE list yet = not eligible', r.status === 200 && r.json.eligible === false && /ยังไม่เป็นสมาชิกระดับ elite/.test(r.json.message), r.json);
@@ -417,7 +417,8 @@ const dbx = {
       r = await call('guest', 'POST', '/api/members/check', { campaign: cm.campaign, phone: '+66 89-876-5432' }); check('ELITE phone eligible (any format)', r.json.eligible === true, r.json);
       r = await call('guest', 'POST', '/api/members/check', { campaign: cm.campaign, phone: '0899999999' }); check('non-ELITE phone gets the red message', r.json.eligible === false && r.json.message.includes('Line OA @jiancha'), r.json);
       r = await call('guest', 'POST', '/api/members', { ...cm, phone: '0899999999' }); check('non-ELITE sign-up refused', r.status === 403 && r.json.not_elite === true);
-      r = await call('guest', 'POST', '/api/members', { ...cm, phone: '0898765432' }); check('ELITE member signs up', r.status === 201 && r.json.member.phone === '0898765432', r.json);
+      r = await call('guest', 'POST', '/api/members', { ...cm, phone: '0898765432' }); check('ELITE member signs up with a random JCMB0001-JCMB2000 code + email', r.status === 201 && r.json.member.phone === '0898765432' && /^JCMB\d{4}$/.test(r.json.member.pickup_code) && Number(r.json.member.pickup_code.slice(4)) >= 1 && Number(r.json.member.pickup_code.slice(4)) <= 2000 && r.json.mail && r.json.mail.status === 'sent' && r.json.member.date_changes_left === 1, r.json);
+      const code1 = r.json.member.pickup_code;
       r = await call('guest', 'POST', '/api/members', { ...sm, phone: '0811111111' }); check('other membership campaigns also check the list once uploaded', r.status === 403);
       r = await call('mkt', 'PUT', '/api/admin/member-list', { rows: [{ phone: '0811111111', name: 'C' }] }); r = await call('mkt', 'GET', '/api/admin/member-list'); check('re-upload replaces the whole list', r.json.all === 1 && r.json.rows[0].phone === '0811111111', r.json);
       // อีเมล: เบอร์ในรายชื่อ ELITE ที่มีอีเมล → เติมให้แบบปิดบางส่วน; ไม่แก้ = ใช้อีเมลจากรายชื่อ, แก้ได้
@@ -428,7 +429,20 @@ const dbx = {
       r = await call('guest', 'POST', '/api/members', { ...cm, phone: '0811111111', use_list_email: true }); check('unchanged auto-filled email saves the email from the list', r.status === 201 && r.json.member.email === 'lek.lek@hotmail.com', r.json);
       r = await call('guest', 'POST', '/api/members', { ...cm, phone: '0811111111', email: 'New@Mail.com' }); check('edited email is saved instead', r.status === 201 && r.json.member.email === 'new@mail.com', r.json);
       r = await call('guest', 'POST', '/api/members', { ...cm, phone: '0822222222', email: 'not-an-email' }); check('invalid email rejected', r.status === 400 && r.json.field === 'email', r.json);
-      r = await call('guest', 'POST', '/api/members', { ...cm, phone: '0822222222' }); check('email is optional', r.status === 201 && r.json.member.email === '', r.json);
+      r = await call('guest', 'POST', '/api/members', { ...cm, phone: '0822222222', email: '' }); check('email is required (code is sent there)', r.status === 400 && r.json.field === 'email', r.json);
+      r = await call('guest', 'POST', '/api/members', { ...cm, phone: '0822222222', use_list_email: true }); check('use_list_email without an email in the list is rejected', r.status === 400 && r.json.field === 'email', r.json);
+      // เปลี่ยนวันที่รับของได้ 1 ครั้ง + อีเมลรหัสทุกครั้งที่เลือกวัน
+      r = await call('guest', 'POST', '/api/members', { ...cm, phone: '0822222222', email: 'd@example.com' }); const code2 = r.json.member.pickup_code; check('new member: code mailed', r.status === 201 && /^JCMB\d{4}$/.test(code2) && r.json.mail.status === 'sent', r.json);
+      r = await call('guest', 'POST', '/api/members', { ...cm, phone: '0822222222', email: 'd@example.com', store_id: 'JC003' }); check('editing other fields (same date) sends no email', r.status === 201 && r.json.mail === null && r.json.member.date_changes_left === 1, r.json);
+      r = await call('guest', 'POST', '/api/members/check', { campaign: cm.campaign, phone: '0822222222' }); check('check tells the saved date + changes left', r.json.member && r.json.member.pickup_date === '2026-12-25' && r.json.member.date_changes_left === 1, r.json);
+      r = await call('guest', 'POST', '/api/members', { ...cm, phone: '0822222222', email: 'd@example.com', pickup_date: '2027-01-05' }); check('first date change allowed: same code, email sent again', r.status === 201 && r.json.member.pickup_date === '2027-01-05' && r.json.member.pickup_code === code2 && r.json.member.first_pickup_date === '2026-12-25' && r.json.member.date_changes_left === 0 && r.json.mail.status === 'sent', r.json);
+      r = await call('guest', 'POST', '/api/members', { ...cm, phone: '0822222222', email: 'd@example.com', pickup_date: '2027-01-10' }); check('second date change refused', r.status === 409 && r.json.date_locked === true && r.json.pickup_date === '2027-01-05', r.json);
+      r = await call('guest', 'POST', '/api/members', { ...cm, phone: '0822222222', email: 'e@example.com', pickup_date: '2027-01-05' }); check('after the change, other edits still allowed', r.status === 201 && r.json.member.email === 'e@example.com' && r.json.mail === null, r.json);
+      r = await call('guest', 'POST', '/api/members/check', { campaign: cm.campaign, phone: '0822222222' }); check('check shows no changes left', r.json.member.date_changes_left === 0, r.json);
+      { const ml = await dbx.get("SELECT COUNT(*) AS n FROM mail_log WHERE kind IN ('member_code', 'member_date_changed') AND to_email = 'd@example.com'"); check('code emails logged (sign-up + date change)', ml && ml.n === 2, ml); }
+      if (CF) { const gm = graphMail.filter((m) => m.to.join() === 'd@example.com'); check('code email via Graph has the code + date', gm.length === 2 && gm.every((m) => m.html.includes(code2)) && /5 January 2027/.test(gm[1].html), gm.map((m) => m.subject)); }
+      r = await call('mkt', 'GET', `/api/admin/members?campaign=${memId}&q=${code2.toLowerCase()}`); check('back-office Members: code search + change info', r.json.total === 1 && r.json.rows[0].pickup_code === code2 && r.json.rows[0].date_changes === 1 && r.json.rows[0].mail_status === 'sent', r.json);
+      check('codes are unique', code1 !== code2);
       r = await call('mkt', 'GET', `/api/admin/members?campaign=${memId}&q=new@mail`); check('back-office Members shows + searches email', r.json.total === 1 && r.json.rows[0].email === 'new@mail.com', r.json);
       r = await call('it', 'PUT', `/api/admin/campaigns/${memId}/design`, { home: 'order' }); check('celebrate link stays membership even if saved as order', r.status === 200 && r.json.design.home === 'membership', r.json && r.json.design);
       r = await fetch(base + '/celebrateeverymomentwithjiancha/'); check('celebrate link serves the sign-up form', r.status === 200 && /id="mb-form"/.test(await r.text()));

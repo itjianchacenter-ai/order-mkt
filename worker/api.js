@@ -10,7 +10,7 @@ import { putFile, getFile, deleteFile, fileMax, usingR2 } from './files.js';
 import { wipeOrders } from './reset.js';
 import * as M from '../lib/menu.js';
 import * as W from '../lib/window.js';
-import { approvalEmail, issueEmail, rejectEmail, normalizeEmail, validEmail } from '../lib/email.js';
+import { approvalEmail, issueEmail, rejectEmail, normalizeEmail, validEmail, memberCodeEmail } from '../lib/email.js';
 
 const CUSTOMER_COOKIE = 'jc_cid', ADMIN_COOKIE = 'jc_admin';
 const YEAR = 365 * 24 * 3600;
@@ -279,7 +279,9 @@ on('POST', '/api/members/check', async (c) => {
   const phone = M.normPhoneTH(b.phone); if (!phone) return json({ error: 'กรุณาใส่เบอร์โทรศัพท์มือถือ 10 หลัก / Please enter a valid phone number', field: 'phone' }, 400);
   const eligible = await eliteOk(c, camp, phone);
   const row = eligible ? await c.db.get('SELECT email FROM member_list WHERE phone = ?', phone) : null;
-  return json({ eligible, message: eligible ? '' : M.NOT_ELITE_MESSAGE, email: row ? row.email || '' : '', email_masked: row ? M.maskEmail(row.email) : '' });   // email เต็ม: เติมให้ลูกค้า (สีเทา) ตามที่ทีมการตลาดต้องการ
+  const mem = eligible ? await c.db.get('SELECT pickup_date, date_changes FROM members WHERE campaign_id = ? AND phone = ?', camp.id, phone) : null;   // สมัครแล้ว: วันที่รับของเดิม + สิทธิ์เปลี่ยนที่เหลือ
+  return json({ eligible, message: eligible ? '' : M.NOT_ELITE_MESSAGE, email: row ? row.email || '' : '', email_masked: row ? M.maskEmail(row.email) : '',
+    member: mem && mem.pickup_date ? { pickup_date: mem.pickup_date, date_changes_left: M.dateChangesLeft(mem) } : null });   // email เต็ม: เติมให้ลูกค้า (สีเทา) ตามที่ทีมการตลาดต้องการ
 });
 // สมัครสมาชิก (หน้าแรกแบบ Membership): { campaign: slug, first_name, last_name, phone, email, pickup_date, store_id } — 1 เบอร์ต่อ 1 แคมเปญ (ส่งซ้ำ = อัปเดต)
 on('POST', '/api/members', async (c) => {
@@ -292,11 +294,34 @@ on('POST', '/api/members', async (c) => {
   if (!(await eliteOk(c, camp, v.phone))) return json({ error: M.NOT_ELITE_MESSAGE, field: 'phone', not_elite: true }, 403);
   const ts = now(); const store_name = `${v.store.brand} - ${v.store.name}`;
   const email = v.use_list_email ? (((await c.db.get('SELECT email FROM member_list WHERE phone = ?', v.phone)) || {}).email || '').toLowerCase() : v.email;
-  await c.db.run(`INSERT INTO members(id, campaign_id, customer_id, first_name, last_name, phone, email, pickup_date, store_id, store_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(campaign_id, phone) DO UPDATE SET customer_id = excluded.customer_id, first_name = excluded.first_name, last_name = excluded.last_name, email = excluded.email, pickup_date = excluded.pickup_date, pickup_time = '', store_id = excluded.store_id, store_name = excluded.store_name, updated_at = excluded.updated_at`,
-    uuid(), camp.id, c.customerId || null, v.first_name, v.last_name, v.phone, email, v.pickup_date, v.store.id, store_name, ts, ts);
-  const m = await c.db.get('SELECT first_name, last_name, phone, email, pickup_date, store_id, store_name, created_at, updated_at FROM members WHERE campaign_id = ? AND phone = ?', camp.id, v.phone);
-  return json({ ok: true, member: m, campaign: campaignPublic(camp) }, 201);
+  if (!email) return json({ error: 'กรุณาใส่อีเมล เพื่อรับรหัสรับของ / Please enter your email to receive your pick-up code', field: 'email' }, 400);
+  // สมัครแล้วกลับมาเปลี่ยนวันที่รับของได้ 1 ครั้ง (ข้อมูลอื่นแก้ได้ตามปกติ)
+  const prev = await c.db.get('SELECT pickup_date, date_changes, first_pickup_date, pickup_code FROM members WHERE campaign_id = ? AND phone = ?', camp.id, v.phone);
+  const dc = M.memberDateChange(prev, v.pickup_date);
+  if (dc.error) return json(dc, 409);
+  const isNew = !prev || !prev.pickup_date; const dateChanged = Boolean(prev && prev.pickup_date && prev.pickup_date !== v.pickup_date);
+  let code = (prev && prev.pickup_code) || '';
+  if (!code) {   // รหัสใหม่: สุ่มเลขที่ยังไม่ถูกใช้ในช่วงรหัสของแคมเปญ (เช่น JCMB0001–JCMB2000)
+    const used = new Set((await c.db.all('SELECT pickup_code FROM members WHERE pickup_code IS NOT NULL')).map((r) => r.pickup_code));
+    code = M.memberPickupCode(camp, used, randomInt);
+    if (!code) fail(409, M.CODES_FULL_MESSAGE);
+  }
+  await c.db.run(`INSERT INTO members(id, campaign_id, customer_id, first_name, last_name, phone, email, pickup_date, date_changes, first_pickup_date, pickup_code, store_id, store_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(campaign_id, phone) DO UPDATE SET customer_id = excluded.customer_id, first_name = excluded.first_name, last_name = excluded.last_name, email = excluded.email, pickup_date = excluded.pickup_date, date_changes = excluded.date_changes, first_pickup_date = excluded.first_pickup_date, pickup_code = COALESCE(members.pickup_code, excluded.pickup_code), pickup_time = '', store_id = excluded.store_id, store_name = excluded.store_name, updated_at = excluded.updated_at`,
+    uuid(), camp.id, c.customerId || null, v.first_name, v.last_name, v.phone, email, v.pickup_date, dc.date_changes, dc.first_pickup_date, code, v.store.id, store_name, ts, ts);
+  let m = await c.db.get('SELECT first_name, last_name, phone, email, pickup_date, date_changes, first_pickup_date, pickup_code, mail_status, store_id, store_name, created_at, updated_at FROM members WHERE campaign_id = ? AND phone = ?', camp.id, v.phone);
+  // ทุกครั้งที่เลือกวันที่รับของ (สมัครครั้งแรก / เปลี่ยนวัน) → อีเมลรหัสรับของถึงลูกค้า
+  let mail = null;
+  if (isNew || dateChanged) {
+    const msg = memberCodeEmail(m, camp, baseUrlOf(c), { changed: dateChanged, left: M.dateChangesLeft(m) });
+    const r = await sendMail(c.env, { to: m.email, ...msg });
+    const mid = (await c.db.get('SELECT id FROM members WHERE campaign_id = ? AND phone = ?', camp.id, v.phone)).id;
+    await c.db.batch([
+      c.db.stmt('INSERT INTO mail_log(order_id, kind, to_email, subject, status, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', mid, dateChanged ? 'member_date_changed' : 'member_code', m.email, msg.subject, r.status, r.error || '', now()),
+      c.db.stmt('UPDATE members SET mail_status = ?, mail_at = ? WHERE campaign_id = ? AND phone = ?', r.status, now(), camp.id, v.phone)]);
+    mail = { status: r.status, to: m.email }; m = await c.db.get('SELECT first_name, last_name, phone, email, pickup_date, date_changes, first_pickup_date, pickup_code, mail_status, store_id, store_name, created_at, updated_at FROM members WHERE campaign_id = ? AND phone = ?', camp.id, v.phone);
+  }
+  return json({ ok: true, member: { ...m, date_changes_left: M.dateChangesLeft(m) }, mail, campaign: campaignPublic(camp) }, 201);
 });
 on('GET', '/api/config', async (c) => json({ payment_ready: qrConfigured(c.env), payment_mode: paymentMode(c.env), slip_auto_verify: slipOkEnabled(c.env), login_required: loginRequired(c.env), google_client_id: (c.env.GOOGLE_CLIENT_ID || '').trim() }));
 
@@ -714,12 +739,12 @@ on('GET', '/api/admin/members', async (c) => {
   if (cparam && cparam !== 'all' && !camp) fail(404, 'ไม่พบแคมเปญ');
   const where = []; const args = [];
   if (camp) { where.push('m.campaign_id = ?'); args.push(camp.id); }
-  if (q) { where.push("(lower(m.first_name || ' ' || m.last_name) LIKE ? OR m.phone LIKE ? OR lower(m.store_name) LIKE ? OR lower(m.email) LIKE ?)"); args.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`); }
+  if (q) { where.push("(lower(m.first_name || ' ' || m.last_name) LIKE ? OR m.phone LIKE ? OR lower(m.store_name) LIKE ? OR lower(m.email) LIKE ? OR lower(m.pickup_code) LIKE ?)"); args.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`); }
   const w = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const total = (await c.db.get(`SELECT COUNT(*) AS n FROM members m ${w}`, ...args)).n;
   const exp = qp.get('export') === '1';
   const page = exp ? 1 : Math.max(1, parseInt(qp.get('page'), 10) || 1);
-  const rows = await c.db.all(`SELECT m.id, m.campaign_id, c.name AS campaign_name, m.first_name, m.last_name, m.phone, m.email, m.pickup_date, m.pickup_time, m.store_id, m.store_name, m.created_at, m.updated_at
+  const rows = await c.db.all(`SELECT m.id, m.campaign_id, c.name AS campaign_name, m.first_name, m.last_name, m.phone, m.email, m.pickup_date, m.pickup_time, m.date_changes, m.first_pickup_date, m.pickup_code, m.mail_status, m.mail_at, m.store_id, m.store_name, m.created_at, m.updated_at
     FROM members m LEFT JOIN campaigns c ON c.id = m.campaign_id ${w} ORDER BY m.created_at DESC ${exp ? '' : 'LIMIT ? OFFSET ?'}`, ...args, ...(exp ? [] : [PAGE_SIZE, (page - 1) * PAGE_SIZE]));
   return json({ campaign: camp ? campaignPublic(camp) : null, page, pages: exp ? 1 : Math.max(1, Math.ceil(total / PAGE_SIZE)), total, rows });
 });
