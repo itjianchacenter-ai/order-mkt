@@ -543,3 +543,4 @@ select.mb-input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://ww
   .landing-btn{position:absolute;left:calc((100vw - var(--lw)) / 2 + var(--lw) * .3196);top:calc((100vh - var(--lh)) / 2 + var(--lh) * .5703 + 50px);transform:translateX(-50%)}
 }
 .mb-email-note{max-width:450px;margin-top:-6px;color:var(--muted);font-size:13px}
+.mb-input.autofilled{color:#8a8a8a}

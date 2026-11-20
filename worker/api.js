@@ -278,7 +278,7 @@ on('POST', '/api/members/check', async (c) => {
   const phone = M.normPhoneTH(b.phone); if (!phone) return json({ error: 'กรุณาใส่เบอร์โทรศัพท์มือถือ 10 หลัก / Please enter a valid phone number', field: 'phone' }, 400);
   const eligible = await eliteOk(c, camp, phone);
   const row = eligible ? await c.db.get('SELECT email FROM member_list WHERE phone = ?', phone) : null;
-  return json({ eligible, message: eligible ? '' : M.NOT_ELITE_MESSAGE, email_masked: row ? M.maskEmail(row.email) : '' });
+  return json({ eligible, message: eligible ? '' : M.NOT_ELITE_MESSAGE, email: row ? row.email || '' : '', email_masked: row ? M.maskEmail(row.email) : '' });   // email เต็ม: เติมให้ลูกค้า (สีเทา) ตามที่ทีมการตลาดต้องการ
 });
 // สมัครสมาชิก (หน้าแรกแบบ Membership): { campaign: slug, first_name, last_name, phone, pickup_time, store_id } — 1 เบอร์ต่อ 1 แคมเปญ (ส่งซ้ำ = อัปเดต)
 on('POST', '/api/members', async (c) => {

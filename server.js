@@ -262,7 +262,7 @@ app.post('/api/members/check', (req, res) => {
   const phone = M.normPhoneTH(b.phone); if (!phone) return res.status(400).json({ error: 'กรุณาใส่เบอร์โทรศัพท์มือถือ 10 หลัก / Please enter a valid phone number', field: 'phone' });
   const eligible = eliteOk(campaign, phone);
   const row = eligible ? db.prepare('SELECT email FROM member_list WHERE phone = ?').get(phone) : null;
-  res.json({ eligible, message: eligible ? '' : M.NOT_ELITE_MESSAGE, email_masked: row ? M.maskEmail(row.email) : '' });
+  res.json({ eligible, message: eligible ? '' : M.NOT_ELITE_MESSAGE, email: row ? row.email || '' : '', email_masked: row ? M.maskEmail(row.email) : '' });   // email เต็ม: เติมให้ลูกค้า (สีเทา) ตามที่ทีมการตลาดต้องการ
 });
 // สมัครสมาชิก (หน้าแรกแบบ Membership): { campaign: slug, first_name, last_name, phone, pickup_time, store_id }
 //   1 เบอร์ต่อ 1 แคมเปญ — ส่งซ้ำด้วยเบอร์เดิม = อัปเดตข้อมูลเดิม
