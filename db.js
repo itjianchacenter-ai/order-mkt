@@ -133,6 +133,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS member_list (
   phone TEXT PRIMARY KEY, name TEXT DEFAULT '', tier TEXT DEFAULT '', email TEXT DEFAULT '', data_json TEXT DEFAULT '{}',
   imported_at TEXT DEFAULT (datetime('now','localtime'))
 )`);
+if (!db.prepare("SELECT 1 FROM pragma_table_info('members') WHERE name = 'email'").get()) db.exec("ALTER TABLE members ADD COLUMN email TEXT DEFAULT ''");   // อีเมลสมาชิก (เติมจากรายชื่อ ELITE ได้)
 db.exec(`CREATE TABLE IF NOT EXISTS customer_campaigns (
   customer_id TEXT NOT NULL REFERENCES customers(id),
   campaign_id TEXT NOT NULL,

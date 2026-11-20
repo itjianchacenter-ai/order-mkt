@@ -277,7 +277,8 @@ on('POST', '/api/members/check', async (c) => {
   if (!camp) fail(404, 'ไม่พบแคมเปญ / Campaign not found');
   const phone = M.normPhoneTH(b.phone); if (!phone) return json({ error: 'กรุณาใส่เบอร์โทรศัพท์มือถือ 10 หลัก / Please enter a valid phone number', field: 'phone' }, 400);
   const eligible = await eliteOk(c, camp, phone);
-  return json({ eligible, message: eligible ? '' : M.NOT_ELITE_MESSAGE });
+  const row = eligible ? await c.db.get('SELECT email FROM member_list WHERE phone = ?', phone) : null;
+  return json({ eligible, message: eligible ? '' : M.NOT_ELITE_MESSAGE, email_masked: row ? M.maskEmail(row.email) : '' });
 });
 // สมัครสมาชิก (หน้าแรกแบบ Membership): { campaign: slug, first_name, last_name, phone, pickup_time, store_id } — 1 เบอร์ต่อ 1 แคมเปญ (ส่งซ้ำ = อัปเดต)
 on('POST', '/api/members', async (c) => {
@@ -289,10 +290,11 @@ on('POST', '/api/members', async (c) => {
   if (v.error) return json({ error: v.error, field: v.field }, 400);
   if (!(await eliteOk(c, camp, v.phone))) return json({ error: M.NOT_ELITE_MESSAGE, field: 'phone', not_elite: true }, 403);
   const ts = now(); const store_name = `${v.store.brand} - ${v.store.name}`;
-  await c.db.run(`INSERT INTO members(id, campaign_id, customer_id, first_name, last_name, phone, pickup_time, store_id, store_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(campaign_id, phone) DO UPDATE SET customer_id = excluded.customer_id, first_name = excluded.first_name, last_name = excluded.last_name, pickup_time = excluded.pickup_time, store_id = excluded.store_id, store_name = excluded.store_name, updated_at = excluded.updated_at`,
-    uuid(), camp.id, c.customerId || null, v.first_name, v.last_name, v.phone, v.pickup_time, v.store.id, store_name, ts, ts);
-  const m = await c.db.get('SELECT first_name, last_name, phone, pickup_time, store_id, store_name, created_at, updated_at FROM members WHERE campaign_id = ? AND phone = ?', camp.id, v.phone);
+  const email = v.use_list_email ? (((await c.db.get('SELECT email FROM member_list WHERE phone = ?', v.phone)) || {}).email || '').toLowerCase() : v.email;
+  await c.db.run(`INSERT INTO members(id, campaign_id, customer_id, first_name, last_name, phone, email, pickup_time, store_id, store_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(campaign_id, phone) DO UPDATE SET customer_id = excluded.customer_id, first_name = excluded.first_name, last_name = excluded.last_name, email = excluded.email, pickup_time = excluded.pickup_time, store_id = excluded.store_id, store_name = excluded.store_name, updated_at = excluded.updated_at`,
+    uuid(), camp.id, c.customerId || null, v.first_name, v.last_name, v.phone, email, v.pickup_time, v.store.id, store_name, ts, ts);
+  const m = await c.db.get('SELECT first_name, last_name, phone, email, pickup_time, store_id, store_name, created_at, updated_at FROM members WHERE campaign_id = ? AND phone = ?', camp.id, v.phone);
   return json({ ok: true, member: m, campaign: campaignPublic(camp) }, 201);
 });
 on('GET', '/api/config', async (c) => json({ payment_ready: qrConfigured(c.env), payment_mode: paymentMode(c.env), slip_auto_verify: slipOkEnabled(c.env), login_required: loginRequired(c.env), google_client_id: (c.env.GOOGLE_CLIENT_ID || '').trim() }));
@@ -711,12 +713,12 @@ on('GET', '/api/admin/members', async (c) => {
   if (cparam && cparam !== 'all' && !camp) fail(404, 'ไม่พบแคมเปญ');
   const where = []; const args = [];
   if (camp) { where.push('m.campaign_id = ?'); args.push(camp.id); }
-  if (q) { where.push("(lower(m.first_name || ' ' || m.last_name) LIKE ? OR m.phone LIKE ? OR lower(m.store_name) LIKE ?)"); args.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+  if (q) { where.push("(lower(m.first_name || ' ' || m.last_name) LIKE ? OR m.phone LIKE ? OR lower(m.store_name) LIKE ? OR lower(m.email) LIKE ?)"); args.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`); }
   const w = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const total = (await c.db.get(`SELECT COUNT(*) AS n FROM members m ${w}`, ...args)).n;
   const exp = qp.get('export') === '1';
   const page = exp ? 1 : Math.max(1, parseInt(qp.get('page'), 10) || 1);
-  const rows = await c.db.all(`SELECT m.id, m.campaign_id, c.name AS campaign_name, m.first_name, m.last_name, m.phone, m.pickup_time, m.store_id, m.store_name, m.created_at, m.updated_at
+  const rows = await c.db.all(`SELECT m.id, m.campaign_id, c.name AS campaign_name, m.first_name, m.last_name, m.phone, m.email, m.pickup_time, m.store_id, m.store_name, m.created_at, m.updated_at
     FROM members m LEFT JOIN campaigns c ON c.id = m.campaign_id ${w} ORDER BY m.created_at DESC ${exp ? '' : 'LIMIT ? OFFSET ?'}`, ...args, ...(exp ? [] : [PAGE_SIZE, (page - 1) * PAGE_SIZE]));
   return json({ campaign: camp ? campaignPublic(camp) : null, page, pages: exp ? 1 : Math.max(1, Math.ceil(total / PAGE_SIZE)), total, rows });
 });

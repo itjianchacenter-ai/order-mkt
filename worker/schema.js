@@ -89,7 +89,8 @@ async function migrate(env) {
   await db.batch(DDL.map((q) => db.stmt(q)));
   // ฐานข้อมูลที่สร้างก่อนมี promo_prefix
   try { await db.run("ALTER TABLE campaigns ADD COLUMN promo_prefix TEXT DEFAULT ''"); } catch (e) { /* มีอยู่แล้ว */ }
-  try { await db.run("ALTER TABLE orders ADD COLUMN email TEXT DEFAULT ''"); } catch (e) { /* มีอยู่แล้ว */ }   // อีเมลผู้สั่ง (กรอกที่หน้า Order Summary)
+  try { await db.run("ALTER TABLE orders ADD COLUMN email TEXT DEFAULT ''"); } catch (e) { /* มีอยู่แล้ว */ }
+  try { await db.run("ALTER TABLE members ADD COLUMN email TEXT DEFAULT ''"); } catch (e) { /* มีอยู่แล้ว */ }   // อีเมลสมาชิก (เติมจากรายชื่อ ELITE ได้)   // อีเมลผู้สั่ง (กรอกที่หน้า Order Summary)
   // First run: the three back-office accounts (change the passwords in the Account page before going live)
   if ((await db.get('SELECT COUNT(*) AS n FROM users')).n === 0) {
     const seed = [['it-admin', 'jiancha2026', 'it_admin', 'IT - Admin', 'IT'], ['admin', 'marketing', 'admin', 'Admin', 'Marketing'], ['finance', 'jiancha', 'finance', 'Finance', 'Finance']];
