@@ -141,4 +141,12 @@ async function migrate(env) {
     }
     await db.run("INSERT OR IGNORE INTO meta(key, value) VALUES ('membership_home_v1', '1')");
   }
+  // ปกแคมเปญ Membership → รูป JIANCHA Membership + ต้นคริสต์มาส ครั้งเดียว (เปลี่ยนได้ที่ Design)
+  if (!(await db.get("SELECT 1 AS x FROM meta WHERE key = 'membership_cover_v1'"))) {
+    for (const slug of M.MEMBERSHIP_HOME_SLUGS) {
+      const row = await db.get('SELECT id, design_json FROM campaigns WHERE slug = ?', slug);
+      if (row) await db.run('UPDATE campaigns SET design_json = ?, updated_at = ? WHERE id = ?', M.membershipCoverDesignJson(row.design_json), bangkokNow(), row.id);
+    }
+    await db.run("INSERT OR IGNORE INTO meta(key, value) VALUES ('membership_cover_v1', '1')");
+  }
 }
