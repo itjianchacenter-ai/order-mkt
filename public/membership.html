@@ -30,8 +30,8 @@
       </div>
 
       <div class="mb-field">
-        <span class="mb-label"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="currentColor"/><path d="M12 6.5V12l3.6 2.2" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg><b>Time</b> | <span class="th-b">เวลา</span></span>
-        <select class="mb-input" name="pickup_time" required aria-label="เวลา / Time"><option value="">เลือกเวลา / Choose a time</option></select>
+        <span class="mb-label"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="16.5" rx="2.5" fill="currentColor"/><path d="M8 2.5v4M16 2.5v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M3 9.5h18" stroke="#fff" stroke-width="1.8"/><rect x="6.5" y="12.5" width="3" height="3" rx=".6" fill="#fff"/></svg><b>Pick-up Date</b> | <span class="th-b">วันที่รับของ</span></span>
+        <select class="mb-input" name="pickup_date" required aria-label="วันที่รับของ / Pick-up date"><option value="">เลือกวันที่รับของ / Choose a pick-up date</option></select>
       </div>
 
       <div class="mb-field">
@@ -60,6 +60,14 @@
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const slug = (location.pathname.split('/')[1] || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const KEY = 'jc_member:' + slug;
+  // '2026-12-25' → 'Fri 25 Dec 2026 · ศ. 25 ธ.ค. 2569'
+  const fmtDay = (iso) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso || '')) return iso || '-';
+    const [y, m, d] = iso.split('-').map(Number); const wd = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+    const EN_D = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], TH_D = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
+    const EN_M = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], TH_M = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+    return `${EN_D[wd]} ${d} ${EN_M[m - 1]} ${y} · ${TH_D[wd]} ${d} ${TH_M[m - 1]} ${y + 543}`;
+  };
   async function api(path, opts = {}) {
     const init = { credentials: 'same-origin', ...opts };
     if (init.body) { init.headers = { 'Content-Type': 'application/json' }; init.body = JSON.stringify(init.body); }
@@ -71,7 +79,7 @@
   const fill = (sel, items) => { const s = form[sel]; for (const [v, t] of items) { const o = document.createElement('option'); o.value = v; o.textContent = t; s.appendChild(o); } };
 
   function showDone(m) {
-    $('#mb-summary').innerHTML = [['ชื่อ / Name', `${m.first_name} ${m.last_name}`], ['เบอร์ / Tel', m.phone], ['อีเมล / Email', m.email || '-'], ['เวลา / Time', m.pickup_time], ['สถานที่ / Location', m.store_name]]
+    $('#mb-summary').innerHTML = [['ชื่อ / Name', `${m.first_name} ${m.last_name}`], ['เบอร์ / Tel', m.phone], ['อีเมล / Email', m.email || '-'], ['วันที่รับของ / Pick-up date', fmtDay(m.pickup_date)], ['สถานที่ / Location', m.store_name]]
       .map(([k, v]) => `<div><dt class="th">${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('');
     form.hidden = true; $('#mb-done').hidden = false;
   }
@@ -79,12 +87,12 @@
 
   (async () => {
     try {
-      const [menu, stores] = await Promise.all([api('/api/menu?campaign=' + encodeURIComponent(slug)), api('/api/member-stores')]);
+      const [menu, stores, dates] = await Promise.all([api('/api/menu?campaign=' + encodeURIComponent(slug)), api('/api/member-stores'), api('/api/member-dates')]);
       if (menu.campaign && menu.campaign.name) document.title = `${menu.campaign.name} | JIANCHA Membership`;
-      fill('pickup_time', (menu.pickup_times || []).map((t) => [t, t]));
+      fill('pickup_date', dates.map((d) => [d, fmtDay(d)]));
       fill('store_id', stores.map((s) => [s.id, s.name]));
     } catch (e) { err.textContent = 'โหลดข้อมูลไม่สำเร็จ กรุณารีเฟรช / Could not load, please refresh'; }
-    try { const saved = JSON.parse(localStorage.getItem(KEY) || 'null'); if (saved) { for (const k of ['first_name', 'last_name', 'phone', 'email', 'pickup_time', 'store_id']) if (saved[k] && form[k]) form[k].value = saved[k]; showDone(saved); } } catch (e) { /* storage blocked */ }
+    try { const saved = JSON.parse(localStorage.getItem(KEY) || 'null'); if (saved) { for (const k of ['first_name', 'last_name', 'phone', 'email', 'pickup_date', 'store_id']) if (saved[k] && form[k]) form[k].value = saved[k]; showDone(saved); } } catch (e) { /* storage blocked */ }
   })();
 
   // เบอร์ต้องอยู่ในรายชื่อสมาชิก ELITE: ตรวจทันทีที่กรอกครบ แสดงข้อความสีแดงใต้ช่องเบอร์
@@ -129,7 +137,7 @@
     }
     if (!(await checkPhone())) { form.phone.focus(); return; }
     btn.disabled = true; btn.textContent = '…';
-    const body = { campaign: slug, first_name: form.first_name.value, last_name: form.last_name.value, phone: form.phone.value, email: form.email.value.trim(), pickup_time: form.pickup_time.value, store_id: form.store_id.value };
+    const body = { campaign: slug, first_name: form.first_name.value, last_name: form.last_name.value, phone: form.phone.value, email: form.email.value.trim(), pickup_date: form.pickup_date.value, store_id: form.store_id.value };
     try {
       api('/api/pdpa', { method: 'POST' }).catch(() => {});
       const r = await api('/api/members', { method: 'POST', body });

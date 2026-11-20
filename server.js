@@ -249,7 +249,8 @@ app.use(express.static(PUBLIC_DIR, { extensions: ['html'], index: false }));
 app.get('/api/menu', (req, res) => { const c = requestCampaign(req); res.json({ ...menuFor(c), campaign: campaignPublic(c), stock: stockView(c) }); });
 app.get('/api/stock', (req, res) => res.json(stockView(requestCampaign(req))));
 app.get('/api/stores', (req, res) => res.json(loadStores()));
-app.get('/api/member-stores', (req, res) => res.json(loadMemberStores()));   // Location ของหน้าสมัครสมาชิก
+app.get('/api/member-stores', (req, res) => res.json(loadMemberStores()));
+app.get('/api/member-dates', (req, res) => res.json(M.memberPickupDates()));   // Pick-up Date ของหน้าสมัครสมาชิก   // Location ของหน้าสมัครสมาชิก
 // รายชื่อ ELITE: เบอร์ใช้สมัครได้ไหม (ไม่มีรายชื่อ + แคมเปญไม่บังคับ = ได้ทุกเบอร์)
 function eliteOk(campaign, phone) {
   const n = db.prepare('SELECT COUNT(*) AS n FROM member_list').get().n;
@@ -264,7 +265,7 @@ app.post('/api/members/check', (req, res) => {
   const row = eligible ? db.prepare('SELECT email FROM member_list WHERE phone = ?').get(phone) : null;
   res.json({ eligible, message: eligible ? '' : M.NOT_ELITE_MESSAGE, email: row ? row.email || '' : '', email_masked: row ? M.maskEmail(row.email) : '' });   // email เต็ม: เติมให้ลูกค้า (สีเทา) ตามที่ทีมการตลาดต้องการ
 });
-// สมัครสมาชิก (หน้าแรกแบบ Membership): { campaign: slug, first_name, last_name, phone, pickup_time, store_id }
+// สมัครสมาชิก (หน้าแรกแบบ Membership): { campaign: slug, first_name, last_name, phone, email, pickup_date, store_id }
 //   1 เบอร์ต่อ 1 แคมเปญ — ส่งซ้ำด้วยเบอร์เดิม = อัปเดตข้อมูลเดิม
 app.post('/api/members', (req, res) => {
   const b = req.body || {};
@@ -276,10 +277,10 @@ app.post('/api/members', (req, res) => {
   if (!eliteOk(campaign, v.phone)) return res.status(403).json({ error: M.NOT_ELITE_MESSAGE, field: 'phone', not_elite: true });
   const ts = W.bangkokNow(); const store_name = `${v.store.brand} - ${v.store.name}`;
   const email = v.use_list_email ? ((db.prepare('SELECT email FROM member_list WHERE phone = ?').get(v.phone) || {}).email || '').toLowerCase() : v.email;
-  db.prepare(`INSERT INTO members(id, campaign_id, customer_id, first_name, last_name, phone, email, pickup_time, store_id, store_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(campaign_id, phone) DO UPDATE SET customer_id = excluded.customer_id, first_name = excluded.first_name, last_name = excluded.last_name, email = excluded.email, pickup_time = excluded.pickup_time, store_id = excluded.store_id, store_name = excluded.store_name, updated_at = excluded.updated_at`)
-    .run(crypto.randomUUID(), campaign.id, req.customerId || null, v.first_name, v.last_name, v.phone, email, v.pickup_time, v.store.id, store_name, ts, ts);
-  const m = db.prepare('SELECT first_name, last_name, phone, email, pickup_time, store_id, store_name, created_at, updated_at FROM members WHERE campaign_id = ? AND phone = ?').get(campaign.id, v.phone);
+  db.prepare(`INSERT INTO members(id, campaign_id, customer_id, first_name, last_name, phone, email, pickup_date, store_id, store_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(campaign_id, phone) DO UPDATE SET customer_id = excluded.customer_id, first_name = excluded.first_name, last_name = excluded.last_name, email = excluded.email, pickup_date = excluded.pickup_date, pickup_time = '', store_id = excluded.store_id, store_name = excluded.store_name, updated_at = excluded.updated_at`)
+    .run(crypto.randomUUID(), campaign.id, req.customerId || null, v.first_name, v.last_name, v.phone, email, v.pickup_date, v.store.id, store_name, ts, ts);
+  const m = db.prepare('SELECT first_name, last_name, phone, email, pickup_date, store_id, store_name, created_at, updated_at FROM members WHERE campaign_id = ? AND phone = ?').get(campaign.id, v.phone);
   res.status(201).json({ ok: true, member: m, campaign: campaignPublic(campaign) });
 });
 app.get('/api/config', (req, res) => res.json({ payment_ready: qrConfigured(), payment_mode: paymentMode(process.env), slip_auto_verify: slipOkEnabled(), login_required: loginRequired(), google_client_id: GOOGLE_CLIENT_ID }));
@@ -742,7 +743,7 @@ app.get('/api/admin/members', requireAdmin, (req, res) => {
   const total = db.prepare(`SELECT COUNT(*) AS n FROM members m ${w}`).get(...args).n;
   const exp = req.query.export === '1';
   const page = exp ? 1 : Math.max(1, parseInt(req.query.page, 10) || 1);
-  const rows = db.prepare(`SELECT m.id, m.campaign_id, c.name AS campaign_name, m.first_name, m.last_name, m.phone, m.email, m.pickup_time, m.store_id, m.store_name, m.created_at, m.updated_at
+  const rows = db.prepare(`SELECT m.id, m.campaign_id, c.name AS campaign_name, m.first_name, m.last_name, m.phone, m.email, m.pickup_date, m.pickup_time, m.store_id, m.store_name, m.created_at, m.updated_at
     FROM members m LEFT JOIN campaigns c ON c.id = m.campaign_id ${w} ORDER BY m.created_at DESC ${exp ? '' : 'LIMIT ? OFFSET ?'}`).all(...args, ...(exp ? [] : [PAGE_SIZE, (page - 1) * PAGE_SIZE]));
   res.json({ campaign: camp ? campaignPublic(camp) : null, page, pages: exp ? 1 : Math.max(1, Math.ceil(total / PAGE_SIZE)), total, rows });
 });

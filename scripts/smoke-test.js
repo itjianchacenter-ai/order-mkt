@@ -373,7 +373,7 @@ const dbx = {
 
     // หน้าแรกแบบ Membership: ตั้งใน Design → /<slug>/ เป็นฟอร์มสมัครสมาชิก, POST /api/members, หลังบ้าน Members
     {
-      const sm = { campaign: 'jianchaxsummer', first_name: ' Somchai ', last_name: 'Jaidee', phone: '081-234-5678', pickup_time: '13:00-15:00 น.', store_id: 'JF001' };
+      const sm = { campaign: 'jianchaxsummer', first_name: ' Somchai ', last_name: 'Jaidee', phone: '081-234-5678', pickup_date: '2026-12-25', store_id: 'JF001' };
       r = await call('guest', 'POST', '/api/members', sm); check('membership sign-up refused while homepage is the order menu', r.status === 400, r.json);
       let dz = (await call('it', 'GET', '/api/admin/campaigns/jiancha-x-summer/design')).json.design;
       check('design defaults to order homepage', dz.home === 'order', dz.home);
@@ -385,9 +385,11 @@ const dbx = {
       r = await call('guest', 'GET', '/api/menu?campaign=jianchaxsummer'); check('menu exposes home + pickup times', r.json.home === 'membership' && r.json.pickup_times.includes('13:00-15:00 น.'), r.json.home);
       r = await call('guest', 'POST', '/api/members', { ...sm, phone: '12' }); check('bad phone rejected', r.status === 400 && r.json.field === 'phone', r.json);
       r = await call('guest', 'POST', '/api/members', { ...sm, last_name: '' }); check('missing last name rejected', r.status === 400 && r.json.field === 'last_name', r.json);
-      r = await call('guest', 'POST', '/api/members', { ...sm, pickup_time: '03:00' }); check('unknown time rejected', r.status === 400 && r.json.field === 'pickup_time', r.json);
+      r = await call('guest', 'POST', '/api/members', { ...sm, pickup_date: '2026-12-24' }); check('pick-up date before 25 Dec 2026 rejected', r.status === 400 && r.json.field === 'pickup_date', r.json);
+      r = await call('guest', 'POST', '/api/members', { ...sm, pickup_date: '2027-02-01' }); check('pick-up date after 31 Jan 2027 rejected', r.status === 400 && r.json.field === 'pickup_date', r.json);
+      r = await call('guest', 'GET', '/api/member-dates'); check('member pick-up dates = 25 Dec 2026 - 31 Jan 2027', r.json.length === 38 && r.json[0] === '2026-12-25' && r.json[37] === '2027-01-31', r.json && r.json.length);
       r = await call('guest', 'POST', '/api/members', { ...sm, store_id: 'nope' }); check('unknown store rejected', r.status === 400 && r.json.field === 'store_id', r.json);
-      r = await call('guest', 'POST', '/api/members', sm); check('member signs up', r.status === 201 && r.json.member.first_name === 'Somchai' && r.json.member.phone === '0812345678' && /Fashion Island/.test(r.json.member.store_name), r.json);
+      r = await call('guest', 'POST', '/api/members', sm); check('member signs up', r.status === 201 && r.json.member.pickup_date === '2026-12-25' && r.json.member.first_name === 'Somchai' && r.json.member.phone === '0812345678' && /Fashion Island/.test(r.json.member.store_name), r.json);
       r = await call('guest', 'POST', '/api/members', { ...sm, store_id: 'JC003' }); check('same phone again updates the member', r.status === 201 && /Central World/.test(r.json.member.store_name), r.json);
       r = await call('guest', 'POST', '/api/members', { ...sm, campaign: 'nope' }); check('unknown campaign rejected', r.status === 404);
       r = await call('guest', 'GET', '/api/admin/members'); check('members list needs back-office login', r.status === 401);
