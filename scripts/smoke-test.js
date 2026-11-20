@@ -418,6 +418,16 @@ const dbx = {
       r = await call('guest', 'POST', '/api/members', { ...cm, phone: '0898765432' }); check('ELITE member signs up', r.status === 201 && r.json.member.phone === '0898765432', r.json);
       r = await call('guest', 'POST', '/api/members', { ...sm, phone: '0811111111' }); check('other membership campaigns also check the list once uploaded', r.status === 403);
       r = await call('mkt', 'PUT', '/api/admin/member-list', { rows: [{ phone: '0811111111', name: 'C' }] }); r = await call('mkt', 'GET', '/api/admin/member-list'); check('re-upload replaces the whole list', r.json.all === 1 && r.json.rows[0].phone === '0811111111', r.json);
+      // อีเมล: เบอร์ในรายชื่อ ELITE ที่มีอีเมล → เติมให้แบบปิดบางส่วน; ไม่แก้ = ใช้อีเมลจากรายชื่อ, แก้ได้
+      r = await call('mkt', 'PUT', '/api/admin/member-list', { rows: [{ phone: '0811111111', name: 'C', email: 'Lek.Lek@Hotmail.com' }, { phone: '0822222222', name: 'D' }] });
+      r = await call('guest', 'POST', '/api/members/check', { campaign: cm.campaign, phone: '0811111111' }); check('check returns masked email for ELITE phone', r.json.eligible === true && r.json.email_masked === 'le***@hotmail.com' && !JSON.stringify(r.json).includes('lek.lek'), r.json);
+      r = await call('guest', 'POST', '/api/members/check', { campaign: cm.campaign, phone: '0822222222' }); check('no email in list = nothing to fill', r.json.eligible === true && r.json.email_masked === '', r.json);
+      r = await call('guest', 'POST', '/api/members/check', { campaign: cm.campaign, phone: '0899999999' }); check('non-ELITE check returns no email', !r.json.email_masked, r.json);
+      r = await call('guest', 'POST', '/api/members', { ...cm, phone: '0811111111', use_list_email: true }); check('unchanged auto-filled email saves the email from the list', r.status === 201 && r.json.member.email === 'lek.lek@hotmail.com', r.json);
+      r = await call('guest', 'POST', '/api/members', { ...cm, phone: '0811111111', email: 'New@Mail.com' }); check('edited email is saved instead', r.status === 201 && r.json.member.email === 'new@mail.com', r.json);
+      r = await call('guest', 'POST', '/api/members', { ...cm, phone: '0822222222', email: 'not-an-email' }); check('invalid email rejected', r.status === 400 && r.json.field === 'email', r.json);
+      r = await call('guest', 'POST', '/api/members', { ...cm, phone: '0822222222' }); check('email is optional', r.status === 201 && r.json.member.email === '', r.json);
+      r = await call('mkt', 'GET', `/api/admin/members?campaign=${memId}&q=new@mail`); check('back-office Members shows + searches email', r.json.total === 1 && r.json.rows[0].email === 'new@mail.com', r.json);
       r = await call('it', 'PUT', `/api/admin/campaigns/${memId}/design`, { home: 'order' }); check('celebrate link stays membership even if saved as order', r.status === 200 && r.json.design.home === 'membership', r.json && r.json.design);
       r = await fetch(base + '/celebrateeverymomentwithjiancha/'); check('celebrate link serves the sign-up form', r.status === 200 && /id="mb-form"/.test(await r.text()));
       r = await fetch(base + '/celebrateeverymomentwithjiancha/cart', { redirect: 'manual' }); check('celebrate link has no cart', r.status === 302);

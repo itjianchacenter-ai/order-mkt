@@ -257,27 +257,28 @@ if (!window.PREVIEW_MODE && /^#\/backend/.test(location.hash)) { const q = locat
     app.innerHTML = `
       <div class="toolbar">
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-          <input class="search" id="q" placeholder="ชื่อ / เบอร์ / สาขา …" value="${esc(state.q)}">
+          <input class="search" id="q" placeholder="ชื่อ / เบอร์ / อีเมล / สาขา …" value="${esc(state.q)}">
           ${campSelect}
           <span class="pill" id="mem-count">${ICONS.customer} Members</span>
         </div>
         <button type="button" class="pill" id="mem-csv">${ICONS.doc} Download CSV</button>
       </div>
       <div class="tbl-wrap"><table class="jc-tbl" id="mem-tbl">
-        <thead><tr><th>Member</th><th>Tel</th><th>Time</th><th>Location</th>${allC ? '<th>Campaign</th>' : ''}<th>Signed up</th></tr></thead>
+        <thead><tr><th>Member</th><th>Tel</th><th>Email</th><th>Time</th><th>Location</th>${allC ? '<th>Campaign</th>' : ''}<th>Signed up</th></tr></thead>
         <tbody></tbody></table></div>
       <div class="pager"><button type="button" id="prev">${ICONS.arrowL}</button><span class="pg" id="pg">1</span><button type="button" id="next">${ICONS.arrowR}</button></div>`;
     const row = (m) => `<tr>
         <td class="who">${ICONS.user} <b>${esc(m.first_name)} ${esc(m.last_name)}</b></td>
         <td class="mono"><a href="tel:${esc(m.phone)}">${esc(m.phone)}</a></td>
+        <td class="mono">${m.email ? `<a href="mailto:${esc(m.email)}">${esc(m.email)}</a>` : '-'}</td>
         <td>${esc(m.pickup_time || '-')}</td>
         <td>${esc(m.store_name || '-')}</td>${allC ? `<td>${esc(m.campaign_name || m.campaign_id)}</td>` : ''}
         <td>${fmtDateTime(m.created_at)}${m.updated_at && m.updated_at !== m.created_at ? `<br><small class="th" style="color:var(--muted)">แก้ไข ${fmtDateTime(m.updated_at)}</small>` : ''}</td></tr>`;
     async function load() {
-      let data; try { data = await api('/api/admin/members?' + new URLSearchParams({ campaign: campParam, q: state.q, page: state.page })); } catch (e) { if (/401/.test(e.message)) return location.reload(); $('#mem-tbl tbody').innerHTML = `<tr><td colspan="6" class="err">${esc(e.message)}</td></tr>`; return; }
+      let data; try { data = await api('/api/admin/members?' + new URLSearchParams({ campaign: campParam, q: state.q, page: state.page })); } catch (e) { if (/401/.test(e.message)) return location.reload(); $('#mem-tbl tbody').innerHTML = `<tr><td colspan="7" class="err">${esc(e.message)}</td></tr>`; return; }
       if (!alive()) return;
       state.page = data.page;
-      $('#mem-tbl tbody').innerHTML = data.rows.map(row).join('') || `<tr><td colspan="6" class="empty">ยังไม่มีสมาชิก${campaign ? 'ในแคมเปญ ' + esc(campaign.name) : ''} / No members yet</td></tr>`;
+      $('#mem-tbl tbody').innerHTML = data.rows.map(row).join('') || `<tr><td colspan="7" class="empty">ยังไม่มีสมาชิก${campaign ? 'ในแคมเปญ ' + esc(campaign.name) : ''} / No members yet</td></tr>`;
       $('#mem-count').innerHTML = `${ICONS.customer} Members <b>${data.total}</b>${campaign ? ` <span class="th">· ${esc(campaign.name)}</span>` : ' <span class="th">· ทุกแคมเปญ</span>'}`;
       $('#pg').textContent = `${data.page} / ${data.pages}`; $('#prev').disabled = data.page <= 1; $('#next').disabled = data.page >= data.pages;
     }
@@ -288,7 +289,7 @@ if (!window.PREVIEW_MODE && /^#\/backend/.test(location.hash)) { const q = locat
     $('#mem-csv').addEventListener('click', async () => {
       const data = await api('/api/admin/members?' + new URLSearchParams({ campaign: campParam, q: state.q, export: '1' }));
       const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-      const lines = [['campaign', 'first_name', 'last_name', 'phone', 'time', 'location', 'signed_up', 'updated'].join(','), ...data.rows.map((m) => [m.campaign_name || m.campaign_id, m.first_name, m.last_name, m.phone, m.pickup_time, m.store_name, m.created_at, m.updated_at].map(cell).join(','))];
+      const lines = [['campaign', 'first_name', 'last_name', 'phone', 'email', 'time', 'location', 'signed_up', 'updated'].join(','), ...data.rows.map((m) => [m.campaign_name || m.campaign_id, m.first_name, m.last_name, m.phone, m.email, m.pickup_time, m.store_name, m.created_at, m.updated_at].map(cell).join(','))];
       const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `members-${campaign ? campaign.slug : 'all'}-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     });

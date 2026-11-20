@@ -24,6 +24,12 @@
       </div>
 
       <div class="mb-field">
+        <span class="mb-label"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5.5" width="18" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M3.8 7l8.2 6 8.2-6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></svg><b>Email</b> | <span class="th-b">อีเมล</span></span>
+        <input class="mb-input" name="email" type="email" inputmode="email" autocomplete="email" placeholder="name@email.com" maxlength="160" aria-label="อีเมล / Email" aria-describedby="mb-email-note">
+        <div class="mb-email-note th" id="mb-email-note" hidden>เติมจากข้อมูลสมาชิกของคุณ แก้ไขได้ / Filled from your member profile, you can edit it</div>
+      </div>
+
+      <div class="mb-field">
         <span class="mb-label"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="currentColor"/><path d="M12 6.5V12l3.6 2.2" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg><b>Time</b> | <span class="th-b">เวลา</span></span>
         <select class="mb-input" name="pickup_time" required aria-label="เวลา / Time"><option value="">เลือกเวลา / Choose a time</option></select>
       </div>
@@ -33,7 +39,7 @@
         <select class="mb-input" name="store_id" required aria-label="สถานที่ / Location"><option value="">เลือกสาขา / Choose a store</option></select>
       </div>
 
-      <label class="mb-consent th"><input type="checkbox" name="consent" required> <span>ยินยอมให้ JIANCHA เก็บและใช้ชื่อและเบอร์โทรศัพท์เพื่อการเป็นสมาชิกและติดต่อกลับ / I agree to let JIANCHA store my name and phone number for membership.</span></label>
+      <label class="mb-consent th"><input type="checkbox" name="consent" required> <span>ยินยอมให้ JIANCHA เก็บและใช้ชื่อ เบอร์โทรศัพท์ และอีเมลเพื่อการเป็นสมาชิกและติดต่อกลับ / I agree to let JIANCHA store my name, phone number and email for membership.</span></label>
 
       <div class="err" id="mb-err" role="alert"></div>
       <button class="mb-confirm" type="submit" id="mb-submit">Confirm</button>
@@ -65,7 +71,7 @@
   const fill = (sel, items) => { const s = form[sel]; for (const [v, t] of items) { const o = document.createElement('option'); o.value = v; o.textContent = t; s.appendChild(o); } };
 
   function showDone(m) {
-    $('#mb-summary').innerHTML = [['ชื่อ / Name', `${m.first_name} ${m.last_name}`], ['เบอร์ / Tel', m.phone], ['เวลา / Time', m.pickup_time], ['สถานที่ / Location', m.store_name]]
+    $('#mb-summary').innerHTML = [['ชื่อ / Name', `${m.first_name} ${m.last_name}`], ['เบอร์ / Tel', m.phone], ['อีเมล / Email', m.email || '-'], ['เวลา / Time', m.pickup_time], ['สถานที่ / Location', m.store_name]]
       .map(([k, v]) => `<div><dt class="th">${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('');
     form.hidden = true; $('#mb-done').hidden = false;
   }
@@ -78,7 +84,7 @@
       fill('pickup_time', (menu.pickup_times || []).map((t) => [t, t]));
       fill('store_id', stores.map((s) => [s.id, s.name]));
     } catch (e) { err.textContent = 'โหลดข้อมูลไม่สำเร็จ กรุณารีเฟรช / Could not load, please refresh'; }
-    try { const saved = JSON.parse(localStorage.getItem(KEY) || 'null'); if (saved) { for (const k of ['first_name', 'last_name', 'phone', 'pickup_time', 'store_id']) if (saved[k] && form[k]) form[k].value = saved[k]; showDone(saved); } } catch (e) { /* storage blocked */ }
+    try { const saved = JSON.parse(localStorage.getItem(KEY) || 'null'); if (saved) { for (const k of ['first_name', 'last_name', 'phone', 'email', 'pickup_time', 'store_id']) if (saved[k] && form[k]) form[k].value = saved[k]; showDone(saved); } } catch (e) { /* storage blocked */ }
   })();
 
   // เบอร์ต้องอยู่ในรายชื่อสมาชิก ELITE: ตรวจทันทีที่กรอกครบ แสดงข้อความสีแดงใต้ช่องเบอร์
@@ -91,6 +97,16 @@
   };
   const phoneDigits = (v) => { let d = String(v || '').replace(/\D/g, ''); if (d.startsWith('66') && d.length === 11) d = '0' + d.slice(2); return d; };
   let checkSeq = 0, notElite = false;
+  // อีเมล: เบอร์ที่อยู่ในรายชื่อสมาชิก → เติมอีเมลให้อัตโนมัติ (แสดงแบบปิดบางส่วน; ไม่แก้ = ใช้อีเมลในข้อมูลสมาชิก, แก้ได้ตามต้องการ)
+  let autoEmail = '';
+  const emailNote = $('#mb-email-note');
+  function fillEmail(masked) {
+    const f = form.email; const untouched = !f.value.trim() || f.value === autoEmail;
+    if (!untouched) return;   // ลูกค้าพิมพ์อีเมลเองแล้ว ไม่ทับ
+    autoEmail = masked || ''; f.value = autoEmail; emailNote.hidden = !autoEmail;
+  }
+  form.email.addEventListener('input', () => { if (form.email.value !== autoEmail) emailNote.hidden = true; });
+  form.email.addEventListener('focus', () => { if (autoEmail && form.email.value === autoEmail) form.email.select(); });
   async function checkPhone() {
     const d = phoneDigits(form.phone.value); const seq = ++checkSeq;
     if (!/^0\d{9}$/.test(d)) { notElite = false; showNotElite(''); return true; }
@@ -98,6 +114,7 @@
       const r = await api('/api/members/check', { method: 'POST', body: { campaign: slug, phone: d } });
       if (seq !== checkSeq) return !notElite;
       notElite = !r.eligible; showNotElite(r.eligible ? '' : r.message);
+      fillEmail(r.eligible ? r.email_masked : '');
       return r.eligible;
     } catch (e) { return true; }   // ตรวจไม่ได้ (เน็ต) → ให้เซิร์ฟเวอร์ตรวจตอนกด Confirm
   }
@@ -112,12 +129,13 @@
     }
     if (!(await checkPhone())) { form.phone.focus(); return; }
     btn.disabled = true; btn.textContent = '…';
-    const body = { campaign: slug, first_name: form.first_name.value, last_name: form.last_name.value, phone: form.phone.value, pickup_time: form.pickup_time.value, store_id: form.store_id.value };
+    const useList = Boolean(autoEmail) && form.email.value === autoEmail;
+    const body = { campaign: slug, first_name: form.first_name.value, last_name: form.last_name.value, phone: form.phone.value, email: useList ? '' : form.email.value.trim(), use_list_email: useList, pickup_time: form.pickup_time.value, store_id: form.store_id.value };
     try {
       api('/api/pdpa', { method: 'POST' }).catch(() => {});
       const r = await api('/api/members', { method: 'POST', body });
-      try { localStorage.setItem(KEY, JSON.stringify(r.member)); } catch (x) { /* storage blocked */ }
-      showDone(r.member);
+      try { localStorage.setItem(KEY, JSON.stringify({ ...r.member, email: useList ? autoEmail : r.member.email })); } catch (x) { /* storage blocked */ }   // ไม่เก็บอีเมลเต็มจากรายชื่อไว้ในเบราว์เซอร์
+      showDone({ ...r.member, email: useList ? autoEmail : r.member.email });
     } catch (ex) {
       if (ex.notElite) { notElite = true; showNotElite(ex.message); form.phone.focus(); }
       else { err.textContent = ex.message; if (ex.field && form[ex.field]) { form[ex.field].classList.add('invalid'); form[ex.field].focus(); } }
