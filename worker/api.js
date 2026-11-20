@@ -269,7 +269,7 @@ on('GET', '/api/member-stores', async () => json(MEMBER_STORES));
 on('GET', '/api/member-dates', async () => json(M.memberPickupDates()));   // Pick-up Date ของหน้าสมัครสมาชิก   // Location ของหน้าสมัครสมาชิก
 // รายชื่อ ELITE: เบอร์ใช้สมัครได้ไหม (ไม่มีรายชื่อ + แคมเปญไม่บังคับ = ได้ทุกเบอร์)
 async function eliteOk(c, camp, phone) {
-  const n = (await c.db.get('SELECT COUNT(*) AS n FROM member_list')).n;
+  const n = (await c.db.get("SELECT COUNT(*) AS n FROM member_list WHERE tier <> 'TEST'")).n;
   return !M.memberListRequired(camp, n) || Boolean(await c.db.get('SELECT 1 AS x FROM member_list WHERE phone = ?', phone));
 }
 // ตรวจเบอร์ทันทีที่ลูกค้ากรอก: { campaign, phone } → { eligible }
@@ -279,7 +279,7 @@ on('POST', '/api/members/check', async (c) => {
   const phone = M.normPhoneTH(b.phone); if (!phone) return json({ error: 'กรุณาใส่เบอร์โทรศัพท์มือถือ 10 หลัก / Please enter a valid phone number', field: 'phone' }, 400);
   // 1 รอบไปฐานข้อมูล (batch): จำนวนรายชื่อ ELITE + แถวของเบอร์นี้ + ข้อมูลสมาชิกที่สมัครแล้ว (วันที่เดิม / สิทธิ์เปลี่ยนวัน)
   const [cnt, lrow, mrow] = await c.db.batchAll([
-    c.db.stmt('SELECT COUNT(*) AS n FROM member_list'), c.db.stmt('SELECT email FROM member_list WHERE phone = ?', phone),
+    c.db.stmt("SELECT COUNT(*) AS n FROM member_list WHERE tier <> 'TEST'"), c.db.stmt('SELECT email FROM member_list WHERE phone = ?', phone),
     c.db.stmt('SELECT pickup_date, date_changes FROM members WHERE campaign_id = ? AND phone = ?', camp.id, phone)]);
   const listed = Boolean(lrow[0]);
   const eligible = !M.memberListRequired(camp, cnt[0].n) || listed;
@@ -729,8 +729,9 @@ on('PUT', '/api/admin/member-list', async (c) => {
   // D1: ไม่เกิน 100 ค่าต่อคำสั่ง → 16 แถว (6 ค่า) ต่อ INSERT; batch เดียว = ทำทั้งหมดหรือไม่ทำเลย
   for (let i = 0; i < v.rows.length; i += 16) {
     const chunk = v.rows.slice(i, i + 16);
-    stmts.push(c.db.stmt(`INSERT INTO member_list(phone, name, tier, email, data_json, imported_at) VALUES ${chunk.map(() => '(?, ?, ?, ?, ?, ?)').join(', ')}`, ...chunk.flatMap((r) => [r.phone, r.name, r.tier, r.email, r.data_json, ts])));
+    stmts.push(c.db.stmt(`INSERT OR REPLACE INTO member_list(phone, name, tier, email, data_json, imported_at) VALUES ${chunk.map(() => '(?, ?, ?, ?, ?, ?)').join(', ')}`, ...chunk.flatMap((r) => [r.phone, r.name, r.tier, r.email, r.data_json, ts])));
   }
+  for (const r of M.testMemberRows()) stmts.push(c.db.stmt('INSERT OR IGNORE INTO member_list(phone, name, tier, email, data_json, imported_at) VALUES (?, ?, ?, ?, ?, ?)', r.phone, r.name, r.tier, r.email, r.data_json, ts));   // บัญชีทดสอบอยู่ต่อเสมอ
   await c.db.batch(stmts);
   return json({ ok: true, imported: v.rows.length, skipped: v.skipped, imported_at: ts });
 });

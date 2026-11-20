@@ -259,6 +259,8 @@ function seedDefaults({ campaign } = {}) {
     }
     db.prepare("INSERT INTO meta(key, value) VALUES ('membership_cover_v1', '1')").run();
   }
+  // บัญชีทดสอบ 3 เบอร์ → รายชื่อ ELITE (ทุกครั้งที่เริ่มระบบ; มีอยู่แล้ว = ไม่แตะ)
+  { const keep = db.prepare("INSERT OR IGNORE INTO member_list(phone, name, tier, email, data_json) VALUES (?, ?, ?, ?, ?)"); for (const r of require('./lib/menu').testMemberRows()) keep.run(r.phone, r.name, r.tier, r.email, r.data_json); }
   // orders created before campaigns existed belong to the active campaign
   const active = db.prepare('SELECT id FROM campaigns WHERE active = 1 ORDER BY created_at LIMIT 1').get();
   if (active) db.prepare('UPDATE orders SET campaign_id = ? WHERE campaign_id IS NULL').run(active.id);
