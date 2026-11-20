@@ -149,4 +149,6 @@ async function migrate(env) {
     }
     await db.run("INSERT OR IGNORE INTO meta(key, value) VALUES ('membership_cover_v1', '1')");
   }
+  // บัญชีทดสอบ 3 เบอร์ → รายชื่อ ELITE (มีอยู่แล้ว = ไม่แตะ; อัปโหลดไฟล์ ELITE ใหม่ก็ยังคงอยู่)
+  await db.batch(M.testMemberRows().map((r) => db.stmt('INSERT OR IGNORE INTO member_list(phone, name, tier, email, data_json, imported_at) VALUES (?, ?, ?, ?, ?, ?)', r.phone, r.name, r.tier, r.email, r.data_json, bangkokNow())));
 }

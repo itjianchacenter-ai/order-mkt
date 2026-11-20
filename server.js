@@ -254,7 +254,7 @@ app.get('/api/member-stores', (req, res) => res.json(loadMemberStores()));
 app.get('/api/member-dates', (req, res) => res.json(M.memberPickupDates()));   // Pick-up Date ของหน้าสมัครสมาชิก   // Location ของหน้าสมัครสมาชิก
 // รายชื่อ ELITE: เบอร์ใช้สมัครได้ไหม (ไม่มีรายชื่อ + แคมเปญไม่บังคับ = ได้ทุกเบอร์)
 function eliteOk(campaign, phone) {
-  const n = db.prepare('SELECT COUNT(*) AS n FROM member_list').get().n;
+  const n = db.prepare("SELECT COUNT(*) AS n FROM member_list WHERE tier <> 'TEST'").get().n;
   return !M.memberListRequired(campaign, n) || Boolean(db.prepare('SELECT 1 FROM member_list WHERE phone = ?').get(phone));
 }
 // ตรวจเบอร์ทันทีที่ลูกค้ากรอก: { campaign, phone } → { eligible }
@@ -749,8 +749,9 @@ app.put('/api/admin/member-list', requirePerm('member_list'), (req, res) => {
   const v = M.readMemberListRows((req.body || {}).rows);
   if (v.error) return res.status(400).json({ error: v.error });
   if (!v.rows.length) return res.status(400).json({ error: 'ไม่พบเบอร์โทรศัพท์ในไฟล์ / No phone numbers found' });
-  const ts = W.bangkokNow(); const ins = db.prepare('INSERT INTO member_list(phone, name, tier, email, data_json, imported_at) VALUES (?, ?, ?, ?, ?, ?)');
-  db.transaction(() => { db.prepare('DELETE FROM member_list').run(); for (const r of v.rows) ins.run(r.phone, r.name, r.tier, r.email, r.data_json, ts); })();
+  const ts = W.bangkokNow(); const ins = db.prepare('INSERT OR REPLACE INTO member_list(phone, name, tier, email, data_json, imported_at) VALUES (?, ?, ?, ?, ?, ?)');
+  const keep = db.prepare('INSERT OR IGNORE INTO member_list(phone, name, tier, email, data_json, imported_at) VALUES (?, ?, ?, ?, ?, ?)');
+  db.transaction(() => { db.prepare('DELETE FROM member_list').run(); for (const r of v.rows) ins.run(r.phone, r.name, r.tier, r.email, r.data_json, ts); for (const r of M.testMemberRows()) keep.run(r.phone, r.name, r.tier, r.email, r.data_json, ts); })();   // บัญชีทดสอบอยู่ต่อเสมอ
   res.json({ ok: true, imported: v.rows.length, skipped: v.skipped, imported_at: ts });
 });
 
