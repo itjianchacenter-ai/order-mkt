@@ -133,6 +133,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS member_list (
   phone TEXT PRIMARY KEY, name TEXT DEFAULT '', tier TEXT DEFAULT '', email TEXT DEFAULT '', data_json TEXT DEFAULT '{}',
   imported_at TEXT DEFAULT (datetime('now','localtime'))
 )`);
+if (!db.prepare("SELECT 1 FROM pragma_table_info('members') WHERE name = 'pickup_code'").get()) db.exec("ALTER TABLE members ADD COLUMN pickup_code TEXT; ALTER TABLE members ADD COLUMN mail_status TEXT DEFAULT ''; ALTER TABLE members ADD COLUMN mail_at TEXT DEFAULT ''; CREATE UNIQUE INDEX IF NOT EXISTS idx_members_code ON members(pickup_code) WHERE pickup_code IS NOT NULL");   // รหัสรับของ + สถานะอีเมล
+if (!db.prepare("SELECT 1 FROM pragma_table_info('members') WHERE name = 'date_changes'").get()) db.exec("ALTER TABLE members ADD COLUMN date_changes INTEGER DEFAULT 0; ALTER TABLE members ADD COLUMN first_pickup_date TEXT DEFAULT ''");   // เปลี่ยนวันที่รับของได้ 1 ครั้ง
 if (!db.prepare("SELECT 1 FROM pragma_table_info('members') WHERE name = 'pickup_date'").get()) db.exec("ALTER TABLE members ADD COLUMN pickup_date TEXT DEFAULT ''");   // วันที่รับของ (YYYY-MM-DD)
 if (!db.prepare("SELECT 1 FROM pragma_table_info('members') WHERE name = 'email'").get()) db.exec("ALTER TABLE members ADD COLUMN email TEXT DEFAULT ''");   // อีเมลสมาชิก (เติมจากรายชื่อ ELITE ได้)
 db.exec(`CREATE TABLE IF NOT EXISTS customer_campaigns (

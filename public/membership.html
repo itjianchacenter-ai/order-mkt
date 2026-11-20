@@ -25,13 +25,14 @@
 
       <div class="mb-field">
         <span class="mb-label"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5.5" width="18" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M3.8 7l8.2 6 8.2-6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></svg><b>Email</b> | <span class="th-b">อีเมล</span></span>
-        <input class="mb-input" name="email" type="email" inputmode="email" autocomplete="email" placeholder="name@email.com" maxlength="160" aria-label="อีเมล / Email" aria-describedby="mb-email-note">
+        <input class="mb-input" name="email" type="email" inputmode="email" autocomplete="email" placeholder="name@email.com" maxlength="160" required aria-label="อีเมล / Email" aria-describedby="mb-email-note">
         <div class="mb-email-note th" id="mb-email-note" hidden>เติมจากข้อมูลสมาชิกของคุณ แก้ไขได้ / Filled from your member profile, you can edit it</div>
       </div>
 
       <div class="mb-field">
         <span class="mb-label"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="16.5" rx="2.5" fill="currentColor"/><path d="M8 2.5v4M16 2.5v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M3 9.5h18" stroke="#fff" stroke-width="1.8"/><rect x="6.5" y="12.5" width="3" height="3" rx=".6" fill="#fff"/></svg><b>Pick-up Date</b> | <span class="th-b">วันที่รับของ</span></span>
         <select class="mb-input" name="pickup_date" required aria-label="วันที่รับของ / Pick-up date"><option value="">เลือกวันที่รับของ / Choose a pick-up date</option></select>
+        <div class="mb-email-note th" id="mb-date-note" hidden></div>
       </div>
 
       <div class="mb-field">
@@ -47,8 +48,10 @@
 
     <div class="mb-done" id="mb-done" hidden>
       <span class="mb-label"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><b>Welcome</b> | <span class="th-b">สมัครสมาชิกเรียบร้อย</span></span>
+      <div class="mb-code" id="mb-code" hidden><span class="th">รหัสรับของ / Pick-up code</span><b id="mb-code-v"></b></div>
+      <p class="mb-mailnote th" id="mb-mailnote" hidden></p>
       <dl id="mb-summary"></dl>
-      <button class="mb-confirm ghost" type="button" id="mb-again">แก้ไขข้อมูล / Edit</button>
+      <button class="mb-confirm ghost" type="button" id="mb-again">แก้ไขข้อมูล / เปลี่ยนวันที่รับของ</button>
     </div>
   </section>
 
@@ -72,18 +75,23 @@
     const init = { credentials: 'same-origin', ...opts };
     if (init.body) { init.headers = { 'Content-Type': 'application/json' }; init.body = JSON.stringify(init.body); }
     const r = await fetch(path, init); let d = null; try { d = await r.json(); } catch (e) { /* no body */ }
-    if (!r.ok) { const e = new Error((d && d.error) || `HTTP ${r.status}`); e.field = d && d.field; e.notElite = Boolean(d && d.not_elite); throw e; }
+    if (!r.ok) { const e = new Error((d && d.error) || `HTTP ${r.status}`); e.field = d && d.field; e.notElite = Boolean(d && d.not_elite); e.dateLocked = Boolean(d && d.date_locked); e.pickupDate = d && d.pickup_date; throw e; }
     return d;
   }
   const form = $('#mb-form'), err = $('#mb-err'), btn = $('#mb-submit');
   const fill = (sel, items) => { const s = form[sel]; for (const [v, t] of items) { const o = document.createElement('option'); o.value = v; o.textContent = t; s.appendChild(o); } };
 
-  function showDone(m) {
-    $('#mb-summary').innerHTML = [['ชื่อ / Name', `${m.first_name} ${m.last_name}`], ['เบอร์ / Tel', m.phone], ['อีเมล / Email', m.email || '-'], ['วันที่รับของ / Pick-up date', fmtDay(m.pickup_date)], ['สถานที่ / Location', m.store_name]]
+  function showDone(m, mail) {
+    $('#mb-summary').innerHTML = [['ชื่อ / Name', `${m.first_name} ${m.last_name}`], ['เบอร์ / Tel', m.phone], ['อีเมล / Email', m.email || '-'], ['วันที่รับของ / Pick-up date', fmtDay(m.pickup_date)], ['สถานที่ / Location', m.store_name],
+      ...(m.date_changes_left != null ? [['เปลี่ยนวันที่รับของ', m.date_changes_left > 0 ? `เปลี่ยนได้อีก ${m.date_changes_left} ครั้ง` : 'ใช้สิทธิ์เปลี่ยนวันครบแล้ว']] : [])]
       .map(([k, v]) => `<div><dt class="th">${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('');
+    $('#mb-code').hidden = !m.pickup_code; $('#mb-code-v').textContent = m.pickup_code || '';
+    const note = $('#mb-mailnote');
+    note.hidden = !mail; if (mail) note.textContent = mail.status === 'failed' ? `ส่งอีเมลไปที่ ${mail.to} ไม่สำเร็จ กรุณาจดรหัสนี้ไว้ หรือติดต่อ Line OA @jiancha` : `ส่งรหัสรับของไปที่อีเมล ${mail.to} แล้ว / Your pick-up code has been sent to ${mail.to}`;
     form.hidden = true; $('#mb-done').hidden = false;
   }
-  $('#mb-again').addEventListener('click', () => { $('#mb-done').hidden = true; form.hidden = false; form.first_name.focus(); });
+
+  $('#mb-again').addEventListener('click', () => { $('#mb-done').hidden = true; form.hidden = false; form.first_name.focus(); checkPhone(); });
 
   (async () => {
     try {
@@ -105,6 +113,18 @@
   };
   const phoneDigits = (v) => { let d = String(v || '').replace(/\D/g, ''); if (d.startsWith('66') && d.length === 11) d = '0' + d.slice(2); return d; };
   let checkSeq = 0, notElite = false;
+  // สมัครแล้ว: เลือกวันที่รับของเดิมไว้ให้ + บอกสิทธิ์เปลี่ยนวัน (1 ครั้ง); ใช้สิทธิ์ครบ = ล็อกช่องวันที่
+  const dateNote = $('#mb-date-note');
+  function showDateState(mem) {
+    const sel = form.pickup_date;
+    if (!mem) { sel.disabled = false; dateNote.hidden = true; return; }
+    if (mem.pickup_date && (!sel.value || mem.date_changes_left === 0)) sel.value = mem.pickup_date;
+    sel.disabled = mem.date_changes_left === 0;
+    dateNote.textContent = mem.date_changes_left > 0
+      ? `คุณเลือกวันที่รับของไว้แล้ว (${fmtDay(mem.pickup_date)}) เปลี่ยนได้อีก ${mem.date_changes_left} ครั้ง / You can change your pick-up date once`
+      : `ใช้สิทธิ์เปลี่ยนวันที่รับของครบแล้ว / Your pick-up date can no longer be changed`;
+    dateNote.hidden = false;
+  }
   // อีเมล: เบอร์ที่อยู่ในรายชื่อสมาชิก → เติมอีเมลเต็มให้อัตโนมัติเป็นตัวสีเทา (แก้ได้; พอแก้ ตัวอักษรกลับเป็นสีดำ)
   let autoEmail = '';
   const emailNote = $('#mb-email-note');
@@ -123,6 +143,7 @@
       if (seq !== checkSeq) return !notElite;
       notElite = !r.eligible; showNotElite(r.eligible ? '' : r.message);
       fillEmail(r.eligible ? (r.email || '') : '');
+      showDateState(r.eligible ? r.member : null);
       return r.eligible;
     } catch (e) { return true; }   // ตรวจไม่ได้ (เน็ต) → ให้เซิร์ฟเวอร์ตรวจตอนกด Confirm
   }
@@ -131,7 +152,7 @@
   form.addEventListener('input', (e) => { if (e.target !== form.phone || !notElite) e.target.classList.remove('invalid'); err.textContent = ''; });
   form.addEventListener('submit', async (e) => {
     e.preventDefault(); err.textContent = '';
-    for (const el of form.querySelectorAll('[required]')) {
+    for (const el of form.querySelectorAll('[required]:not(:disabled)')) {
       const empty = el.type === 'checkbox' ? !el.checked : !el.value.trim();
       if (empty) { el.classList.add('invalid'); el.focus(); err.textContent = el.type === 'checkbox' ? 'กรุณากดยินยอมก่อนยืนยัน / Please accept to continue' : 'กรุณากรอกข้อมูลให้ครบ / Please fill in every field'; return; }
     }
@@ -142,9 +163,10 @@
       api('/api/pdpa', { method: 'POST' }).catch(() => {});
       const r = await api('/api/members', { method: 'POST', body });
       try { localStorage.setItem(KEY, JSON.stringify(r.member)); } catch (x) { /* storage blocked */ }
-      showDone(r.member);
+      showDone(r.member, r.mail);
     } catch (ex) {
       if (ex.notElite) { notElite = true; showNotElite(ex.message); form.phone.focus(); }
+      else if (ex.dateLocked) { err.textContent = ex.message; showDateState({ pickup_date: ex.pickupDate, date_changes_left: 0 }); }
       else { err.textContent = ex.message; if (ex.field && form[ex.field]) { form[ex.field].classList.add('invalid'); form[ex.field].focus(); } }
     } finally { btn.disabled = false; btn.textContent = 'Confirm'; }
   });
