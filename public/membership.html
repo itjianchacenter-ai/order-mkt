@@ -95,8 +95,7 @@
 
   (async () => {
     try {
-      const [menu, stores, dates] = await Promise.all([api('/api/menu?campaign=' + encodeURIComponent(slug)), api('/api/member-stores'), api('/api/member-dates')]);
-      if (menu.campaign && menu.campaign.name) document.title = `${menu.campaign.name} | JIANCHA Membership`;
+      const [stores, dates] = await Promise.all([api('/api/member-stores'), api('/api/member-dates')]);   // ไม่โหลด /api/menu (สต๊อก/ออเดอร์) ที่หน้านี้ไม่ใช้
       fill('pickup_date', dates.map((d) => [d, fmtDay(d)]));
       fill('store_id', stores.map((s) => [s.id, s.name]));
     } catch (e) { err.textContent = 'โหลดข้อมูลไม่สำเร็จ กรุณารีเฟรช / Could not load, please refresh'; }

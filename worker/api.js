@@ -105,7 +105,7 @@ async function verifyGoogleToken(env, credential) {
 }
 
 // ─── back-office auth & roles ───
-const PERMS = { orders_view: ['it_admin', 'admin', 'finance'], slip_review: ['it_admin', 'finance'], pickup: ['it_admin', 'admin', 'finance'], cancel: ['it_admin', 'finance'], code: ['it_admin', 'admin', 'finance'], accounts: ['it_admin'], campaigns: ['it_admin'], member_list: ['it_admin', 'admin'] };
+const PERMS = { orders_view: ['it_admin', 'admin', 'finance'], slip_review: ['it_admin', 'finance'], pickup: ['it_admin', 'admin', 'finance'], cancel: ['it_admin', 'finance'], code: ['it_admin', 'admin', 'finance'], accounts: ['it_admin'], campaigns: ['it_admin'], member_list: ['it_admin', 'admin'], member_manage: ['it_admin', 'admin'] };
 const ROLES = ['it_admin', 'admin', 'finance'];
 async function adminUser(c) {
   if (c._admin !== undefined) return c._admin;
@@ -277,9 +277,14 @@ on('POST', '/api/members/check', async (c) => {
   const b = await body(c); const camp = b.campaign ? await campaignBySlug(c.db, String(b.campaign)) : null;
   if (!camp) fail(404, 'ไม่พบแคมเปญ / Campaign not found');
   const phone = M.normPhoneTH(b.phone); if (!phone) return json({ error: 'กรุณาใส่เบอร์โทรศัพท์มือถือ 10 หลัก / Please enter a valid phone number', field: 'phone' }, 400);
-  const eligible = await eliteOk(c, camp, phone);
-  const row = eligible ? await c.db.get('SELECT email FROM member_list WHERE phone = ?', phone) : null;
-  const mem = eligible ? await c.db.get('SELECT pickup_date, date_changes FROM members WHERE campaign_id = ? AND phone = ?', camp.id, phone) : null;   // สมัครแล้ว: วันที่รับของเดิม + สิทธิ์เปลี่ยนที่เหลือ
+  // 1 รอบไปฐานข้อมูล (batch): จำนวนรายชื่อ ELITE + แถวของเบอร์นี้ + ข้อมูลสมาชิกที่สมัครแล้ว (วันที่เดิม / สิทธิ์เปลี่ยนวัน)
+  const [cnt, lrow, mrow] = await c.db.batchAll([
+    c.db.stmt('SELECT COUNT(*) AS n FROM member_list'), c.db.stmt('SELECT email FROM member_list WHERE phone = ?', phone),
+    c.db.stmt('SELECT pickup_date, date_changes FROM members WHERE campaign_id = ? AND phone = ?', camp.id, phone)]);
+  const listed = Boolean(lrow[0]);
+  const eligible = !M.memberListRequired(camp, cnt[0].n) || listed;
+  const row = eligible ? (lrow[0] || null) : null;
+  const mem = eligible ? (mrow[0] || null) : null;   // สมัครแล้ว: วันที่รับของเดิม + สิทธิ์เปลี่ยนที่เหลือ
   return json({ eligible, message: eligible ? '' : M.NOT_ELITE_MESSAGE, email: row ? row.email || '' : '', email_masked: row ? M.maskEmail(row.email) : '',
     member: mem && mem.pickup_date ? { pickup_date: mem.pickup_date, date_changes_left: M.dateChangesLeft(mem) } : null });   // email เต็ม: เติมให้ลูกค้า (สีเทา) ตามที่ทีมการตลาดต้องการ
 });
@@ -748,6 +753,45 @@ on('GET', '/api/admin/members', async (c) => {
     FROM members m LEFT JOIN campaigns c ON c.id = m.campaign_id ${w} ORDER BY m.created_at DESC ${exp ? '' : 'LIMIT ? OFFSET ?'}`, ...args, ...(exp ? [] : [PAGE_SIZE, (page - 1) * PAGE_SIZE]));
   return json({ campaign: camp ? campaignPublic(camp) : null, page, pages: exp ? 1 : Math.max(1, Math.ceil(total / PAGE_SIZE)), total, rows });
 });
+// ─── Members: จัดการที่หลังบ้าน (IT-Admin / Admin) — แก้ข้อมูล, คืนสิทธิ์เปลี่ยนวัน, ส่งอีเมลรหัสซ้ำ, ลบ ───
+const memberById = (c, id) => c.db.get('SELECT * FROM members WHERE id = ?', String(id));
+async function mailMemberCode(c, m, camp, kind, changed) {
+  const msg = memberCodeEmail(m, camp, baseUrlOf(c), { changed, left: M.dateChangesLeft(m) });
+  const r = await sendMail(c.env, { to: m.email, ...msg });
+  await c.db.batch([
+    c.db.stmt('INSERT INTO mail_log(order_id, kind, to_email, subject, status, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', m.id, kind, m.email, msg.subject, r.status, r.error || '', now()),
+    c.db.stmt('UPDATE members SET mail_status = ?, mail_at = ? WHERE id = ?', r.status, now(), m.id)]);
+  return { status: r.status, to: m.email, error: r.error || '' };
+}
+on('PATCH', '/api/admin/members/:id', async (c) => {
+  await requirePerm(c, 'member_manage');
+  const m = await memberById(c, c.params.id); if (!m) fail(404, 'ไม่พบสมาชิก');
+  const camp = await getCampaign(c.db, m.campaign_id);
+  const v = M.readAdminMemberBody(await body(c), MEMBER_STORES);
+  if (v.error) return json({ error: v.error, field: v.field }, 400);
+  if (await c.db.get('SELECT 1 AS x FROM members WHERE campaign_id = ? AND phone = ? AND id <> ?', m.campaign_id, v.phone, m.id)) return json({ error: `เบอร์ ${v.phone} สมัครในแคมเปญนี้แล้ว`, field: 'phone' }, 409);
+  let code = m.pickup_code || '';
+  if (!code && camp) { const used = new Set((await c.db.all('SELECT pickup_code FROM members WHERE pickup_code IS NOT NULL')).map((r) => r.pickup_code)); code = M.memberPickupCode(camp, used, randomInt) || ''; }
+  const dateChanged = Boolean(m.pickup_date) && m.pickup_date !== v.pickup_date;
+  await c.db.run('UPDATE members SET first_name = ?, last_name = ?, phone = ?, email = ?, pickup_date = ?, first_pickup_date = ?, date_changes = ?, pickup_code = ?, store_id = ?, store_name = ?, updated_at = ? WHERE id = ?',
+    v.first_name, v.last_name, v.phone, v.email, v.pickup_date, m.first_pickup_date || m.pickup_date || v.pickup_date, v.date_changes ?? (m.date_changes || 0), code || null, v.store.id, `${v.store.brand} - ${v.store.name}`, now(), m.id);
+  let next = await memberById(c, m.id); let mail = null;
+  if (v.send_email && next.pickup_code) { mail = await mailMemberCode(c, next, camp, 'member_admin', dateChanged); next = await memberById(c, m.id); }
+  return json({ ok: true, member: next, mail });
+});
+on('POST', '/api/admin/members/:id/resend', async (c) => {
+  await requirePerm(c, 'member_manage');
+  const m = await memberById(c, c.params.id); if (!m) fail(404, 'ไม่พบสมาชิก');
+  if (!m.email || !m.pickup_code) fail(400, 'สมาชิกนี้ยังไม่มีอีเมลหรือรหัสรับของ');
+  return json({ ok: true, mail: await mailMemberCode(c, m, await getCampaign(c.db, m.campaign_id), 'member_resend', false) });
+});
+on('DELETE', '/api/admin/members/:id', async (c) => {
+  await requirePerm(c, 'member_manage');
+  const m = await memberById(c, c.params.id); if (!m) fail(404, 'ไม่พบสมาชิก');
+  await c.db.run('DELETE FROM members WHERE id = ?', m.id);   // รหัสรับของกลับมาให้สุ่มใหม่ได้
+  return json({ ok: true, deleted: m.id });
+});
+
 on('GET', '/api/admin/orders', async (c) => {
   await requirePerm(c, 'orders_view'); const qp = c.url.searchParams;
   const q = String(qp.get('q') || '').trim(), date = String(qp.get('date') || '').trim(), store = String(qp.get('store') || '').trim(), status = String(qp.get('status') || '').trim(), campaign = String(qp.get('campaign') || '').trim();
