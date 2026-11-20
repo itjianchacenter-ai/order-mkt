@@ -76,5 +76,6 @@ export function sql(env) {
     run: (q, ...args) => D.prepare(q).bind(...clean(args)).run(),
     stmt: (q, ...args) => D.prepare(q).bind(...clean(args)),
     batch: (stmts) => D.batch(stmts),
+    batchAll: async (stmts) => (await D.batch(stmts)).map((r) => r.results || []),   // หลาย SELECT ใน 1 รอบ → [rows, rows, ...]
   };
 }

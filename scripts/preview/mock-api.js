@@ -4,7 +4,7 @@ const PREVIEW_DB_KEY = 'jc_preview_db_v4';
 const PAGE_SIZE = 20; // รายการออเดอร์หลังบ้าน หน้าละ 20
 const PV_PERMS = {
   orders_view: ['it_admin', 'admin', 'finance'], slip_review: ['it_admin', 'finance'], pickup: ['it_admin', 'admin', 'finance'],
-  cancel: ['it_admin', 'finance'], code: ['it_admin', 'admin', 'finance'], accounts: ['it_admin'], campaigns: ['it_admin'], member_list: ['it_admin', 'admin'],
+  cancel: ['it_admin', 'finance'], code: ['it_admin', 'admin', 'finance'], accounts: ['it_admin'], campaigns: ['it_admin'], member_list: ['it_admin', 'admin'], member_manage: ['it_admin', 'admin'],
 };
 const PV_TRANSITIONS = {
   paid: { from: ['pending', 'slip_uploaded', 'slip_rejected'], perm: 'slip_review', stamp: 'paid_at' },

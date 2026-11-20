@@ -263,8 +263,9 @@ if (!window.PREVIEW_MODE && /^#\/backend/.test(location.hash)) { const q = locat
         </div>
         <button type="button" class="pill" id="mem-csv">${ICONS.doc} Download CSV</button>
       </div>
+      <div id="mem-form"></div>
       <div class="tbl-wrap"><table class="jc-tbl" id="mem-tbl">
-        <thead><tr><th>Member</th><th>Code</th><th>Tel</th><th>Email</th><th>Pick-up date</th><th>Location</th>${allC ? '<th>Campaign</th>' : ''}<th>Signed up</th></tr></thead>
+        <thead><tr><th>Member</th><th>Code</th><th>Tel</th><th>Email</th><th>Pick-up date</th><th>Location</th>${allC ? '<th>Campaign</th>' : ''}<th>Signed up</th>${P.member_manage ? '<th></th>' : ''}</tr></thead>
         <tbody></tbody></table></div>
       <div class="pager"><button type="button" id="prev">${ICONS.arrowL}</button><span class="pg" id="pg">1</span><button type="button" id="next">${ICONS.arrowR}</button></div>`;
     const row = (m) => `<tr>
@@ -274,12 +275,57 @@ if (!window.PREVIEW_MODE && /^#\/backend/.test(location.hash)) { const q = locat
         <td class="mono">${m.email ? `<a href="mailto:${esc(m.email)}">${esc(m.email)}</a>` : '-'}</td>
         <td>${esc(m.pickup_date || m.pickup_time || '-')}${m.date_changes > 0 ? `<br><small class="th" style="color:var(--muted)">เปลี่ยนแล้ว (เดิม ${esc(m.first_pickup_date)})</small>` : ''}</td>
         <td>${esc(m.store_name || '-')}</td>${allC ? `<td>${esc(m.campaign_name || m.campaign_id)}</td>` : ''}
-        <td>${fmtDateTime(m.created_at)}${m.updated_at && m.updated_at !== m.created_at ? `<br><small class="th" style="color:var(--muted)">แก้ไข ${fmtDateTime(m.updated_at)}</small>` : ''}</td></tr>`;
+        <td>${fmtDateTime(m.created_at)}${m.updated_at && m.updated_at !== m.created_at ? `<br><small class="th" style="color:var(--muted)">แก้ไข ${fmtDateTime(m.updated_at)}</small>` : ''}</td>
+        ${P.member_manage ? `<td class="mem-act"><button type="button" class="btn ghost" data-mem-edit="${esc(m.id)}">Edit</button><button type="button" class="btn ghost" data-mem-del="${esc(m.id)}">Delete</button></td>` : ''}</tr>`;
+    // หลังบ้านจัดการสมาชิก (IT-Admin / Admin): แก้ไข, คืนสิทธิ์เปลี่ยนวัน, ส่งอีเมลรหัสซ้ำ, ลบ
+    let rowsById = new Map(); let memDates = null, memStores = null;
+    async function memberForm(m) {
+      if (!memDates) [memDates, memStores] = await Promise.all([api('/api/member-dates'), api('/api/member-stores')]);
+      const opt = (v, t, cur) => `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(t)}</option>`;
+      const stores = memStores.some((s) => s.id === m.store_id) ? memStores : [{ id: m.store_id || '', name: (m.store_name || '-') + ' (ไม่อยู่ในรายการแล้ว)' }, ...memStores];
+      $('#mem-form').innerHTML = `<form class="cform" id="mf">
+        <h3 style="margin:0 0 4px">Edit member · <span class="mono">${esc(m.pickup_code || '-')}</span></h3>
+        <div class="grid2">
+          <label>ชื่อ / First name<input name="first_name" required value="${esc(m.first_name)}"></label>
+          <label>นามสกุล / Last name<input name="last_name" required value="${esc(m.last_name)}"></label>
+          <label>เบอร์ / Tel<input name="phone" required value="${esc(m.phone)}"></label>
+          <label>อีเมล / Email<input name="email" type="email" required value="${esc(m.email || '')}"></label>
+          <label>วันที่รับของ / Pick-up date<select name="pickup_date" required>${memDates.map((d) => opt(d, d, m.pickup_date)).join('')}</select></label>
+          <label>สถานที่ / Location<select name="store_id" required>${stores.map((s) => opt(s.id, s.name, m.store_id)).join('')}</select></label>
+          <label>สิทธิ์เปลี่ยนวันของลูกค้า<select name="date_changes">${opt('0', 'ยังเปลี่ยนได้ 1 ครั้ง', String(m.date_changes || 0))}${opt('1', 'ใช้สิทธิ์เปลี่ยนวันแล้ว (ล็อก)', String(m.date_changes || 0))}</select></label>
+          <label class="chk" style="align-self:end"><input type="checkbox" name="send_email"> <span>ส่งอีเมลรหัสรับของให้ลูกค้าหลังบันทึก</span></label>
+        </div>
+        ${m.first_pickup_date && m.first_pickup_date !== m.pickup_date ? `<p class="th" style="font-size:13px;margin:8px 0 0;color:var(--muted)">วันที่รับของที่เลือกครั้งแรก: ${esc(m.first_pickup_date)}</p>` : ''}
+        <div class="actions"><button class="btn" type="submit">Save</button><button class="btn ghost" type="button" id="mf-cancel">Cancel</button><button class="btn ghost" type="button" id="mf-resend" ${m.email && m.pickup_code ? '' : 'disabled'}>ส่งอีเมลรหัสอีกครั้ง</button><button class="btn ghost" type="button" id="mf-delete" style="margin-left:auto">Delete</button></div>
+        <div class="err" id="mf-err"></div><div class="th" id="mf-ok" style="font-size:13px;color:var(--muted)"></div></form>`;
+      const done = () => { $('#mem-form').innerHTML = ''; load(); };
+      $('#mf-cancel').addEventListener('click', () => { $('#mem-form').innerHTML = ''; });
+      $('#mf-delete').addEventListener('click', () => deleteMember(m).then((ok) => ok && done()));
+      $('#mf-resend').addEventListener('click', async () => {
+        try { const r = await api(`/api/admin/members/${encodeURIComponent(m.id)}/resend`, { method: 'POST' }); $('#mf-ok').textContent = r.mail.status === 'sent' ? `ส่งอีเมลรหัสไปที่ ${r.mail.to} แล้ว` : `ส่งอีเมลไม่สำเร็จ (${r.mail.status}${r.mail.error ? ': ' + r.mail.error : ''})`; load(); }
+        catch (err) { $('#mf-err').textContent = err.message; }
+      });
+      $('#mf').addEventListener('submit', async (e) => {
+        e.preventDefault(); const f = new FormData(e.target);
+        const body = { first_name: f.get('first_name'), last_name: f.get('last_name'), phone: f.get('phone'), email: f.get('email'), pickup_date: f.get('pickup_date'), store_id: f.get('store_id'), date_changes: Number(f.get('date_changes')), send_email: f.get('send_email') === 'on' };
+        try { const r = await api(`/api/admin/members/${encodeURIComponent(m.id)}`, { method: 'PATCH', body }); if (r.mail && r.mail.status !== 'sent') alert(`บันทึกแล้ว แต่ส่งอีเมลไม่สำเร็จ (${r.mail.status})`); done(); }
+        catch (err) { $('#mf-err').textContent = err.message; }
+      });
+      $('#mem-form').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    async function deleteMember(m) {
+      if (!confirm(`ลบสมาชิก ${m.first_name} ${m.last_name} (${m.phone})${m.pickup_code ? ` รหัส ${m.pickup_code}` : ''}?\nลบแล้วกู้คืนไม่ได้ และรหัสนี้จะถูกนำกลับไปสุ่มให้คนอื่นได้`)) return false;
+      try { await api(`/api/admin/members/${encodeURIComponent(m.id)}`, { method: 'DELETE' }); return true; } catch (err) { alert(err.message); return false; }
+    }
+    $('#mem-tbl').addEventListener('click', (e) => {
+      const ed = e.target.closest('[data-mem-edit]'); if (ed) return memberForm(rowsById.get(ed.dataset.memEdit));
+      const dl = e.target.closest('[data-mem-del]'); if (dl) deleteMember(rowsById.get(dl.dataset.memDel)).then((ok) => { if (ok) { $('#mem-form').innerHTML = ''; load(); } });
+    });
     async function load() {
       let data; try { data = await api('/api/admin/members?' + new URLSearchParams({ campaign: campParam, q: state.q, page: state.page })); } catch (e) { if (/401/.test(e.message)) return location.reload(); $('#mem-tbl tbody').innerHTML = `<tr><td colspan="8" class="err">${esc(e.message)}</td></tr>`; return; }
       if (!alive()) return;
-      state.page = data.page;
-      $('#mem-tbl tbody').innerHTML = data.rows.map(row).join('') || `<tr><td colspan="8" class="empty">ยังไม่มีสมาชิก${campaign ? 'ในแคมเปญ ' + esc(campaign.name) : ''} / No members yet</td></tr>`;
+      state.page = data.page; rowsById = new Map(data.rows.map((m) => [m.id, m]));
+      $('#mem-tbl tbody').innerHTML = data.rows.map(row).join('') || `<tr><td colspan="9" class="empty">ยังไม่มีสมาชิก${campaign ? 'ในแคมเปญ ' + esc(campaign.name) : ''} / No members yet</td></tr>`;
       $('#mem-count').innerHTML = `${ICONS.customer} Members <b>${data.total}</b>${campaign ? ` <span class="th">· ${esc(campaign.name)}</span>` : ' <span class="th">· ทุกแคมเปญ</span>'}`;
       $('#pg').textContent = `${data.page} / ${data.pages}`; $('#prev').disabled = data.page <= 1; $('#next').disabled = data.page >= data.pages;
     }

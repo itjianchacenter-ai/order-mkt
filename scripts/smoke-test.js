@@ -444,6 +444,20 @@ const dbx = {
       if (CF) { const gm = graphMail.filter((m) => m.to.join() === 'd@example.com'); check('code email via Graph has the code + date', gm.length === 2 && gm.every((m) => m.html.includes(code2)) && /5 January 2027/.test(gm[1].html), gm.map((m) => m.subject)); }
       r = await call('mkt', 'GET', `/api/admin/members?campaign=${memId}&q=${code2.toLowerCase()}`); check('back-office Members: code search + change info', r.json.total === 1 && r.json.rows[0].pickup_code === code2 && r.json.rows[0].date_changes === 1 && r.json.rows[0].mail_status === 'sent', r.json);
       check('codes are unique', code1 !== code2);
+      // หลังบ้านจัดการสมาชิก: แก้ไข / คืนสิทธิ์เปลี่ยนวัน / ส่งอีเมลซ้ำ / ลบ (IT-Admin, Admin; Finance ดูอย่างเดียว)
+      { const rows = (await call('mkt', 'GET', `/api/admin/members?campaign=${memId}&export=1`)).json.rows; const d = rows.find((x) => x.phone === '0822222222'); const other = rows.find((x) => x.phone !== '0822222222');
+        const edit = { first_name: 'D2', last_name: 'X', phone: '0822222222', email: 'd2@example.com', pickup_date: '2027-01-20', store_id: 'JF001', date_changes: 0, send_email: true };
+        r = await call('fin', 'PATCH', `/api/admin/members/${d.id}`, edit); check('finance cannot edit members', r.status === 403);
+        r = await call('mkt', 'PATCH', `/api/admin/members/${d.id}`, edit); check('admin edits member (date beyond customer limit, reset right, email sent, same code)', r.status === 200 && r.json.member.pickup_date === '2027-01-20' && r.json.member.date_changes === 0 && r.json.member.first_name === 'D2' && r.json.member.pickup_code === code2 && r.json.mail && r.json.mail.status === 'sent', r.json);
+        r = await call('guest', 'POST', '/api/members/check', { campaign: cm.campaign, phone: '0822222222' }); check('customer can change the date again after reset', r.json.member && r.json.member.date_changes_left === 1, r.json);
+        r = await call('mkt', 'PATCH', `/api/admin/members/${d.id}`, { ...edit, phone: other.phone }); check('admin edit: phone already used in campaign rejected', r.status === 409 && r.json.field === 'phone', r.json);
+        r = await call('mkt', 'PATCH', `/api/admin/members/${d.id}`, { ...edit, pickup_date: '2027-03-01' }); check('admin edit: date outside range rejected', r.status === 400 && r.json.field === 'pickup_date', r.json);
+        r = await call('mkt', 'POST', `/api/admin/members/${d.id}/resend`); check('admin re-sends the code email', r.status === 200 && r.json.mail.status === 'sent' && r.json.mail.to === 'd2@example.com', r.json);
+        r = await call('fin', 'DELETE', `/api/admin/members/${d.id}`); check('finance cannot delete members', r.status === 403);
+        r = await call('mkt', 'DELETE', `/api/admin/members/${d.id}`); check('admin deletes member', r.status === 200);
+        r = await call('mkt', 'GET', `/api/admin/members?campaign=${memId}&q=0822222222`); check('deleted member gone', r.json.total === 0, r.json);
+        r = await call('guest', 'POST', '/api/members/check', { campaign: cm.campaign, phone: '0822222222' }); check('deleted member can sign up again', r.json.eligible === true && r.json.member === null, r.json);
+        r = await call('mkt', 'DELETE', `/api/admin/members/${d.id}`); check('delete unknown member = 404', r.status === 404); }
       r = await call('mkt', 'GET', `/api/admin/members?campaign=${memId}&q=new@mail`); check('back-office Members shows + searches email', r.json.total === 1 && r.json.rows[0].email === 'new@mail.com', r.json);
       r = await call('it', 'PUT', `/api/admin/campaigns/${memId}/design`, { home: 'order' }); check('celebrate link stays membership even if saved as order', r.status === 200 && r.json.design.home === 'membership', r.json && r.json.design);
       r = await fetch(base + '/celebrateeverymomentwithjiancha/'); check('celebrate link serves the sign-up form', r.status === 200 && /id="mb-form"/.test(await r.text()));

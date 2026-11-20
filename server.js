@@ -212,7 +212,8 @@ const PERMS = {
   code: ['it_admin', 'admin', 'finance'],
   accounts: ['it_admin'],
   campaigns: ['it_admin'],
-  member_list: ['it_admin', 'admin'],   // อัปโหลดรายชื่อ ELITE
+  member_list: ['it_admin', 'admin'],
+  member_manage: ['it_admin', 'admin'],   // แก้ / ลบ สมาชิก   // อัปโหลดรายชื่อ ELITE
 };
 const ADMIN_COOKIE = 'jc_admin';
 function adminFromReq(req) {
@@ -770,6 +771,41 @@ app.get('/api/admin/members', requireAdmin, (req, res) => {
   const rows = db.prepare(`SELECT m.id, m.campaign_id, c.name AS campaign_name, m.first_name, m.last_name, m.phone, m.email, m.pickup_date, m.pickup_time, m.date_changes, m.first_pickup_date, m.pickup_code, m.mail_status, m.mail_at, m.store_id, m.store_name, m.created_at, m.updated_at
     FROM members m LEFT JOIN campaigns c ON c.id = m.campaign_id ${w} ORDER BY m.created_at DESC ${exp ? '' : 'LIMIT ? OFFSET ?'}`).all(...args, ...(exp ? [] : [PAGE_SIZE, (page - 1) * PAGE_SIZE]));
   res.json({ campaign: camp ? campaignPublic(camp) : null, page, pages: exp ? 1 : Math.max(1, Math.ceil(total / PAGE_SIZE)), total, rows });
+});
+
+// ─── Members: จัดการที่หลังบ้าน (IT-Admin / Admin) — แก้ข้อมูล, คืนสิทธิ์เปลี่ยนวัน, ส่งอีเมลรหัสซ้ำ, ลบ ───
+function memberById(id) { return db.prepare('SELECT * FROM members WHERE id = ?').get(String(id)); }
+async function mailMemberCode(m, camp, kind, changed) {
+  const msg = memberCodeEmail(m, camp, (process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, ''), { changed, left: M.dateChangesLeft(m) });
+  const r = await mailer.sendMail({ to: m.email, ...msg });
+  db.prepare('INSERT INTO mail_log(order_id, kind, to_email, subject, status, error) VALUES (?, ?, ?, ?, ?, ?)').run(m.id, kind, m.email, msg.subject, r.status, r.error || '');
+  db.prepare('UPDATE members SET mail_status = ?, mail_at = ? WHERE id = ?').run(r.status, W.bangkokNow(), m.id);
+  return { status: r.status, to: m.email, error: r.error || '' };
+}
+app.patch('/api/admin/members/:id', requirePerm('member_manage'), async (req, res) => {
+  const m = memberById(req.params.id); if (!m) return res.status(404).json({ error: 'ไม่พบสมาชิก' });
+  const camp = getCampaign(m.campaign_id);
+  const v = M.readAdminMemberBody(req.body, loadMemberStores());
+  if (v.error) return res.status(400).json({ error: v.error, field: v.field });
+  if (db.prepare('SELECT 1 FROM members WHERE campaign_id = ? AND phone = ? AND id <> ?').get(m.campaign_id, v.phone, m.id)) return res.status(409).json({ error: `เบอร์ ${v.phone} สมัครในแคมเปญนี้แล้ว`, field: 'phone' });
+  let code = m.pickup_code || '';
+  if (!code && camp) { const used = new Set(db.prepare('SELECT pickup_code FROM members WHERE pickup_code IS NOT NULL').all().map((r) => r.pickup_code)); code = M.memberPickupCode(camp, used, (n) => crypto.randomInt(n)) || ''; }
+  const dateChanged = Boolean(m.pickup_date) && m.pickup_date !== v.pickup_date;
+  db.prepare(`UPDATE members SET first_name = ?, last_name = ?, phone = ?, email = ?, pickup_date = ?, first_pickup_date = ?, date_changes = ?, pickup_code = ?, store_id = ?, store_name = ?, updated_at = ? WHERE id = ?`)
+    .run(v.first_name, v.last_name, v.phone, v.email, v.pickup_date, m.first_pickup_date || m.pickup_date || v.pickup_date, v.date_changes ?? (m.date_changes || 0), code || null, v.store.id, `${v.store.brand} - ${v.store.name}`, W.bangkokNow(), m.id);
+  let next = memberById(m.id); let mail = null;
+  if (v.send_email && next.pickup_code) { mail = await mailMemberCode(next, camp, 'member_admin', dateChanged); next = memberById(m.id); }
+  res.json({ ok: true, member: next, mail });
+});
+app.post('/api/admin/members/:id/resend', requirePerm('member_manage'), async (req, res) => {
+  const m = memberById(req.params.id); if (!m) return res.status(404).json({ error: 'ไม่พบสมาชิก' });
+  if (!m.email || !m.pickup_code) return res.status(400).json({ error: 'สมาชิกนี้ยังไม่มีอีเมลหรือรหัสรับของ' });
+  res.json({ ok: true, mail: await mailMemberCode(m, getCampaign(m.campaign_id), 'member_resend', false) });
+});
+app.delete('/api/admin/members/:id', requirePerm('member_manage'), (req, res) => {
+  const m = memberById(req.params.id); if (!m) return res.status(404).json({ error: 'ไม่พบสมาชิก' });
+  db.prepare('DELETE FROM members WHERE id = ?').run(m.id);   // รหัสรับของกลับมาให้สุ่มใหม่ได้
+  res.json({ ok: true, deleted: m.id });
 });
 
 app.get('/api/admin/orders', requireAdmin, (req, res) => {

@@ -79,9 +79,19 @@ const DDL = [
   `CREATE TABLE IF NOT EXISTS files (key TEXT PRIMARY KEY, type TEXT DEFAULT '', size INTEGER DEFAULT 0, data BLOB, created_at TEXT DEFAULT (${NOW}))`,
 ];
 
+/* ความเร็ว: เครื่อง (isolate) ใหม่ของ Cloudflare เคยรัน migration เต็มทุกครั้ง (~30 คำสั่ง D1 ทีละคำสั่ง = ช้า 3–6 วินาที)
+   ตอนนี้เก็บ "เวอร์ชัน schema" (hash ของ DDL + โค้ด migrate) ใน meta → ถ้าตรงกัน อ่าน 1 ครั้งแล้วจบ; แก้ DDL/migrate เมื่อไหร่ hash เปลี่ยนเอง → รันเต็มครั้งเดียว */
+function fnv1a(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(16); }
+let schemaVersion = '';
+const versionOf = () => schemaVersion || (schemaVersion = fnv1a(DDL.join('\n') + '\n' + migrate.toString()));
 let ready = null;
 export function ensureSchema(env) {
-  if (!ready) ready = migrate(env).catch((e) => { ready = null; throw e; });
+  if (!ready) ready = (async () => {
+    const db = sql(env);
+    try { const r = await db.get("SELECT value FROM meta WHERE key = 'schema_version'"); if (r && r.value === versionOf()) return; } catch (e) { /* ฐานข้อมูลใหม่ ยังไม่มีตาราง meta */ }
+    await migrate(env);
+    await db.run("INSERT INTO meta(key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", versionOf());
+  })().catch((e) => { ready = null; throw e; });
   return ready;
 }
 async function migrate(env) {
@@ -98,7 +108,7 @@ async function migrate(env) {
   try { await db.run('ALTER TABLE members ADD COLUMN pickup_code TEXT'); } catch (e) { /* มีอยู่แล้ว */ }
   try { await db.run("ALTER TABLE members ADD COLUMN mail_status TEXT DEFAULT ''"); } catch (e) { /* มีอยู่แล้ว */ }
   try { await db.run("ALTER TABLE members ADD COLUMN mail_at TEXT DEFAULT ''"); } catch (e) { /* มีอยู่แล้ว */ }
-  await db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_members_code ON members(pickup_code) WHERE pickup_code IS NOT NULL');   // วันที่รับของ (YYYY-MM-DD)   // อีเมลสมาชิก (เติมจากรายชื่อ ELITE ได้)   // อีเมลผู้สั่ง (กรอกที่หน้า Order Summary)
+  await db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_members_code ON members(pickup_code) WHERE pickup_code IS NOT NULL');
   // First run: the three back-office accounts (change the passwords in the Account page before going live)
   if ((await db.get('SELECT COUNT(*) AS n FROM users')).n === 0) {
     const seed = [['it-admin', 'jiancha2026', 'it_admin', 'IT - Admin', 'IT'], ['admin', 'marketing', 'admin', 'Admin', 'Marketing'], ['finance', 'jiancha', 'finance', 'Finance', 'Finance']];

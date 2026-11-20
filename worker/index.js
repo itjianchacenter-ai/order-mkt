@@ -2,6 +2,10 @@
 import { ensureSchema } from './schema.js';
 import { maybeScheduledReset } from './reset.js';
 import { makeContext, withCookies, handleApi, serveSlip, serveDesign, campaignBySlug, campaignHome } from './api.js';
+import { STORES, MEMBER_STORES } from './data.js';
+import { memberPickupDates } from '../lib/menu.js';
+// ข้อมูลคงที่ (สาขา / วันที่รับของ): ตอบทันทีโดยไม่แตะฐานข้อมูล + ให้เบราว์เซอร์เก็บไว้ 5 นาที
+const STATIC_JSON = { '/api/stores': () => STORES, '/api/member-stores': () => MEMBER_STORES, '/api/member-dates': () => memberPickupDates() };
 
 const CAMPAIGN_PAGES = { '': 'home', cart: 'cart', orders: 'orders', stores: 'stores', pay: 'pay', receipt: 'receipt' };
 const NO_CACHE = { 'cache-control': 'no-cache' };
@@ -24,6 +28,7 @@ export default {
     // static files never touch the database
     if (/^\/(css|js|img|fonts)\//.test(p) || (!p.startsWith('/uploads/') && /\.(css|js|png|jpg|jpeg|webp|svg|ico|ttf|woff2?|txt|xml)$/i.test(p))) return env.ASSETS.fetch(request);
     if (!env.DB) return new Response('Cloudflare Pages: bind a D1 database as "DB" (Settings → Bindings). Optional: an R2 bucket as "FILES" for slip images; without it images are stored in D1.', { status: 500, headers: { 'content-type': 'text/plain; charset=utf-8' } });
+    if (request.method === 'GET' && STATIC_JSON[p]) return new Response(JSON.stringify(STATIC_JSON[p]()), { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=300' } });
     await ensureSchema(env);
     await maybeScheduledReset(env);   // RESET_ORDERS_AT: ล้างออเดอร์ทดสอบอัตโนมัติครั้งเดียวเมื่อถึงเวลา
     const c = await makeContext(request, env, ctx);
