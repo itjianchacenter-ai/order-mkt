@@ -97,15 +97,15 @@
   };
   const phoneDigits = (v) => { let d = String(v || '').replace(/\D/g, ''); if (d.startsWith('66') && d.length === 11) d = '0' + d.slice(2); return d; };
   let checkSeq = 0, notElite = false;
-  // อีเมล: เบอร์ที่อยู่ในรายชื่อสมาชิก → เติมอีเมลให้อัตโนมัติ (แสดงแบบปิดบางส่วน; ไม่แก้ = ใช้อีเมลในข้อมูลสมาชิก, แก้ได้ตามต้องการ)
+  // อีเมล: เบอร์ที่อยู่ในรายชื่อสมาชิก → เติมอีเมลเต็มให้อัตโนมัติเป็นตัวสีเทา (แก้ได้; พอแก้ ตัวอักษรกลับเป็นสีดำ)
   let autoEmail = '';
   const emailNote = $('#mb-email-note');
-  function fillEmail(masked) {
+  function fillEmail(email) {
     const f = form.email; const untouched = !f.value.trim() || f.value === autoEmail;
     if (!untouched) return;   // ลูกค้าพิมพ์อีเมลเองแล้ว ไม่ทับ
-    autoEmail = masked || ''; f.value = autoEmail; emailNote.hidden = !autoEmail;
+    autoEmail = email || ''; f.value = autoEmail; emailNote.hidden = !autoEmail; f.classList.toggle('autofilled', Boolean(autoEmail));
   }
-  form.email.addEventListener('input', () => { if (form.email.value !== autoEmail) emailNote.hidden = true; });
+  form.email.addEventListener('input', () => { const auto = Boolean(autoEmail) && form.email.value === autoEmail; emailNote.hidden = !auto; form.email.classList.toggle('autofilled', auto); });
   form.email.addEventListener('focus', () => { if (autoEmail && form.email.value === autoEmail) form.email.select(); });
   async function checkPhone() {
     const d = phoneDigits(form.phone.value); const seq = ++checkSeq;
@@ -114,7 +114,7 @@
       const r = await api('/api/members/check', { method: 'POST', body: { campaign: slug, phone: d } });
       if (seq !== checkSeq) return !notElite;
       notElite = !r.eligible; showNotElite(r.eligible ? '' : r.message);
-      fillEmail(r.eligible ? r.email_masked : '');
+      fillEmail(r.eligible ? (r.email || '') : '');
       return r.eligible;
     } catch (e) { return true; }   // ตรวจไม่ได้ (เน็ต) → ให้เซิร์ฟเวอร์ตรวจตอนกด Confirm
   }
@@ -129,13 +129,12 @@
     }
     if (!(await checkPhone())) { form.phone.focus(); return; }
     btn.disabled = true; btn.textContent = '…';
-    const useList = Boolean(autoEmail) && form.email.value === autoEmail;
-    const body = { campaign: slug, first_name: form.first_name.value, last_name: form.last_name.value, phone: form.phone.value, email: useList ? '' : form.email.value.trim(), use_list_email: useList, pickup_time: form.pickup_time.value, store_id: form.store_id.value };
+    const body = { campaign: slug, first_name: form.first_name.value, last_name: form.last_name.value, phone: form.phone.value, email: form.email.value.trim(), pickup_time: form.pickup_time.value, store_id: form.store_id.value };
     try {
       api('/api/pdpa', { method: 'POST' }).catch(() => {});
       const r = await api('/api/members', { method: 'POST', body });
-      try { localStorage.setItem(KEY, JSON.stringify({ ...r.member, email: useList ? autoEmail : r.member.email })); } catch (x) { /* storage blocked */ }   // ไม่เก็บอีเมลเต็มจากรายชื่อไว้ในเบราว์เซอร์
-      showDone({ ...r.member, email: useList ? autoEmail : r.member.email });
+      try { localStorage.setItem(KEY, JSON.stringify(r.member)); } catch (x) { /* storage blocked */ }
+      showDone(r.member);
     } catch (ex) {
       if (ex.notElite) { notElite = true; showNotElite(ex.message); form.phone.focus(); }
       else { err.textContent = ex.message; if (ex.field && form[ex.field]) { form[ex.field].classList.add('invalid'); form[ex.field].focus(); } }
